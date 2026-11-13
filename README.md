@@ -1,5 +1,8 @@
 # Hampanel
 
+[![Build (main)](https://github.com/colisys/hampanel/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/colisys/hampanel/actions/workflows/build.yml)
+[![Build (nightly)](https://github.com/colisys/hampanel/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/colisys/hampanel/actions/workflows/build.yml)
+
 Hampanel 是一个 **CleanRoom 实现**、以 **GPL-3.0-or-later** 授权的开源服务器运维面板。
 
 - **后端**：Zig（单二进制 daemon，直接调用操作系统能力）
