@@ -1,6 +1,28 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const compat = @import("compat");
 const c = @import("libc_c");
+
+/// translate-c cannot resolve musl's `struct statvfs` (it is only exposed
+/// through `bits/alltypes.h`), so provide the layout explicitly there.
+const Statvfs = if (builtin.abi == .musl)
+    extern struct {
+        f_bsize: c_ulong,
+        f_frsize: c_ulong,
+        f_blocks: u64,
+        f_bfree: u64,
+        f_bavail: u64,
+        f_files: u64,
+        f_ffree: u64,
+        f_favail: u64,
+        f_fsid: c_ulong,
+        f_flag: c_ulong,
+        f_namemax: c_ulong,
+        f_type: c_uint,
+        __reserved: [5]c_int,
+    }
+else
+    c.struct_statvfs;
 
 pub const CpuMetrics = struct {
     usage_percent: f64,
@@ -258,8 +280,8 @@ fn parseDisks(allocator: std.mem.Allocator) ![]DiskMetrics {
 
         const mount_z = try compat.dupeZ(allocator, mount);
         defer allocator.free(mount_z);
-        var stat: c.struct_statvfs = undefined;
-        if (c.statvfs(mount_z.ptr, &stat) != 0) continue;
+        var stat: Statvfs = undefined;
+        if (c.statvfs(mount_z.ptr, @ptrCast(&stat)) != 0) continue;
 
         const frsize: u64 = @intCast(stat.f_frsize);
         const total = @as(u64, @intCast(stat.f_blocks)) * frsize;

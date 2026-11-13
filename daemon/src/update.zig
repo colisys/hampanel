@@ -274,7 +274,7 @@ fn fetchLatestVersion(allocator: std.mem.Allocator, cfg: config.Config) ![]const
 fn curlText(allocator: std.mem.Allocator, url: []const u8) ![]const u8 {
     const result = try exec.run(allocator, &.{
         "curl", "-fsSL",                 "--retry", "2", "--connect-timeout", "15", "--max-time", "30",
-        "-H",   "User-Agent: hampaneld", url,
+        "-H",   curl_user_agent, url,
     }, 256 * 1024);
     if (!result.ok()) return error.HttpFailed;
     return result.stdout;
@@ -283,16 +283,24 @@ fn curlText(allocator: std.mem.Allocator, url: []const u8) ![]const u8 {
 fn download(allocator: std.mem.Allocator, url: []const u8, path: []const u8) !void {
     const result = try exec.run(allocator, &.{
         "curl", "-fsSL",                 "--retry", "2",  "--connect-timeout", "15", "--max-time", "600",
-        "-H",   "User-Agent: hampaneld", "-o",      path, url,
+        "-H",   curl_user_agent, "-o",      path, url,
     }, 256 * 1024);
     if (!result.ok()) return error.DownloadFailed;
 }
 
+/// Mirrors in front of the release assets are commonly shielded by
+/// Cloudflare, which rejects default curl agents with 403.
+const curl_user_agent =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " ++
+    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Hampanel-Updater";
+
 fn assetName() []const u8 {
-    return if (builtin.os.tag == .windows)
-        "hampanel-daemon-windows-x86_64.zip"
-    else
-        "hampanel-daemon-linux-x86_64.tar.gz";
+    if (builtin.os.tag == .windows) return "hampanel-daemon-windows-x86_64.zip";
+    return switch (builtin.cpu.arch) {
+        .aarch64 => "hampanel-daemon-linux-aarch64.tar.gz",
+        .riscv64 => "hampanel-daemon-linux-riscv64.tar.gz",
+        else => "hampanel-daemon-linux-x86_64.tar.gz",
+    };
 }
 
 fn expectedHash(sums: []const u8, asset: []const u8) ?[]const u8 {

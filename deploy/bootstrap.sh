@@ -324,6 +324,41 @@ else
   "$BIN" update --remove-schedule --config "$CONFIG_DIR/config.json" >/dev/null 2>&1 || true
 fi
 
+# ----------------------------------------------------------------- firewall
+# The daemon is useless if the port is unreachable, so open it in whatever
+# firewall the host manages (ufw / firewalld). Best effort, never fatal.
+open_panel_port() {
+  local port
+  port="$(sed -n 's/.*"port"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' \
+    "$CONFIG_DIR/config.json" 2>/dev/null | head -n1)"
+  [[ -n "$port" ]] || { log "could not read panel port; skipping firewall setup"; return 0; }
+
+  local priv=""
+  if [[ "$(id -u)" != "0" ]]; then
+    if sudo -n true 2>/dev/null; then priv="sudo -n"; else
+      log "no root/sudo: open TCP ${port} manually"; return 0
+    fi
+  fi
+
+  if command -v ufw >/dev/null 2>&1 && $priv ufw status 2>/dev/null | grep -q "Status: active"; then
+    if $priv ufw allow "${port}/tcp" >/dev/null 2>&1; then
+      log "opened TCP ${port} in ufw"
+    else
+      log "warning: failed to add ufw rule for TCP ${port}"
+    fi
+  elif command -v firewall-cmd >/dev/null 2>&1 && $priv firewall-cmd --state >/dev/null 2>&1; then
+    if $priv firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1 &&
+       $priv firewall-cmd --reload >/dev/null 2>&1; then
+      log "opened TCP ${port} in firewalld"
+    else
+      log "warning: failed to add firewalld rule for TCP ${port}"
+    fi
+  else
+    log "no active ufw/firewalld detected; ensure TCP ${port} is reachable"
+  fi
+}
+open_panel_port
+
 chmod 600 "$ENROLL_FILE" 2>/dev/null || true
 log "binary:      ${BIN}"
 log "install mode: ${INSTALL_MODE}"

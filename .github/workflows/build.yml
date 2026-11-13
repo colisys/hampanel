@@ -2,25 +2,36 @@ name: Build
 
 on:
   push:
-    branches: [main, nightly]
+    branches: [main]
     tags: ["v*"]
   pull_request:
     branches: [main, nightly]
+  schedule:
+    # Daily 18:30 UTC (02:30 CST). Schedule always runs the default
+    # branch, so jobs check out `nightly` when triggered this way.
+    - cron: "30 18 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Scheduled runs execute the default branch, so everything names itself
+# after `nightly` and checks out that branch when triggered by cron.
+env:
+  BUILD_REF: ${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }}
+
 concurrency:
-  group: build-${{ github.workflow }}-${{ github.ref }}
+  group: build-${{ github.workflow }}-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
   cancel-in-progress: true
 
 jobs:
   daemon:
-    name: Daemon (${{ github.ref_name }})
+    name: Daemon (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
 
       - name: Compute commit
         id: commit
@@ -97,10 +108,12 @@ jobs:
           if-no-files-found: error
 
   daemon-windows:
-    name: Daemon Windows (${{ github.ref_name }})
+    name: Daemon Windows (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
 
       - name: Compute commit
         id: commit
@@ -205,10 +218,12 @@ jobs:
           if-no-files-found: error
 
   flutter-linux:
-    name: Flutter Linux (${{ github.ref_name }})
+    name: Flutter Linux (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
 
       - name: Compute commit
         id: commit
@@ -268,10 +283,12 @@ jobs:
           if-no-files-found: error
 
   flutter-windows:
-    name: Flutter Windows (${{ github.ref_name }})
+    name: Flutter Windows (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
 
       - name: Compute commit
         id: commit
@@ -336,10 +353,20 @@ jobs:
           if-no-files-found: error
 
   flutter-macos:
-    name: Flutter macOS (${{ github.ref_name }})
-    runs-on: macos-latest
+    name: Flutter macOS (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            arch: aarch64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
 
       - name: Compute commit
         id: commit
@@ -382,7 +409,7 @@ jobs:
       - name: Upload macOS client
         uses: actions/upload-artifact@v4
         with:
-          name: hampanel-client-macos
+          name: hampanel-client-macos-${{ matrix.arch }}
           path: app/build/packaging/*.dmg
           if-no-files-found: error
 
@@ -391,12 +418,14 @@ jobs:
     needs: [daemon, daemon-windows, flutter-linux, flutter-windows, flutter-macos]
     if: >-
       github.event_name != 'pull_request' &&
-      (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/nightly')
+      (startsWith(github.ref, 'refs/tags/') || github.event_name == 'schedule' || github.ref == 'refs/heads/nightly')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
@@ -413,8 +442,8 @@ jobs:
             title="Hampanel $GITHUB_REF_NAME"
             prerelease=false
           else
-            tag="$GITHUB_REF_NAME"
-            title="Hampanel $GITHUB_REF_NAME (${short})"
+            tag="${BUILD_REF}"
+            title="Hampanel ${BUILD_REF} (${short})"
             prerelease=true
           fi
           {
@@ -447,7 +476,7 @@ jobs:
             dist/hampanel-client-linux-x86_64.AppImage
           cp artifacts/hampanel-portable-windows-x86_64/*.exe \
             dist/hampanel-client-windows-x86_64.exe
-          cp artifacts/hampanel-client-macos/*.dmg dist/
+          cp artifacts/hampanel-client-macos-*/*.dmg dist/
 
           cp deploy/install.sh dist/hampanel-install-linux.sh
           cp deploy/windows/install.ps1 dist/hampanel-install-windows.ps1
@@ -468,7 +497,7 @@ jobs:
           set -euo pipefail
 
           notes=$(cat <<EOF
-          Automated build from \`${GITHUB_REF_NAME}\` at \`${GITHUB_SHA}\`.
+          Automated build from \`${BUILD_REF}\` at \`$(git rev-parse --short HEAD)\`.
 
           **Clients**
           - \`hampanel-client-linux-x86_64.AppImage\` — single-file Linux client (\`chmod +x\` then run)
@@ -500,8 +529,14 @@ jobs:
               create_flags+=(--latest)
             fi
             if [[ "$GITHUB_REF" != refs/tags/* ]]; then
-              create_flags+=(--target "$GITHUB_REF_NAME")
+              create_flags+=(--target "${BUILD_REF}")
             fi
             gh release create "$TAG" "${files[@]}" \
               --title "$TITLE" --notes "$notes" "${create_flags[@]}"
+          fi
+
+          # Keep rolling release tags (e.g. nightly) pointing at the built commit
+          if [[ "$PRERELEASE" == "true" ]]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
+              -f sha="$(git rev-parse HEAD)" >/dev/null 2>&1 || true
           fi

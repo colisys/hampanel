@@ -180,7 +180,7 @@ class SshInstaller {
               : 'env HAMPANEL_RELEASE_BASE=${_shellQuote(override)} ');
     return 'set -e\n'
         'tmp="\$(mktemp)"\n'
-        'curl -fsSL ${_shellQuote(url)} -o "\$tmp"\n'
+        'curl -fsSL -A ${_shellQuote(linuxUserAgent)} ${_shellQuote(url)} -o "\$tmp"\n'
         '${runner}bash "\$tmp" ${args.map(_shellQuote).join(' ')}\n';
   }
 
@@ -210,7 +210,7 @@ class SshInstaller {
 \$ErrorActionPreference = 'Stop'
 \$dir = 'C:\\ProgramData\\hampanel'
 New-Item -ItemType Directory -Force -Path \$dir | Out-Null
-Invoke-WebRequest -UseBasicParsing -Uri '${_psQuote(url)}' -OutFile "\$dir\\install.ps1"
+Invoke-WebRequest -UseBasicParsing -Uri '${_psQuote(url)}' -OutFile "\$dir\\install.ps1" -UserAgent '${_psQuote(windowsUserAgent)}'
 & "\$dir\\install.ps1" ${args.map((value) => "'${_psQuote(value)}'").join(' ')}
 ''';
     final encoded = base64Encode(_utf16le(script));
@@ -302,6 +302,15 @@ class _LineBuffer {
 
 String _hex(Uint8List bytes) =>
     bytes.map((value) => value.toRadixString(16).padLeft(2, '0')).join();
+
+/// GitHub mirrors are frequently fronted by Cloudflare, which rejects
+/// default curl / PowerShell agents with 403 — present as a browser.
+const linuxUserAgent =
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+const windowsUserAgent =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 String _mirrorUrl(String url, String? mirror) {
   final value = mirror?.trim() ?? '';

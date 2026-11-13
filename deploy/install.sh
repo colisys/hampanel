@@ -11,6 +11,8 @@ CHANNEL="${HAMPANEL_CHANNEL:-stable}"
 RELEASE_BASE="${HAMPANEL_RELEASE_BASE:-}"
 SOURCE_BASE="${HAMPANEL_SOURCE_BASE:-}"
 GITHUB_MIRROR="${HAMPANEL_GITHUB_MIRROR:-}"
+# Mirrors are often shielded by Cloudflare; default curl agents get 403.
+USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 MODE="binary"
 CHANNEL_SET=0
 REF=""
@@ -134,7 +136,7 @@ latest_stable_tag() {
   if [[ -n "$GITHUB_MIRROR" && "$GITHUB_MIRROR" != *github.com* ]]; then
     api="${GITHUB_MIRROR%/}/$api"
   fi
-  curl -fsSL --retry 2 --connect-timeout 15 \
+  curl -fsSL -A "$USER_AGENT" --retry 2 --connect-timeout 15 \
     -H 'Accept: application/vnd.github+json' \
     -H 'User-Agent: hampanel-install' \
     "$api" 2>/dev/null |
@@ -153,14 +155,20 @@ verify_checksum() {
 
 if [[ "$MODE" == "binary" ]]; then
   BASE="$(release_base "$CHANNEL")"
-  if ! curl -fsSL --retry 1 --connect-timeout 10 -o "$TMP/version.txt" "$BASE/version.txt"; then
+  if ! curl -fsSL -A "$USER_AGENT" --retry 1 --connect-timeout 10 -o "$TMP/version.txt" "$BASE/version.txt"; then
     fail "no release found for channel ${CHANNEL}; use --channel nightly for prereleases or publish a stable tag"
   fi
-  asset="hampanel-daemon-linux-x86_64.tar.gz"
+  machine="$(uname -m)"
+  case "$machine" in
+    x86_64) asset="hampanel-daemon-linux-x86_64.tar.gz" ;;
+    aarch64|arm64) asset="hampanel-daemon-linux-aarch64.tar.gz" ;;
+    riscv64) asset="hampanel-daemon-linux-riscv64.tar.gz" ;;
+    *) fail "unsupported architecture: $machine" ;;
+  esac
   log "downloading ${BASE}/${asset}"
-  curl -fsSL --retry 3 --connect-timeout 15 -o "$TMP/$asset" "$BASE/$asset" ||
+  curl -fsSL -A "$USER_AGENT" --retry 3 --connect-timeout 15 -o "$TMP/$asset" "$BASE/$asset" ||
     fail "failed to download $asset"
-  curl -fsSL --retry 3 --connect-timeout 15 -o "$TMP/SHA256SUMS.txt" "$BASE/SHA256SUMS.txt" ||
+  curl -fsSL -A "$USER_AGENT" --retry 3 --connect-timeout 15 -o "$TMP/SHA256SUMS.txt" "$BASE/SHA256SUMS.txt" ||
     fail "failed to download SHA256SUMS.txt"
   verify_checksum "$asset" "$TMP/SHA256SUMS.txt" "$TMP/$asset"
 
@@ -200,7 +208,7 @@ else
   fi
   src_url="$(mirror_url "$src_url")"
   log "downloading source ${src_url}"
-  curl -fsSL --retry 3 --connect-timeout 15 -o "$TMP/src.tar.gz" "$src_url" ||
+  curl -fsSL -A "$USER_AGENT" --retry 3 --connect-timeout 15 -o "$TMP/src.tar.gz" "$src_url" ||
     fail "failed to download source archive"
   mkdir -p "$TMP/src"
   tar -xzf "$TMP/src.tar.gz" -C "$TMP/src" --strip-components=1

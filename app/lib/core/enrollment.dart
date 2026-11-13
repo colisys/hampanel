@@ -4,6 +4,7 @@ import 'dart:io';
 class Enrollment {
   const Enrollment({
     required this.schema,
+    required this.product,
     required this.endpoint,
     required this.entryPrefix,
     required this.caPem,
@@ -16,6 +17,7 @@ class Enrollment {
   });
 
   final int schema;
+  final String product;
   final String endpoint;
   final String entryPrefix;
   final String caPem;
@@ -42,6 +44,7 @@ class Enrollment {
 
     return Enrollment(
       schema: (json['schema'] as num?)?.toInt() ?? 1,
+      product: json['product'] as String? ?? 'Hampanel',
       endpoint: endpoint,
       entryPrefix: json['entry_prefix'] as String? ?? '',
       caPem: required('ca_pem'),
@@ -64,8 +67,9 @@ class Enrollment {
 
   Map<String, dynamic> toJson() => {
     'schema': schema,
-    'product': 'Hampanel',
+    'product': product,
     'endpoint': endpoint,
+    'entry_prefix': entryPrefix,
     'ca_pem': caPem,
     'client_cert_pem': clientCertPem,
     'client_key_pem': clientKeyPem,

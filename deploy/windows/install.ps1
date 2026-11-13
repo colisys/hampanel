@@ -29,6 +29,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Mirrors are often shielded by Cloudflare; default agents get 403.
+$script:UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
 function Mirror-Url([string]$Url) {
     if (-not $GithubMirror) { return $Url }
     $base = $GithubMirror.Trim().TrimEnd("/")
@@ -75,15 +78,15 @@ if ($Mode -eq "binary") {
     $tmp = Join-Path $env:TEMP "hampanel-release"
     $null = New-Item -ItemType Directory -Force -Path $tmp
     try {
-        Invoke-WebRequest -UseBasicParsing -Uri "$ReleaseBase/version.txt" -OutFile (Join-Path $tmp "version.txt")
+        Invoke-WebRequest -UseBasicParsing -Uri "$ReleaseBase/version.txt" -OutFile (Join-Path $tmp "version.txt") -UserAgent $script:UserAgent
     } catch {
         throw "no release found for channel $Channel; use -Channel nightly for prereleases or publish a stable tag"
     }
     $zipPath = Join-Path $tmp $asset
     $sumsPath = Join-Path $tmp "SHA256SUMS.txt"
     Write-Step "Downloading $ReleaseBase/$asset"
-    Invoke-WebRequest -Uri "$ReleaseBase/$asset" -OutFile $zipPath
-    Invoke-WebRequest -Uri "$ReleaseBase/SHA256SUMS.txt" -OutFile $sumsPath
+    Invoke-WebRequest -Uri "$ReleaseBase/$asset" -OutFile $zipPath -UserAgent $script:UserAgent
+    Invoke-WebRequest -Uri "$ReleaseBase/SHA256SUMS.txt" -OutFile $sumsPath -UserAgent $script:UserAgent
     $line = Get-Content $sumsPath | Where-Object {
         (($_ -split '\s+')[1] -replace '^\*', '') -eq $asset
     } | Select-Object -First 1
@@ -107,7 +110,7 @@ if ($Mode -eq "binary") {
                 $ref = "nightly"
             } elseif ($Channel -eq "stable" -or $Channel -eq "latest") {
                 $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" `
-                    -Headers @{ "Accept" = "application/vnd.github+json"; "User-Agent" = "hampanel-install" }
+                    -Headers @{ "Accept" = "application/vnd.github+json"; "User-Agent" = $script:UserAgent }
                 $ref = $release.tag_name
                 if (-not $ref) { throw "no stable release tag found; pass -Ref <tag>" }
             } else {
@@ -127,7 +130,7 @@ if ($Mode -eq "binary") {
         $null = New-Item -ItemType Directory -Force -Path $srcTmp
         $tgz = Join-Path $env:TEMP "hampanel-src.tar.gz"
         Write-Step "Downloading source $srcUrl"
-        Invoke-WebRequest -UseBasicParsing -Uri $srcUrl -OutFile $tgz
+        Invoke-WebRequest -UseBasicParsing -Uri $srcUrl -OutFile $tgz -UserAgent $script:UserAgent
         tar -xzf $tgz -C $srcTmp --strip-components=1
         if ($LASTEXITCODE -ne 0) { throw "source extraction failed" }
         $Source = $srcTmp
