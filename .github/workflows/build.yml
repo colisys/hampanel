@@ -57,7 +57,7 @@ jobs:
           path: |
             daemon/.zig-cache
             ~/.cache/zig
-          key: zig-build-linux-0.17.1-${{ hashFiles('daemon/build.zig', 'daemon/vendor/sqlite/sqlite3.c') }}
+          key: zig-build-linux-0.17.1-${{ hashFiles('daemon/build.zig', 'daemon/src/**/*.zig', 'daemon/src/**/*.h', 'daemon/vendor/sqlite/sqlite3.c') }}
           restore-keys: |
             zig-build-linux-0.17.1-
 
@@ -141,7 +141,7 @@ jobs:
           path: |
             daemon/.zig-cache
             ~/AppData/Local/zig
-          key: zig-build-windows-0.17.1-${{ hashFiles('daemon/build.zig', 'daemon/vendor/sqlite/sqlite3.c') }}
+          key: zig-build-windows-0.17.1-${{ hashFiles('daemon/build.zig', 'daemon/src/**/*.zig', 'daemon/src/**/*.h', 'daemon/vendor/sqlite/sqlite3.c') }}
           restore-keys: |
             zig-build-windows-0.17.1-
 
