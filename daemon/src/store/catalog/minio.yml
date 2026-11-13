@@ -1,0 +1,16 @@
+services:
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: "{{user}}"
+      MINIO_ROOT_PASSWORD: "{{password}}"
+    ports:
+      - "{{api_port}}:9000"
+      - "{{console_port}}:9001"
+    volumes:
+      - data:/data
+
+volumes:
+  data:

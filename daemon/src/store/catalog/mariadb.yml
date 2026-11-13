@@ -1,0 +1,14 @@
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: "{{password}}"
+      MARIADB_DATABASE: "{{database}}"
+    ports:
+      - "{{port}}:3306"
+    volumes:
+      - data:/var/lib/mysql
+
+volumes:
+  data:

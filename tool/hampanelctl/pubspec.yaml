@@ -1,0 +1,5 @@
+name: hampanelctl
+description: Hampanel deployment CLI
+publish_to: none
+environment:
+  sdk: ^3.6.0

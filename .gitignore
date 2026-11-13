@@ -1,0 +1,33 @@
+# Zig
+daemon/.zig-cache/
+daemon/zig-out/
+zig-cache/
+zig-out/
+
+# Flutter / Dart
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/build/
+app/linux/flutter/ephemeral/
+app/**/generated_plugin_registrant.*
+tool/hampanelctl/.dart_tool/
+.pub-cache/
+*.iml
+.idea/
+.vscode/
+
+# Runtime artifacts
+*.log
+enroll-*.json
+hampanel-*.json
+
+# Windows driver build output
+windows/driver/out/
+windows/driver/x64/
+windows/driver/*.sys
+windows/driver/*.cat
+windows/driver/*.inf~
+
+# Local agent state
+.commandcode/

@@ -1,0 +1,14 @@
+services:
+  gitea:
+    image: gitea/gitea:1.23
+    restart: unless-stopped
+    environment:
+      GITEA__server__ROOT_URL: "http://localhost:{{web_port}}/"
+    ports:
+      - "{{web_port}}:3000"
+      - "{{ssh_port}}:22"
+    volumes:
+      - data:/data
+
+volumes:
+  data:

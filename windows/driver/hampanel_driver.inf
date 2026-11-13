@@ -1,0 +1,47 @@
+; Hampanel driver installation INF
+; SPDX-License-Identifier: GPL-3.0-or-later
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=System
+ClassGuid={4D36E97D-E325-11CE-BFC1-08002BE10318}
+Provider=%Provider%
+DriverVer=11/13/2026,0.1.0.0
+CatalogFile=hampanel.cat
+
+[DestinationDirs]
+DefaultDestDir = 12
+
+[SourceDisksFiles]
+hampanel.sys = 1
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[Manufacturer]
+%Provider%=Hampanel,NTamd64
+
+[Hampanel.NTamd64]
+%DeviceName%=Hampanel_Install, Hampanel
+
+[Hampanel_Install.NT]
+CopyFiles=Drivers
+
+[Hampanel_Install.NT.Services]
+AddService=HampanelDriver,0x00000002,Hampanel_Service
+
+[Drivers]
+hampanel.sys
+
+[Hampanel_Service]
+DisplayName=%ServiceName%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%12%\hampanel.sys
+
+[Strings]
+Provider="Hampanel"
+DiskName="Hampanel Driver"
+DeviceName="Hampanel Kernel Companion"
+ServiceName="Hampanel Driver"

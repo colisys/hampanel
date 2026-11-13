@@ -1,0 +1,13 @@
+services:
+  code-server:
+    image: codercom/code-server:4
+    restart: unless-stopped
+    environment:
+      PASSWORD: "{{password}}"
+    ports:
+      - "{{port}}:8080"
+    volumes:
+      - data:/home/coder
+
+volumes:
+  data:
