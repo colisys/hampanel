@@ -26,12 +26,40 @@ jobs:
         id: commit
         run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Restore Zig toolchain
+        id: zig-sdk
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/zig-0.17.1
+          key: zig-0.17.1-linux-x86_64
+
       - name: Install Zig 0.17.1
+        if: steps.zig-sdk.outputs.cache-hit != 'true'
         run: |
           curl -fsSL https://ziglang.org/download/0.17.1/zig-x86_64-linux-0.17.1.tar.xz -o /tmp/zig.tar.xz
-          mkdir -p "$HOME/zig"
-          tar -xJf /tmp/zig.tar.xz -C "$HOME/zig" --strip-components=1
-          echo "$HOME/zig" >> "$GITHUB_PATH"
+          mkdir -p "${{ runner.temp }}/zig-0.17.1"
+          tar -xJf /tmp/zig.tar.xz -C "${{ runner.temp }}/zig-0.17.1" --strip-components=1
+
+      - name: Save Zig toolchain
+        if: steps.zig-sdk.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/zig-0.17.1
+          key: zig-0.17.1-linux-x86_64
+
+      - name: Add Zig to PATH
+        run: echo "${{ runner.temp }}/zig-0.17.1" >> "$GITHUB_PATH"
+
+      - name: Restore Zig build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            daemon/.zig-cache
+            ~/.cache/zig
+          key: zig-build-linux-0.17.1-${{ hashFiles('daemon/build.zig', 'daemon/vendor/sqlite/sqlite3.c') }}
+          restore-keys: |
+            zig-build-linux-0.17.1-
 
       - name: Install OpenSSL headers
         run: |
@@ -79,25 +107,78 @@ jobs:
         shell: bash
         run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Restore Zig toolchain
+        id: zig-sdk
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/zig
+          key: zig-0.17.1-windows-x86_64
+
       - name: Install Zig 0.17.1
+        if: steps.zig-sdk.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $dir = "$env:RUNNER_TEMP\zig"
           Invoke-WebRequest -Uri "https://ziglang.org/download/0.17.1/zig-x86_64-windows-0.17.1.zip" -OutFile "$env:RUNNER_TEMP\zig.zip"
           Expand-Archive "$env:RUNNER_TEMP\zig.zip" -DestinationPath $dir -Force
-          "$dir\zig-x86_64-windows-0.17.1" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
-      - name: Cache OpenSSL
+      - name: Save Zig toolchain
+        if: steps.zig-sdk.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/zig
+          key: zig-0.17.1-windows-x86_64
+
+      - name: Add Zig to PATH
+        shell: pwsh
+        run: |
+          "$env:RUNNER_TEMP\zig\zig-x86_64-windows-0.17.1" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Restore Zig build cache
         uses: actions/cache@v4
         with:
-          path: C:\vcpkg\installed\x64-windows
-          key: vcpkg-openssl-x64-windows-1
+          path: |
+            daemon/.zig-cache
+            ~/AppData/Local/zig
+          key: zig-build-windows-0.17.1-${{ hashFiles('daemon/build.zig', 'daemon/vendor/sqlite/sqlite3.c') }}
+          restore-keys: |
+            zig-build-windows-0.17.1-
+
+      - name: Resolve vcpkg baseline
+        id: vcpkg
+        shell: pwsh
+        run: |
+          $root = if ($env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_INSTALLATION_ROOT } else { Split-Path (Get-Command vcpkg).Source }
+          $rev = if (Test-Path "$root\.git") { (git -C $root rev-parse --short HEAD) } else { "static" }
+          "root=$root" >> $env:GITHUB_OUTPUT
+          "rev=$rev" >> $env:GITHUB_OUTPUT
+
+      - name: Restore OpenSSL cache
+        id: openssl-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ steps.vcpkg.outputs.root }}\installed
+            ${{ steps.vcpkg.outputs.root }}\downloads
+          key: vcpkg-openssl-x64-windows-${{ steps.vcpkg.outputs.rev }}
 
       - name: Install OpenSSL
+        if: steps.openssl-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           vcpkg install openssl:x64-windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Save OpenSSL cache
+        if: steps.openssl-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ steps.vcpkg.outputs.root }}\installed
+            ${{ steps.vcpkg.outputs.root }}\downloads
+          key: vcpkg-openssl-x64-windows-${{ steps.vcpkg.outputs.rev }}
 
       - name: Build daemon
         working-directory: daemon
@@ -137,6 +218,12 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      - name: Restore AppImage tooling
+        uses: actions/cache@v4
+        with:
+          path: app/build/packaging/cache
+          key: appimage-tool-linux-x86_64-continuous-1
 
       - name: Install Flutter Linux dependencies
         run: |
@@ -195,6 +282,12 @@ jobs:
         with:
           channel: stable
           cache: true
+
+      - name: Restore single-file packager tooling
+        uses: actions/cache@v4
+        with:
+          path: app/build/packaging/cache
+          key: windows-sfx-tool-lzma2501-1
 
       - name: Get packages
         working-directory: app
