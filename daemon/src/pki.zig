@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const os = @import("openssl.zig");
 const c = os.c;
 const log = @import("log.zig");
@@ -40,7 +41,7 @@ pub const Issued = struct {
 };
 
 fn join(allocator: std.mem.Allocator, dir: []const u8, name: []const u8) ![]const u8 {
-    return std.fs.path.join(allocator, &.{ dir, name });
+    return compat.path.join(allocator, &.{ dir, name });
 }
 
 pub fn paths(allocator: std.mem.Allocator, dir: []const u8) !Paths {
@@ -62,19 +63,19 @@ pub fn exists(allocator: std.mem.Allocator, dir: []const u8) bool {
         p.ca_cert, p.ca_key, p.server_cert, p.server_key, p.client_cert, p.client_key, p.meta,
     };
     for (required) |path| {
-        std.fs.cwd().access(path, .{}) catch return false;
+        compat.cwd().access(path, .{}) catch return false;
     }
     return true;
 }
 
 pub fn loadMeta(allocator: std.mem.Allocator, paths_in: Paths) !Meta {
-    const raw = try std.fs.cwd().readFileAlloc(allocator, paths_in.meta, 1024 * 1024);
+    const raw = try compat.cwd().readFileAlloc(allocator, paths_in.meta, 1024 * 1024);
     return std.json.parseFromSliceLeaky(Meta, allocator, raw, .{ .allocate = .alloc_always });
 }
 
 fn randomClientCn(allocator: std.mem.Allocator) ![]const u8 {
     var raw: [6]u8 = undefined;
-    std.crypto.random.bytes(&raw);
+    compat.randomBytes(&raw);
     const hex = std.fmt.bytesToHex(raw, .lower);
     return std.fmt.allocPrint(allocator, "hampanel-client-{s}", .{hex});
 }
@@ -93,7 +94,7 @@ pub fn initialize(
         return loadMeta(allocator, p);
     }
 
-    try std.fs.cwd().makePath(dir);
+    try compat.cwd().makePath(dir);
     try files.secureDir(dir);
 
     var ca = try issueAuthority(allocator);
@@ -122,15 +123,15 @@ pub fn initialize(
         .client_cn = try allocator.dupe(u8, client_cn),
     };
 
-    const meta_json = try std.json.stringifyAlloc(allocator, meta, .{ .whitespace = .indent_2 });
+    const meta_json = try std.json.Stringify.valueAlloc(allocator, meta, .{ .whitespace = .indent_2 });
     try writeFile(p.meta, meta_json, 0o600);
 
     log.info("PKI ready: CA {s}", .{meta.ca_fingerprint});
     return meta;
 }
 
-fn writeFile(path: []const u8, data: []const u8, mode: std.fs.File.Mode) !void {
-    var file = try std.fs.cwd().createFile(path, .{ .mode = mode, .truncate = true });
+fn writeFile(path: []const u8, data: []const u8, mode: compat.File.Mode) !void {
+    var file = try compat.cwd().createFile(path, .{ .mode = mode, .truncate = true });
     defer file.close();
     try files.secureFile(file, mode);
     try file.writeAll(data);
@@ -153,7 +154,7 @@ fn newCert(subject_cn: []const u8, issuer: *c.X509, pubkey: *c.EVP_PKEY) !*c.X50
     if (c.X509_set_version(cert, 2) != 1) return error.CertInit;
 
     var raw_serial: [8]u8 = undefined;
-    std.crypto.random.bytes(&raw_serial);
+    compat.randomBytes(&raw_serial);
     const serial: c_long = @intCast(std.mem.readInt(u64, &raw_serial, .little) & 0x7fff_ffff_ffff_ffff);
     if (c.ASN1_INTEGER_set(c.X509_get_serialNumber(cert), serial) != 1) return error.CertInit;
 
@@ -247,7 +248,7 @@ pub fn issueAuthorityExport(allocator: std.mem.Allocator) !Issued {
     if (c.X509_set_version(cert, 2) != 1) return error.CertInit;
 
     var raw_serial: [8]u8 = undefined;
-    std.crypto.random.bytes(&raw_serial);
+    compat.randomBytes(&raw_serial);
     const serial: c_long = @intCast(std.mem.readInt(u64, &raw_serial, .little) & 0x7fff_ffff_ffff_ffff);
     if (c.ASN1_INTEGER_set(c.X509_get_serialNumber(cert), serial) != 1) return error.CertInit;
 
@@ -273,9 +274,9 @@ pub fn issueAuthorityExport(allocator: std.mem.Allocator) !Issued {
 }
 
 fn buildSan(allocator: std.mem.Allocator, sans: []const []const u8) ![:0]u8 {
-    var list = std.ArrayList(u8).init(allocator);
+    var list = std.array_list.Managed(u8).init(allocator);
     errdefer list.deinit();
-    var seen = std.ArrayList([]const u8).init(allocator);
+    var seen = std.array_list.Managed([]const u8).init(allocator);
     defer seen.deinit();
 
     const defaults = [_][]const u8{ "localhost", "127.0.0.1" };
@@ -288,18 +289,20 @@ fn buildSan(allocator: std.mem.Allocator, sans: []const []const u8) ![:0]u8 {
     return try list.toOwnedSliceSentinel(0);
 }
 
-fn appendSan(list: *std.ArrayList(u8), seen: *std.ArrayList([]const u8), entry: []const u8) !void {
+fn appendSan(list: *std.array_list.Managed(u8), seen: *std.array_list.Managed([]const u8), entry: []const u8) !void {
     for (seen.items) |existing| {
         if (std.mem.eql(u8, existing, entry)) return;
     }
     try seen.append(entry);
 
-    const is_ip = std.net.Address.parseIp(entry, 0) catch null;
+    const is_ip = std.Io.net.IpAddress.parse(entry, 0) catch null;
     if (list.items.len > 0) try list.append(',');
     if (is_ip != null) {
-        try list.writer().print("IP:{s}", .{entry});
+        const text = try std.fmt.allocPrint(list.allocator, "IP:{s}", .{entry});
+        try list.appendSlice(text);
     } else {
-        try list.writer().print("DNS:{s}", .{entry});
+        const text = try std.fmt.allocPrint(list.allocator, "DNS:{s}", .{entry});
+        try list.appendSlice(text);
     }
 }
 
@@ -328,7 +331,7 @@ fn fingerprint(cert: *c.X509) [64]u8 {
     var digest: [32]u8 = undefined;
     var len: c_uint = 0;
     if (c.X509_digest(cert, c.EVP_sha256(), &digest, &len) != 1) {
-        return [_]u8{'0'} ** 64;
+        return @splat('0');
     }
     return std.fmt.bytesToHex(digest, .lower);
 }

@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const exec = @import("shared").exec;
 
 const managed_path = "/etc/fail2ban/jail.d/99-hampanel.local";
@@ -42,19 +43,19 @@ pub fn isActive(allocator: std.mem.Allocator) bool {
 }
 
 pub fn statePath(allocator: std.mem.Allocator, data_dir: []const u8) ![]const u8 {
-    return std.fs.path.join(allocator, &.{ data_dir, "software", "fail2ban.json" });
+    return compat.path.join(allocator, &.{ data_dir, "software", "fail2ban.json" });
 }
 
 pub fn isInitialized(allocator: std.mem.Allocator, data_dir: []const u8) bool {
     const path = statePath(allocator, data_dir) catch return false;
-    std.fs.cwd().access(path, .{}) catch return false;
+    compat.cwd().access(path, .{}) catch return false;
     return true;
 }
 
 pub fn initialize(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
     if (version(allocator).len == 0) return error.NotInstalled;
 
-    const previous = std.fs.cwd().readFileAlloc(allocator, managed_path, 1024 * 1024) catch null;
+    const previous = compat.cwd().readFileAlloc(allocator, managed_path, 1024 * 1024) catch null;
     _ = exec.run(allocator, &.{ "systemctl", "stop", service_name }, 256 * 1024) catch {};
 
     const config = try render(allocator, 3600, 600, 5);
@@ -154,7 +155,7 @@ pub fn setLimits(
     if (bantime < 60 or bantime > 31_536_000) return error.InvalidLimits;
     if (findtime < 60 or findtime > 31_536_000) return error.InvalidLimits;
 
-    const previous = std.fs.cwd().readFileAlloc(allocator, managed_path, 1024 * 1024) catch null;
+    const previous = compat.cwd().readFileAlloc(allocator, managed_path, 1024 * 1024) catch null;
     const config = try render(allocator, bantime, findtime, maxretry);
     try writeManaged(config);
 
@@ -197,9 +198,9 @@ fn render(allocator: std.mem.Allocator, bantime: u32, findtime: u32, maxretry: u
 }
 
 fn writeManaged(content: []const u8) !void {
-    const dir = std.fs.path.dirname(managed_path) orelse "/etc/fail2ban/jail.d";
-    try std.fs.cwd().makePath(dir);
-    var file = try std.fs.createFileAbsolute(managed_path, .{ .truncate = true, .mode = 0o644 });
+    const dir = compat.path.dirname(managed_path) orelse "/etc/fail2ban/jail.d";
+    try compat.cwd().makePath(dir);
+    var file = try compat.createFileAbsolute(managed_path, .{ .truncate = true, .mode = 0o644 });
     defer file.close();
     try file.writeAll(content);
     file.chmod(0o644) catch {};
@@ -209,27 +210,27 @@ fn restore(previous: ?[]const u8) void {
     if (previous) |content| {
         writeManaged(content) catch {};
     } else {
-        std.fs.deleteFileAbsolute(managed_path) catch {};
+        compat.deleteFileAbsolute(managed_path) catch {};
     }
 }
 
 fn writeState(allocator: std.mem.Allocator, data_dir: []const u8) !void {
     const path = try statePath(allocator, data_dir);
-    const dir = std.fs.path.dirname(path) orelse data_dir;
-    try std.fs.cwd().makePath(dir);
+    const dir = compat.path.dirname(path) orelse data_dir;
+    try compat.cwd().makePath(dir);
 
     const State = struct {
         initialized_at: i64,
         service: []const u8,
         managed_file: []const u8,
     };
-    const json = try std.json.stringifyAlloc(allocator, State{
-        .initialized_at = std.time.timestamp(),
+    const json = try std.json.Stringify.valueAlloc(allocator, State{
+        .initialized_at = compat.timestamp(),
         .service = service_name,
         .managed_file = managed_path,
     }, .{ .whitespace = .indent_2 });
 
-    var file = try std.fs.createFileAbsolute(path, .{ .truncate = true, .mode = 0o600 });
+    var file = try compat.createFileAbsolute(path, .{ .truncate = true, .mode = 0o600 });
     defer file.close();
     try file.writeAll(json);
 }
@@ -240,7 +241,7 @@ fn parseJails(allocator: std.mem.Allocator, list_output: []const u8) ![]Jail {
     var rest = list_output[marker_index + marker.len ..];
     if (std.mem.indexOfScalar(u8, rest, '\n')) |end| rest = rest[0..end];
 
-    var jails = std.ArrayList(Jail).init(allocator);
+    var jails = std.array_list.Managed(Jail).init(allocator);
     var names = std.mem.splitScalar(u8, rest, ',');
     while (names.next()) |raw_name| {
         const name = std.mem.trim(u8, raw_name, " \t\r");
@@ -281,7 +282,7 @@ fn parseJail(allocator: std.mem.Allocator, name: []const u8) !Jail {
             jail.total_banned = parseNumber(line[index + "Total banned:".len ..]);
         } else if (std.mem.indexOf(u8, line, "Banned IP list:")) |index| {
             const ips_text = std.mem.trim(u8, line[index + "Banned IP list:".len ..], " \t\r");
-            var ips = std.ArrayList([]const u8).init(allocator);
+            var ips = std.array_list.Managed([]const u8).init(allocator);
             var tokens = std.mem.tokenizeAny(u8, ips_text, " \t");
             while (tokens.next()) |ip| {
                 if (ips.items.len >= 200) break;
@@ -313,7 +314,7 @@ fn validJail(value: []const u8) bool {
 }
 
 fn validIp(value: []const u8) bool {
-    _ = std.net.Address.parseIp(value, 0) catch return false;
+    _ = std.Io.net.IpAddress.parse(value, 0) catch return false;
     return true;
 }
 

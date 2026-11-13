@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const builtin = @import("builtin");
 
 pub const default_dir = if (builtin.os.tag == .windows) "C:\\ProgramData\\hampanel" else "/etc/hampanel";
@@ -30,7 +31,7 @@ pub const Config = struct {
     }
 
     pub fn load(allocator: std.mem.Allocator, path: []const u8) !Config {
-        const file = std.fs.cwd().openFile(path, .{}) catch |e| switch (e) {
+        const file = compat.cwd().openFile(path, .{}) catch |e| switch (e) {
             error.FileNotFound => return Config{},
             else => return e,
         };
@@ -43,12 +44,12 @@ pub const Config = struct {
     }
 
     pub fn save(self: Config, allocator: std.mem.Allocator, path: []const u8) !void {
-        if (std.fs.path.dirname(path)) |dir| {
-            try std.fs.cwd().makePath(dir);
+        if (compat.path.dirname(path)) |dir| {
+            try compat.cwd().makePath(dir);
         }
-        const body = try std.json.stringifyAlloc(allocator, self, .{ .whitespace = .indent_2 });
+        const body = try std.json.Stringify.valueAlloc(allocator, self, .{ .whitespace = .indent_2 });
         defer allocator.free(body);
-        var file = try std.fs.cwd().createFile(path, .{ .mode = 0o600 });
+        var file = try compat.cwd().createFile(path, .{ .mode = 0o600 });
         defer file.close();
         try file.writeAll(body);
         try file.writeAll("\n");

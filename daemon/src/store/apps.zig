@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const catalog = @import("catalog.zig");
 const exec = @import("shared").exec;
 
@@ -21,12 +22,12 @@ pub const DeployResult = struct {
 };
 
 pub fn composePath(allocator: std.mem.Allocator, data_dir: []const u8, app: *const catalog.App) ![]const u8 {
-    return std.fs.path.join(allocator, &.{ data_dir, "apps", app.slug, "compose.yml" });
+    return compat.path.join(allocator, &.{ data_dir, "apps", app.slug, "compose.yml" });
 }
 
 pub fn installed(allocator: std.mem.Allocator, data_dir: []const u8, app: *const catalog.App) bool {
     const path = composePath(allocator, data_dir, app) catch return false;
-    std.fs.cwd().access(path, .{}) catch return false;
+    compat.cwd().access(path, .{}) catch return false;
     return true;
 }
 
@@ -47,10 +48,10 @@ fn composeArgs(
     extra: []const []const u8,
 ) ![]const []const u8 {
     const path = try composePath(allocator, data_dir, app);
-    std.fs.cwd().access(path, .{}) catch return error.NotInstalled;
+    compat.cwd().access(path, .{}) catch return error.NotInstalled;
     const project = try std.fmt.allocPrint(allocator, "hampanel-{s}", .{app.slug});
 
-    var argv = std.ArrayList([]const u8).init(allocator);
+    var argv = std.array_list.Managed([]const u8).init(allocator);
     try argv.appendSlice(try composeCommand(allocator));
     try argv.appendSlice(&.{ "-f", path, "-p", project });
     try argv.appendSlice(extra);
@@ -70,7 +71,7 @@ pub fn deploy(
     provided: *const std.StringHashMap([]const u8),
 ) !DeployResult {
     var values = std.StringHashMap([]const u8).init(allocator);
-    var applied = std.ArrayList(AppliedParam).init(allocator);
+    var applied = std.array_list.Managed(AppliedParam).init(allocator);
 
     for (app.params) |param| {
         var value = provided.get(param.key) orelse "";
@@ -86,11 +87,11 @@ pub fn deploy(
 
     const rendered = try render(allocator, app.compose, app.params, &values);
     const path = try composePath(allocator, data_dir, app);
-    if (std.fs.path.dirname(path)) |dir| {
-        try std.fs.cwd().makePath(dir);
+    if (compat.path.dirname(path)) |dir| {
+        try compat.cwd().makePath(dir);
     }
 
-    var file = try std.fs.createFileAbsolute(path, .{ .truncate = true, .mode = 0o600 });
+    var file = try compat.createFileAbsolute(path, .{ .truncate = true, .mode = 0o600 });
     defer file.close();
     try file.writeAll(rendered);
 
@@ -135,9 +136,9 @@ pub fn remove(allocator: std.mem.Allocator, data_dir: []const u8, app: *const ca
 
     if (ok) {
         const path = try composePath(allocator, data_dir, app);
-        std.fs.deleteFileAbsolute(path) catch {};
-        if (std.fs.path.dirname(path)) |dir| {
-            std.fs.deleteTreeAbsolute(dir) catch {};
+        compat.deleteFileAbsolute(path) catch {};
+        if (compat.path.dirname(path)) |dir| {
+            compat.deleteTreeAbsolute(dir) catch {};
         }
     }
 
@@ -161,7 +162,7 @@ fn render(
 }
 
 fn replaceAll(allocator: std.mem.Allocator, input: []const u8, needle: []const u8, replacement: []const u8) ![]u8 {
-    var out = std.ArrayList(u8).init(allocator);
+    var out = std.array_list.Managed(u8).init(allocator);
     var cursor: usize = 0;
     while (std.mem.indexOfPos(u8, input, cursor, needle)) |index| {
         try out.appendSlice(input[cursor..index]);
@@ -195,7 +196,7 @@ fn safeValueChar(ch: u8) bool {
 
 fn randomPassword(allocator: std.mem.Allocator) ![]const u8 {
     var raw: [16]u8 = undefined;
-    std.crypto.random.bytes(&raw);
+    compat.randomBytes(&raw);
     return std.fmt.allocPrint(allocator, "{s}", .{std.fmt.bytesToHex(raw, .lower)});
 }
 

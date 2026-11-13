@@ -2,6 +2,7 @@ const std = @import("std");
 
 test {
     _ = @import("config.zig");
+    _ = @import("compat");
     _ = @import("log.zig");
     _ = @import("openssl.zig");
     _ = @import("tls.zig");
@@ -20,8 +21,8 @@ test "config defaults survive empty file" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    try tmp.dir.writeFile(.{ .sub_path = "config.json", .data = "{}" });
-    const path = try tmp.dir.realpathAlloc(allocator, "config.json");
+    try tmp.dir.writeFile(std.testing.io, .{ .sub_path = "config.json", .data = "{}" });
+    const path = try tmp.dir.realPathFileAlloc(std.testing.io, "config.json", allocator);
     defer allocator.free(path);
 
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -35,7 +36,7 @@ test "pki issues a verifiable chain" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const dir = try tmp.dir.realpathAlloc(allocator, ".");
+    const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(dir);
 
     var arena = std.heap.ArenaAllocator.init(allocator);

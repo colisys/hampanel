@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const exec = @import("shared").exec;
 const validate = @import("shared").validate;
 
@@ -26,9 +27,9 @@ pub const Outcome = struct {
 };
 
 pub fn list(allocator: std.mem.Allocator) !SiteList {
-    var sites = std.ArrayList(Site).init(allocator);
+    var sites = std.array_list.Managed(Site).init(allocator);
 
-    var dir = std.fs.openDirAbsolute(conf_dir, .{ .iterate = true }) catch |err| switch (err) {
+    var dir = compat.openDirAbsolute(conf_dir, .{ .iterate = true }) catch |err| switch (err) {
         error.FileNotFound => {
             return .{ .available = nginxAvailable(allocator), .dir = conf_dir, .sites = sites.items };
         },
@@ -49,8 +50,8 @@ pub fn list(allocator: std.mem.Allocator) !SiteList {
             item.name[0 .. item.name.len - ".conf.disabled".len];
         if (name.len == 0 or !validate.isSlug(name)) continue;
 
-        const full = try std.fs.path.join(allocator, &.{ conf_dir, item.name });
-        const contents = std.fs.cwd().readFileAlloc(allocator, full, 512 * 1024) catch continue;
+        const full = try compat.path.join(allocator, &.{ conf_dir, item.name });
+        const contents = compat.cwd().readFileAlloc(allocator, full, 512 * 1024) catch continue;
         const parsed = parseConfig(allocator, contents) catch continue;
 
         try sites.append(.{
@@ -80,12 +81,13 @@ pub fn create(
     port: u16,
 ) !Outcome {
     const path = try std.fmt.allocPrint(allocator, "{s}/{s}.conf", .{ conf_dir, name });
-    try std.fs.cwd().makePath(conf_dir);
+    try compat.cwd().makePath(conf_dir);
 
-    const previous: ?[]u8 = std.fs.cwd().readFileAlloc(allocator, path, 512 * 1024) catch null;
+    const previous: ?[]u8 = compat.cwd().readFileAlloc(allocator, path, 512 * 1024) catch null;
 
-    var config = std.ArrayList(u8).init(allocator);
-    const writer = config.writer();
+    var config: std.Io.Writer.Allocating = .init(allocator);
+    defer config.deinit();
+    const writer = &config.writer;
     try writer.print("# Managed by Hampanel. Manual edits may be overwritten.\n", .{});
     try writer.print("server {{\n", .{});
     try writer.print("    listen {d};\n", .{port});
@@ -100,16 +102,16 @@ pub fn create(
     try writer.print("    }}\n", .{});
     try writer.print("}}\n", .{});
 
-    var file = try std.fs.createFileAbsolute(path, .{ .truncate = true, .mode = 0o644 });
+    var file = try compat.createFileAbsolute(path, .{ .truncate = true, .mode = 0o644 });
     defer file.close();
-    try file.writeAll(config.items);
+    try file.writeAll(config.written());
 
     const check = nginxTest(allocator);
     if (!check.ok) {
         if (previous) |contents| {
             writeRaw(path, contents) catch {};
         } else {
-            std.fs.deleteFileAbsolute(path) catch {};
+            compat.deleteFileAbsolute(path) catch {};
         }
         return .{ .ok = false, .output = check.output };
     }
@@ -124,18 +126,18 @@ pub fn toggle(allocator: std.mem.Allocator, name: []const u8, enabled: bool) !Ou
 
     if (enabled) {
         if (!fileExists(disabled_path)) return error.SiteNotFound;
-        try std.fs.renameAbsolute(disabled_path, enabled_path);
+        try compat.renameAbsolute(disabled_path, enabled_path);
     } else {
         if (!fileExists(enabled_path)) return error.SiteNotFound;
-        try std.fs.renameAbsolute(enabled_path, disabled_path);
+        try compat.renameAbsolute(enabled_path, disabled_path);
     }
 
     const check = nginxTest(allocator);
     if (!check.ok) {
         if (enabled) {
-            std.fs.renameAbsolute(enabled_path, disabled_path) catch {};
+            compat.renameAbsolute(enabled_path, disabled_path) catch {};
         } else {
-            std.fs.renameAbsolute(disabled_path, enabled_path) catch {};
+            compat.renameAbsolute(disabled_path, enabled_path) catch {};
         }
         return .{ .ok = false, .output = check.output };
     }
@@ -149,11 +151,11 @@ pub fn destroy(allocator: std.mem.Allocator, name: []const u8) !Outcome {
 
     var removed = false;
     if (fileExists(enabled_path)) {
-        try std.fs.deleteFileAbsolute(enabled_path);
+        try compat.deleteFileAbsolute(enabled_path);
         removed = true;
     }
     if (fileExists(disabled_path)) {
-        try std.fs.deleteFileAbsolute(disabled_path);
+        try compat.deleteFileAbsolute(disabled_path);
         removed = true;
     }
     if (!removed) return error.SiteNotFound;
@@ -185,7 +187,7 @@ fn parseConfig(allocator: std.mem.Allocator, contents: []const u8) !struct {
     root: []const u8,
     listen: []const u8,
 } {
-    var domains = std.ArrayList([]const u8).init(allocator);
+    var domains = std.array_list.Managed([]const u8).init(allocator);
     var root: []const u8 = "";
     var listen: []const u8 = "";
 
@@ -220,12 +222,12 @@ fn nginxAvailable(allocator: std.mem.Allocator) bool {
 }
 
 fn fileExists(path: []const u8) bool {
-    std.fs.cwd().access(path, .{}) catch return false;
+    compat.cwd().access(path, .{}) catch return false;
     return true;
 }
 
 fn writeRaw(path: []const u8, data: []const u8) !void {
-    var file = try std.fs.createFileAbsolute(path, .{ .truncate = true, .mode = 0o644 });
+    var file = try compat.createFileAbsolute(path, .{ .truncate = true, .mode = 0o644 });
     defer file.close();
     try file.writeAll(data);
 }

@@ -12,7 +12,7 @@
 ## 前置条件
 
 - Windows 10/11 或 Windows Server 2019+
-- Zig 0.14+（未安装时安装脚本会下载）
+- Zig 0.17.1+（未安装时安装脚本会下载）
 - OpenSSL 开发库：`vcpkg install openssl:x64-windows`，并把
   `installed\x64-windows` 作为 `-OpenSslDir`
 - 管理员 PowerShell

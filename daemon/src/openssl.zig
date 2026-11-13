@@ -1,13 +1,6 @@
 const std = @import("std");
 
-pub const c = @cImport({
-    @cInclude("openssl/ssl.h");
-    @cInclude("openssl/err.h");
-    @cInclude("openssl/pem.h");
-    @cInclude("openssl/x509v3.h");
-    @cInclude("openssl/buffer.h");
-    @cInclude("openssl/rand.h");
-});
+pub const c = @import("openssl_c");
 
 pub fn lastError(buf: []u8) []const u8 {
     const code = c.ERR_get_error();

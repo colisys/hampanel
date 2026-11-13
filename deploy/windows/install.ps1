@@ -11,14 +11,15 @@ param(
     [string]$EntryPrefix = "",
     [string[]]$San = @(),
     [string]$OpenSslDir = "",
-    [string]$ZigVersion = "0.14.1",
+    [string]$ZigVersion = "0.17.1",
     [string]$ServiceName = "hampanel",
     [ValidateSet("binary", "source")]
     [string]$Mode = "binary",
-    [string]$Channel = "stable",
+    [string]$Channel = "",
     [string]$Repo = "colisys/hampanel",
-    [string]$Ref = "nightly",
+    [string]$Ref = "",
     [string]$ReleaseBase = "",
+    [string]$SourceBase = "",
     [string]$Binary = "",
     [switch]$InstallDriver,
     [switch]$SkipBuild,
@@ -54,6 +55,7 @@ $exePath = Join-Path $InstallDir "hampaneld.exe"
 # ------------------------------------------------------------------- install
 $builtExe = ""
 if ($Mode -eq "binary") {
+    if (-not $Channel) { $Channel = "stable" }
     if (-not $ReleaseBase) {
         if ($Channel -eq "stable" -or $Channel -eq "latest") {
             $ReleaseBase = "https://github.com/$Repo/releases/latest/download"
@@ -64,6 +66,11 @@ if ($Mode -eq "binary") {
     $asset = "hampanel-daemon-windows-x86_64.zip"
     $tmp = Join-Path $env:TEMP "hampanel-release"
     $null = New-Item -ItemType Directory -Force -Path $tmp
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri "$ReleaseBase/version.txt" -OutFile (Join-Path $tmp "version.txt")
+    } catch {
+        throw "no release found for channel $Channel; use -Channel nightly for prereleases or publish a stable tag"
+    }
     $zipPath = Join-Path $tmp $asset
     $sumsPath = Join-Path $tmp "SHA256SUMS.txt"
     Write-Step "Downloading $ReleaseBase/$asset"
@@ -83,8 +90,25 @@ if ($Mode -eq "binary") {
         Copy-Item -Destination $InstallDir -Force
 } else {
     if (-not $Source) {
-        $ref = if ($Ref) { $Ref } else { "nightly" }
-        if ($ref -match '^v?\d+\.\d+\.\d+') {
+        if (-not $Channel -and -not $Ref) {
+            throw "source builds require -Channel stable|nightly or -Ref <tag|branch>"
+        }
+        $ref = $Ref
+        if (-not $ref) {
+            if ($Channel -eq "nightly") {
+                $ref = "nightly"
+            } elseif ($Channel -eq "stable" -or $Channel -eq "latest") {
+                $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" `
+                    -Headers @{ "Accept" = "application/vnd.github+json"; "User-Agent" = "hampanel-install" }
+                $ref = $release.tag_name
+                if (-not $ref) { throw "no stable release tag found; pass -Ref <tag>" }
+            } else {
+                throw "unknown channel $Channel; use stable, nightly or -Ref <tag|branch>"
+            }
+        }
+        if ($SourceBase) {
+            $srcUrl = "$($SourceBase.TrimEnd('/'))/$ref.tar.gz"
+        } elseif ($ref -match '^v?\d+\.\d+\.\d+') {
             $srcUrl = "https://github.com/$Repo/archive/refs/tags/$ref.tar.gz"
         } else {
             $srcUrl = "https://github.com/$Repo/archive/refs/heads/$ref.tar.gz"

@@ -26,9 +26,9 @@ jobs:
         id: commit
         run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Install Zig 0.14.1
+      - name: Install Zig 0.17.1
         run: |
-          curl -fsSL https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz -o /tmp/zig.tar.xz
+          curl -fsSL https://ziglang.org/download/0.17.1/zig-x86_64-linux-0.17.1.tar.xz -o /tmp/zig.tar.xz
           mkdir -p "$HOME/zig"
           tar -xJf /tmp/zig.tar.xz -C "$HOME/zig" --strip-components=1
           echo "$HOME/zig" >> "$GITHUB_PATH"
@@ -79,13 +79,13 @@ jobs:
         shell: bash
         run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Install Zig 0.14.1
+      - name: Install Zig 0.17.1
         shell: pwsh
         run: |
           $dir = "$env:RUNNER_TEMP\zig"
-          Invoke-WebRequest -Uri "https://ziglang.org/download/0.14.1/zig-x86_64-windows-0.14.1.zip" -OutFile "$env:RUNNER_TEMP\zig.zip"
+          Invoke-WebRequest -Uri "https://ziglang.org/download/0.17.1/zig-x86_64-windows-0.17.1.zip" -OutFile "$env:RUNNER_TEMP\zig.zip"
           Expand-Archive "$env:RUNNER_TEMP\zig.zip" -DestinationPath $dir -Force
-          "$dir\zig-x86_64-windows-0.14.1" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "$dir\zig-x86_64-windows-0.17.1" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
       - name: Cache OpenSSL
         uses: actions/cache@v4

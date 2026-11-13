@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const common = @import("common.zig");
 const c = common.c;
 
@@ -15,8 +16,8 @@ pub const Meta = struct {
 pub fn resolve(allocator: std.mem.Allocator, raw: []const u8) ![]const u8 {
     if (raw.len == 0) return error.InvalidPath;
     if (std.mem.indexOfScalar(u8, raw, 0) != null) return error.InvalidPath;
-    if (!std.fs.path.isAbsolute(raw)) return error.InvalidPath;
-    return std.fs.path.resolve(allocator, &.{raw});
+    if (!compat.path.isAbsolute(raw)) return error.InvalidPath;
+    return compat.path.resolve(allocator, &.{raw});
 }
 
 pub fn stat(allocator: std.mem.Allocator, path: []const u8) !Meta {
@@ -50,7 +51,7 @@ pub fn secureDir(path: []const u8) !void {
     _ = path;
 }
 
-pub fn secureFile(file: std.fs.File, mode: std.fs.File.Mode) !void {
+pub fn secureFile(file: compat.File, mode: compat.File.Mode) !void {
     _ = file;
     _ = mode;
 }

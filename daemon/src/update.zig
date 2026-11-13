@@ -1,6 +1,7 @@
 // Built-in update channel. Binary installs can query GitHub releases and apply
 // updates; source installs have updates disabled and refuse to schedule checks.
 const std = @import("std");
+const compat = @import("compat");
 const builtin = @import("builtin");
 const config = @import("config.zig");
 const exec = @import("shared").exec;
@@ -63,7 +64,7 @@ pub fn isUpdateCommand(command: []const u8) bool {
 
 pub fn check(allocator: std.mem.Allocator, cfg: config.Config) State {
     var state = State{
-        .checked_at = std.time.timestamp(),
+        .checked_at = compat.timestamp(),
         .current_version = version.version,
         .channel = cfg.update_channel,
         .install_mode = cfg.install_mode,
@@ -89,7 +90,7 @@ pub fn check(allocator: std.mem.Allocator, cfg: config.Config) State {
 pub fn loadState(allocator: std.mem.Allocator, cfg: config.Config) State {
     const path = statePath(allocator, cfg) catch return .{};
     defer allocator.free(path);
-    const data = std.fs.cwd().readFileAlloc(allocator, path, 256 * 1024) catch return .{};
+    const data = compat.cwd().readFileAlloc(allocator, path, 256 * 1024) catch return .{};
     defer allocator.free(data);
     return std.json.parseFromSliceLeaky(State, allocator, data, .{
         .ignore_unknown_fields = true,
@@ -106,33 +107,33 @@ pub fn apply(allocator: std.mem.Allocator, cfg: config.Config) ApplyError!ApplyO
 
     const workdir = workDir(allocator, cfg) catch return error.DownloadFailed;
     defer allocator.free(workdir);
-    std.fs.cwd().deleteTree(workdir) catch {};
-    std.fs.cwd().makePath(workdir) catch return error.DownloadFailed;
+    compat.cwd().deleteTree(workdir) catch {};
+    compat.cwd().makePath(workdir) catch return error.DownloadFailed;
 
     const asset = assetName();
     const base = releaseBase(allocator, cfg) catch return error.OutOfMemory;
     const archive_url = std.fmt.allocPrint(allocator, "{s}/{s}", .{ base, asset }) catch return error.OutOfMemory;
     const sums_url = std.fmt.allocPrint(allocator, "{s}/SHA256SUMS.txt", .{base}) catch return error.OutOfMemory;
-    const archive_path = std.fs.path.join(allocator, &.{ workdir, asset }) catch return error.OutOfMemory;
-    const sums_path = std.fs.path.join(allocator, &.{ workdir, "SHA256SUMS.txt" }) catch return error.OutOfMemory;
+    const archive_path = compat.path.join(allocator, &.{ workdir, asset }) catch return error.OutOfMemory;
+    const sums_path = compat.path.join(allocator, &.{ workdir, "SHA256SUMS.txt" }) catch return error.OutOfMemory;
 
     download(allocator, archive_url, archive_path) catch return error.DownloadFailed;
     download(allocator, sums_url, sums_path) catch return error.ChecksumMismatch;
-    const sums = std.fs.cwd().readFileAlloc(allocator, sums_path, 1024 * 1024) catch return error.ChecksumMismatch;
+    const sums = compat.cwd().readFileAlloc(allocator, sums_path, 1024 * 1024) catch return error.ChecksumMismatch;
     const expected = expectedHash(sums, asset) orelse return error.ChecksumMismatch;
     if (!hashMatches(archive_path, expected)) return error.ChecksumMismatch;
 
     if (builtin.os.tag == .linux) {
         extractLinux(allocator, archive_path, workdir) catch return error.ExtractFailed;
         replaceLinux(allocator, workdir, cfg) catch return error.ReplaceFailed;
-        std.fs.cwd().deleteTree(workdir) catch {};
+        compat.cwd().deleteTree(workdir) catch {};
     } else {
         extractWindows(allocator, archive_path, workdir) catch return error.ExtractFailed;
         replaceWindows(allocator, workdir, cfg) catch return error.ReplaceFailed;
     }
 
     const state = State{
-        .checked_at = std.time.timestamp(),
+        .checked_at = compat.timestamp(),
         .current_version = latest,
         .latest_version = latest,
         .update_available = false,
@@ -164,8 +165,9 @@ pub fn installSchedule(
             .{ self_exe, config_path },
         );
         const result = try exec.run(allocator, &.{
-            "schtasks.exe", "/Create", "/F", "/TN", update_task_name, "/TR", task_run,
-            "/SC",    "DAILY",   "/ST", "04:17", "/RU", "SYSTEM", "/RL", "HIGHEST",
+            "schtasks.exe", "/Create", "/F",  "/TN",   update_task_name, "/TR",    task_run,
+            "/SC",          "DAILY",   "/ST", "04:17", "/RU",            "SYSTEM", "/RL",
+            "HIGHEST",
         }, 1024 * 1024);
         if (!result.ok()) return .{ .installed = false, .message = result.stderr };
         return .{ .installed = true, .message = "scheduled daily update check" };
@@ -180,8 +182,8 @@ pub fn installSchedule(
                 "17 4 * * * root {s} update --auto --config {s}\n",
             .{ self_exe, config_path },
         );
-        if (std.fs.path.dirname(update_cron_path)) |dir| std.fs.cwd().makePath(dir) catch {};
-        var file = std.fs.cwd().createFile(update_cron_path, .{ .mode = 0o644 }) catch
+        if (compat.path.dirname(update_cron_path)) |dir| compat.cwd().makePath(dir) catch {};
+        var file = compat.cwd().createFile(update_cron_path, .{ .mode = 0o644 }) catch
             return .{ .installed = false, .message = "cannot write update cron file" };
         defer file.close();
         file.writeAll(body) catch return .{ .installed = false, .message = "cannot write update cron file" };
@@ -204,7 +206,7 @@ pub fn removeSchedule(allocator: std.mem.Allocator) !ScheduleOutcome {
     if (builtin.os.tag != .linux) return error.UnsupportedPlatform;
 
     if (isRoot()) {
-        std.fs.deleteFileAbsolute(update_cron_path) catch {};
+        compat.deleteFileAbsolute(update_cron_path) catch {};
         return .{ .installed = false, .message = "update check removed" };
     }
 
@@ -222,7 +224,7 @@ pub fn scheduleInstalled(allocator: std.mem.Allocator) bool {
     }
     if (builtin.os.tag != .linux) return false;
     if (isRoot()) {
-        std.fs.cwd().access(update_cron_path, .{}) catch return false;
+        compat.cwd().access(update_cron_path, .{}) catch return false;
         return true;
     }
     const existing = readUserCrontab(allocator);
@@ -272,9 +274,8 @@ fn fetchLatestVersion(allocator: std.mem.Allocator, cfg: config.Config) ![]const
 
 fn curlText(allocator: std.mem.Allocator, url: []const u8) ![]const u8 {
     const result = try exec.run(allocator, &.{
-        "curl", "-fsSL", "--retry", "2", "--connect-timeout", "15", "--max-time", "30",
-        "-H", "User-Agent: hampaneld",
-        url,
+        "curl", "-fsSL",                 "--retry", "2", "--connect-timeout", "15", "--max-time", "30",
+        "-H",   "User-Agent: hampaneld", url,
     }, 256 * 1024);
     if (!result.ok()) return error.HttpFailed;
     return result.stdout;
@@ -282,8 +283,8 @@ fn curlText(allocator: std.mem.Allocator, url: []const u8) ![]const u8 {
 
 fn download(allocator: std.mem.Allocator, url: []const u8, path: []const u8) !void {
     const result = try exec.run(allocator, &.{
-        "curl", "-fsSL", "--retry", "2", "--connect-timeout", "15", "--max-time", "600",
-        "-H", "User-Agent: hampaneld", "-o", path, url,
+        "curl", "-fsSL",                 "--retry", "2",  "--connect-timeout", "15", "--max-time", "600",
+        "-H",   "User-Agent: hampaneld", "-o",      path, url,
     }, 256 * 1024);
     if (!result.ok()) return error.DownloadFailed;
 }
@@ -301,14 +302,14 @@ fn expectedHash(sums: []const u8, asset: []const u8) ?[]const u8 {
         var tokens = std.mem.tokenizeAny(u8, line, " \t");
         const hash = tokens.next() orelse continue;
         const name = tokens.next() orelse continue;
-        const clean = std.mem.trimLeft(u8, name, "*");
+        const clean = std.mem.trimStart(u8, name, "*");
         if (std.mem.eql(u8, clean, asset)) return hash;
     }
     return null;
 }
 
 fn hashMatches(path: []const u8, expected: []const u8) bool {
-    var file = std.fs.cwd().openFile(path, .{}) catch return false;
+    var file = compat.cwd().openFile(path, .{}) catch return false;
     defer file.close();
     var hasher = std.crypto.hash.sha2.Sha256.init(.{});
     var buf: [64 * 1024]u8 = undefined;
@@ -329,23 +330,23 @@ fn extractLinux(allocator: std.mem.Allocator, archive: []const u8, workdir: []co
 }
 
 fn replaceLinux(allocator: std.mem.Allocator, workdir: []const u8, cfg: config.Config) !void {
-    const self_exe = try std.fs.selfExePathAlloc(allocator);
-    const new_bin = try std.fs.path.join(allocator, &.{ workdir, "hampaneld" });
+    const self_exe = try compat.selfExePathAlloc(allocator);
+    const new_bin = try compat.path.join(allocator, &.{ workdir, "hampaneld" });
     const staged = try std.fmt.allocPrint(allocator, "{s}.new", .{self_exe});
-    std.fs.cwd().deleteFile(staged) catch {};
-    std.fs.cwd().copyFile(new_bin, std.fs.cwd(), staged, .{}) catch return error.ReplaceFailed;
+    compat.cwd().deleteFile(staged) catch {};
+    compat.cwd().copyFile(new_bin, compat.cwd(), staged, .{}) catch return error.ReplaceFailed;
     setExecutable(staged) catch return error.ReplaceFailed;
-    std.fs.cwd().rename(staged, self_exe) catch return error.ReplaceFailed;
+    compat.cwd().rename(staged, self_exe) catch return error.ReplaceFailed;
 
-    const risk_new = std.fs.path.join(allocator, &.{ workdir, "hampanel-risk" }) catch return;
-    if (std.fs.path.dirname(self_exe)) |dir| {
-        const risk_old = std.fs.path.join(allocator, &.{ dir, "hampanel-risk" }) catch return;
-        if (std.fs.cwd().access(risk_old, .{})) |_| {
+    const risk_new = compat.path.join(allocator, &.{ workdir, "hampanel-risk" }) catch return;
+    if (compat.path.dirname(self_exe)) |dir| {
+        const risk_old = compat.path.join(allocator, &.{ dir, "hampanel-risk" }) catch return;
+        if (compat.cwd().access(risk_old, .{})) |_| {
             const staged_risk = std.fmt.allocPrint(allocator, "{s}.new", .{risk_old}) catch return;
-            std.fs.cwd().deleteFile(staged_risk) catch {};
-            std.fs.cwd().copyFile(risk_new, std.fs.cwd(), staged_risk, .{}) catch return;
+            compat.cwd().deleteFile(staged_risk) catch {};
+            compat.cwd().copyFile(risk_new, compat.cwd(), staged_risk, .{}) catch return;
             setExecutable(staged_risk) catch return;
-            std.fs.cwd().rename(staged_risk, risk_old) catch return;
+            compat.cwd().rename(staged_risk, risk_old) catch return;
         } else |_| {}
     }
 
@@ -365,10 +366,10 @@ fn extractWindows(allocator: std.mem.Allocator, archive: []const u8, workdir: []
 }
 
 fn replaceWindows(allocator: std.mem.Allocator, workdir: []const u8, cfg: config.Config) !void {
-    const self_exe = try std.fs.selfExePathAlloc(allocator);
-    const install_dir = std.fs.path.dirname(self_exe) orelse return error.ReplaceFailed;
+    const self_exe = try compat.selfExePathAlloc(allocator);
+    const install_dir = compat.path.dirname(self_exe) orelse return error.ReplaceFailed;
 
-    const script_path = try std.fs.path.join(allocator, &.{ workdir, "apply-update.cmd" });
+    const script_path = try compat.path.join(allocator, &.{ workdir, "apply-update.cmd" });
     const script = try std.fmt.allocPrint(
         allocator,
         "@echo off\r\n" ++
@@ -379,7 +380,7 @@ fn replaceWindows(allocator: std.mem.Allocator, workdir: []const u8, cfg: config
             "del \"%~f0\"\r\n",
         .{ cfg.service_name, workdir, install_dir, cfg.service_name },
     );
-    var file = std.fs.cwd().createFile(script_path, .{}) catch return error.ReplaceFailed;
+    var file = compat.cwd().createFile(script_path, .{}) catch return error.ReplaceFailed;
     defer file.close();
     file.writeAll(script) catch return error.ReplaceFailed;
 
@@ -388,20 +389,20 @@ fn replaceWindows(allocator: std.mem.Allocator, workdir: []const u8, cfg: config
 }
 
 fn statePath(allocator: std.mem.Allocator, cfg: config.Config) ![]u8 {
-    return std.fs.path.join(allocator, &.{ cfg.data_dir, "update-state.json" });
+    return compat.path.join(allocator, &.{ cfg.data_dir, "update-state.json" });
 }
 
 fn workDir(allocator: std.mem.Allocator, cfg: config.Config) ![]u8 {
-    return std.fs.path.join(allocator, &.{ cfg.data_dir, "update-work" });
+    return compat.path.join(allocator, &.{ cfg.data_dir, "update-work" });
 }
 
 fn saveState(allocator: std.mem.Allocator, cfg: config.Config, state: State) !void {
     const path = try statePath(allocator, cfg);
     defer allocator.free(path);
-    const body = try std.json.stringifyAlloc(allocator, state, .{ .whitespace = .indent_2 });
+    const body = try std.json.Stringify.valueAlloc(allocator, state, .{ .whitespace = .indent_2 });
     defer allocator.free(body);
-    if (std.fs.path.dirname(path)) |dir| try std.fs.cwd().makePath(dir);
-    var file = try std.fs.cwd().createFile(path, .{ .truncate = true, .mode = 0o600 });
+    if (compat.path.dirname(path)) |dir| try compat.cwd().makePath(dir);
+    var file = try compat.cwd().createFile(path, .{ .truncate = true, .mode = 0o600 });
     defer file.close();
     try file.writeAll(body);
     try file.writeAll("\n");
@@ -413,7 +414,7 @@ fn isRoot() bool {
 }
 
 fn setExecutable(path: []const u8) !void {
-    var file = try std.fs.cwd().openFile(path, .{});
+    var file = try compat.cwd().openFile(path, .{});
     defer file.close();
     try file.chmod(0o755);
 }
@@ -425,7 +426,7 @@ fn readUserCrontab(allocator: std.mem.Allocator) []const u8 {
 }
 
 fn rewriteUserCrontab(allocator: std.mem.Allocator, current: []const u8, line: ?[]const u8) ![]const u8 {
-    var out = std.ArrayList(u8).init(allocator);
+    var out = std.array_list.Managed(u8).init(allocator);
     var inside = false;
     var lines = std.mem.splitScalar(u8, current, '\n');
     while (lines.next()) |raw| {
@@ -443,21 +444,23 @@ fn rewriteUserCrontab(allocator: std.mem.Allocator, current: []const u8, line: ?
         try out.append('\n');
     }
     if (line) |value| {
-        try out.writer().print("{s}\n{s}\n{s}\n", .{ update_begin_marker, value, update_end_marker });
+        const block = try std.fmt.allocPrint(allocator, "{s}\n{s}\n{s}\n", .{ update_begin_marker, value, update_end_marker });
+        defer allocator.free(block);
+        try out.appendSlice(block);
     }
     return out.toOwnedSlice();
 }
 
 fn installUserCrontab(allocator: std.mem.Allocator, text: []const u8) !exec.Result {
     var random: [6]u8 = undefined;
-    std.crypto.random.bytes(&random);
+    compat.randomBytes(&random);
     const path = try std.fmt.allocPrint(allocator, "/tmp/hampanel-update-cron-{s}", .{std.fmt.bytesToHex(random, .lower)});
-    errdefer std.fs.deleteFileAbsolute(path) catch {};
-    var file = try std.fs.createFileAbsolute(path, .{ .truncate = true, .mode = 0o600 });
+    errdefer compat.deleteFileAbsolute(path) catch {};
+    var file = try compat.createFileAbsolute(path, .{ .truncate = true, .mode = 0o600 });
     try file.writeAll(text);
     file.close();
     const result = try exec.run(allocator, &.{ "crontab", path }, 1024 * 1024);
-    std.fs.deleteFileAbsolute(path) catch {};
+    compat.deleteFileAbsolute(path) catch {};
     return result;
 }
 
@@ -504,7 +507,7 @@ test "state json round-trip" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
-    const dir = try tmp.dir.realpathAlloc(allocator, ".");
+    const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(dir);
 
     var cfg = config.Config{};

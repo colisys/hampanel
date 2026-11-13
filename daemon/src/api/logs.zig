@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const context = @import("context.zig");
 const platform = @import("../platform/mod.zig");
 
@@ -27,7 +28,7 @@ pub fn tail(ctx: *context.Context) anyerror!void {
 }
 
 pub fn audit(ctx: *context.Context) anyerror!void {
-    const path = try std.fs.path.join(ctx.arena, &.{ ctx.app.config.data_dir, "audit.jsonl" });
+    const path = try compat.path.join(ctx.arena, &.{ ctx.app.config.data_dir, "audit.jsonl" });
     try tailPath(ctx, path);
 }
 
@@ -38,7 +39,7 @@ fn tailPath(ctx: *context.Context, path: []const u8) !void {
         lines = std.math.clamp(lines, 1, 2000);
     }
 
-    var file = std.fs.openFileAbsolute(path, .{}) catch {
+    var file = compat.openFileAbsolute(path, .{}) catch {
         ctx.fail(404, "not_found", "log file not found");
         return;
     };
@@ -55,17 +56,13 @@ fn tailPath(ctx: *context.Context, path: []const u8) !void {
     var truncated = size > window;
 
     if (window > 0) {
-        file.seekFromEnd(-@as(i64, @intCast(window))) catch {
-            ctx.fail(500, "seek_failed", "cannot seek log file");
-            return;
-        };
         const buffer = try ctx.arena.alloc(u8, @intCast(window));
-        const read = file.readAll(buffer) catch {
+        const read = file.readPositionalAll(buffer, size - window) catch {
             ctx.fail(500, "read_failed", "cannot read log file");
             return;
         };
 
-        var collected = std.ArrayList([]const u8).init(ctx.arena);
+        var collected = std.array_list.Managed([]const u8).init(ctx.arena);
         var it = std.mem.splitScalar(u8, buffer[0..read], '\n');
         while (it.next()) |line| try collected.append(line);
 

@@ -95,7 +95,7 @@ pub fn read(conn: *Conn, allocator: std.mem.Allocator, max_body: usize) ReadErro
         query = target[idx + 1 ..];
     }
 
-    var headers = try std.ArrayList(Header).initCapacity(allocator, 8);
+    var headers = try std.array_list.Managed(Header).initCapacity(allocator, 8);
     var header_bytes: usize = 0;
     while (true) {
         const line = conn.readLine(allocator, max_header_bytes) catch |e| switch (e) {

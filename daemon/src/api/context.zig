@@ -38,7 +38,7 @@ pub const Context = struct {
     pub fn jsonStatus(self: *Context, status: u16, value: anytype) !void {
         self.response.status = status;
         self.response.content_type = "application/json";
-        self.response.body = try std.json.stringifyAlloc(self.arena, value, .{});
+        self.response.body = try std.json.Stringify.valueAlloc(self.arena, value, .{});
     }
 
     pub fn empty(self: *Context, status: u16) void {
@@ -49,7 +49,7 @@ pub const Context = struct {
 
     pub fn fail(self: *Context, status: u16, code: []const u8, message: []const u8) void {
         const Body = struct { code: []const u8, message: []const u8 };
-        const body = std.json.stringifyAlloc(self.arena, Body{ .code = code, .message = message }, .{}) catch
+        const body = std.json.Stringify.valueAlloc(self.arena, Body{ .code = code, .message = message }, .{}) catch
             "{\"code\":\"internal\",\"message\":\"out of memory\"}";
         self.response = .{
             .status = status,

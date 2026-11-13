@@ -227,7 +227,7 @@ API Key 写入系统钥匙串；SSH/socat 子进程也由管理端启动，daemo
 `deploy/bootstrap.sh` 在目标机执行，幂等：
 
 1. 识别 `uname -m` / libc，选择 Zig 工具链。
-2. 若系统无 Zig 0.14+，下载官方静态包到 `/opt/hampanel/toolchain`。
+2. 若系统无 Zig 0.17.1+，下载官方静态包到 `/opt/hampanel/toolchain`。
 3. 检查 OpenSSL 开发头文件，按包管理器安装 `libssl-dev` / `openssl-devel`。
 4. 解压源码到 `/opt/hampanel/build`，`zig build -Doptimize=ReleaseSafe`。
 5. 安装二进制、配置目录、systemd 单元。

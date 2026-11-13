@@ -50,7 +50,7 @@ fn matchPattern(
     var pattern_it = std.mem.splitScalar(u8, std.mem.trim(u8, pattern, "/"), '/');
     var path_it = std.mem.splitScalar(u8, std.mem.trim(u8, path, "/"), '/');
 
-    var params = std.ArrayList(context.Param).init(allocator);
+    var params = std.array_list.Managed(context.Param).init(allocator);
     errdefer params.deinit();
 
     while (true) {

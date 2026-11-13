@@ -31,7 +31,7 @@ pub fn status(allocator: std.mem.Allocator) !Status {
     }
 
     const active = std.mem.indexOf(u8, result.stdout, "Status: active") != null;
-    var rules = std.ArrayList(Rule).init(allocator);
+    var rules = std.array_list.Managed(Rule).init(allocator);
 
     var lines = std.mem.splitScalar(u8, result.stdout, '\n');
     while (lines.next()) |raw_line| {
@@ -39,7 +39,7 @@ pub fn status(allocator: std.mem.Allocator) !Status {
         if (!std.mem.startsWith(u8, line, "[")) continue;
         const close = std.mem.indexOfScalar(u8, line, ']') orelse continue;
         const number = std.fmt.parseInt(u32, std.mem.trim(u8, line[1..close], " "), 10) catch continue;
-        line = std.mem.trimLeft(u8, line[close + 1 ..], " ");
+        line = std.mem.trimStart(u8, line[close + 1 ..], " ");
         if (line.len == 0) continue;
 
         var tokens = std.mem.tokenizeAny(u8, line, " \t");
@@ -87,7 +87,7 @@ pub fn add(
     from: []const u8,
     comment: []const u8,
 ) !Outcome {
-    var argv = std.ArrayList([]const u8).init(allocator);
+    var argv = std.array_list.Managed([]const u8).init(allocator);
     try argv.append("ufw");
     if (comment.len > 0) {
         try argv.append("comment");

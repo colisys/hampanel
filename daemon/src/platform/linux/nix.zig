@@ -79,7 +79,7 @@ pub fn run(allocator: std.mem.Allocator, target: []const u8, args: []const []con
     }
 
     const flake = try std.fmt.allocPrint(allocator, "nixpkgs#{s}", .{found.id});
-    var argv = std.ArrayList([]const u8).init(allocator);
+    var argv = std.array_list.Managed([]const u8).init(allocator);
     try argv.appendSlice(&.{
         "nix", experimental, "nix-command flakes",
         "run", flake,        "--",

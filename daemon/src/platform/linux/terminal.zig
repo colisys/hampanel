@@ -1,27 +1,21 @@
 const std = @import("std");
-const c = @cImport({
-    @cInclude("pty.h");
-    @cInclude("unistd.h");
-    @cInclude("sys/ioctl.h");
-    @cInclude("signal.h");
-    @cInclude("stdlib.h");
-});
+const compat = @import("compat");
+const c = @import("terminal_c");
 
 pub const Terminal = struct {
     master: std.posix.fd_t,
     pid: std.posix.pid_t,
 
+    fn file(self: *Terminal) std.Io.File {
+        return .{ .handle = self.master, .flags = .{ .nonblocking = false } };
+    }
+
     pub fn read(self: *Terminal, buffer: []u8) !usize {
-        return std.posix.read(self.master, buffer) catch error.Io;
+        return self.file().readStreaming(compat.io(), &.{buffer}) catch error.Io;
     }
 
     pub fn writeAll(self: *Terminal, data: []const u8) !void {
-        var offset: usize = 0;
-        while (offset < data.len) {
-            const n = std.posix.write(self.master, data[offset..]) catch return error.Io;
-            if (n == 0) return error.Io;
-            offset += n;
-        }
+        self.file().writeStreamingAll(compat.io(), data) catch return error.Io;
     }
 
     pub fn resize(self: *Terminal, cols: u16, rows: u16) void {
@@ -35,9 +29,9 @@ pub const Terminal = struct {
     }
 
     pub fn close(self: *Terminal) void {
-        std.posix.close(self.master);
+        self.file().close(compat.io());
         _ = std.posix.kill(self.pid, std.posix.SIG.KILL) catch {};
-        _ = std.posix.waitpid(self.pid, 0);
+        _ = std.c.waitpid(self.pid, null, 0);
     }
 };
 

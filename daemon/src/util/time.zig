@@ -1,7 +1,8 @@
 const std = @import("std");
+const compat = @import("compat");
 
 pub fn nowIso(buf: []u8) []const u8 {
-    const secs: u64 = @intCast(std.time.timestamp());
+    const secs: u64 = @intCast(compat.timestamp());
     const epoch = std.time.epoch.EpochSeconds{ .secs = secs };
     const day = epoch.getEpochDay();
     const year_day = day.calculateYearDay();

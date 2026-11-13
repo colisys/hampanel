@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const exec = @import("shared").exec;
 
 pub const GeoRule = struct {
@@ -147,15 +148,15 @@ pub fn status(allocator: std.mem.Allocator, data_dir: []const u8) !Status {
 
 pub fn install(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
     const paths = try buildPaths(allocator, data_dir);
-    try std.fs.cwd().makePath(paths.root);
-    try std.fs.cwd().makePath(paths.bin_dir);
+    try compat.cwd().makePath(paths.root);
+    try compat.cwd().makePath(paths.bin_dir);
 
     const go_check = exec.run(allocator, &.{ "go", "version" }, 64 * 1024) catch
         return error.GoUnavailable;
     if (!go_check.ok()) return error.GoUnavailable;
 
     const temporary = try std.fmt.allocPrint(allocator, "{s}.new", .{paths.binary});
-    std.fs.deleteFileAbsolute(temporary) catch {};
+    compat.deleteFileAbsolute(temporary) catch {};
     const result = exec.run(allocator, &.{
         "go",
         "run",
@@ -168,18 +169,18 @@ pub fn install(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
     }, max_output) catch return error.BuildFailed;
 
     if (!result.ok() or !fileExists(temporary)) {
-        std.fs.deleteFileAbsolute(temporary) catch {};
+        compat.deleteFileAbsolute(temporary) catch {};
         return .{ .ok = false, .output = textOf(result) };
     }
-    std.fs.renameAbsolute(temporary, paths.binary) catch |err| {
-        std.fs.deleteFileAbsolute(temporary) catch {};
+    compat.renameAbsolute(temporary, paths.binary) catch |err| {
+        compat.deleteFileAbsolute(temporary) catch {};
         return .{ .ok = false, .output = try std.fmt.allocPrint(allocator, "替换二进制失败：{s}", .{@errorName(err)}) };
     };
     const version = exec.run(allocator, &.{ paths.binary, "version" }, 64 * 1024) catch null;
     const version_text = if (version) |ver| std.mem.trim(u8, if (ver.stdout.len > 0) ver.stdout else ver.stderr, " \t\r\n") else "";
 
-    const risk_dir = try std.fs.path.join(allocator, &.{ paths.root, "risk" });
-    try std.fs.cwd().makePath(risk_dir);
+    const risk_dir = try compat.path.join(allocator, &.{ paths.root, "risk" });
+    try compat.cwd().makePath(risk_dir);
     try writeFile(paths.risk_source, risk_source, 0o600);
     const risk_build = exec.run(allocator, &.{ "go", "build", "-o", paths.risk_bin, paths.risk_source }, max_output) catch
         return .{ .ok = false, .output = "risk gateway 构建无法启动" };
@@ -200,10 +201,10 @@ pub fn configure(allocator: std.mem.Allocator, data_dir: []const u8, config: Con
     try validateConfig(config);
     const paths = try buildPaths(allocator, data_dir);
     if (!fileExists(paths.binary)) return error.NotInstalled;
-    try std.fs.cwd().makePath(paths.root);
+    try compat.cwd().makePath(paths.root);
 
-    const old_caddyfile: ?[]u8 = std.fs.cwd().readFileAlloc(allocator, paths.caddyfile, 1024 * 1024) catch null;
-    const old_config: ?[]u8 = std.fs.cwd().readFileAlloc(allocator, paths.config, 1024 * 1024) catch null;
+    const old_caddyfile: ?[]u8 = compat.cwd().readFileAlloc(allocator, paths.caddyfile, 1024 * 1024) catch null;
+    const old_config: ?[]u8 = compat.cwd().readFileAlloc(allocator, paths.config, 1024 * 1024) catch null;
     const running = isRunning(allocator, paths.pid);
 
     const geo = try downloadGeoRules(allocator, data_dir, config.geoip_rules, config.geosite_rules);
@@ -218,7 +219,7 @@ pub fn configure(allocator: std.mem.Allocator, data_dir: []const u8, config: Con
         return .{ .ok = false, .output = check.output };
     }
 
-    const json = try std.json.stringifyAlloc(allocator, config, .{ .whitespace = .indent_2 });
+    const json = try std.json.Stringify.valueAlloc(allocator, config, .{ .whitespace = .indent_2 });
     try writeFile(paths.config, json, 0o600);
 
     if (std.mem.eql(u8, config.mode, "off")) {
@@ -278,14 +279,15 @@ fn startInternal(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
         "--adapter",
         "caddyfile",
     };
-    var child = std.process.Child.init(&argv, allocator);
-    child.stdin_behavior = .Ignore;
-    child.stdout_behavior = .Ignore;
-    child.stderr_behavior = .Ignore;
-    child.spawn() catch |err| {
+    const child = std.process.spawn(compat.io(), .{
+        .argv = &argv,
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    }) catch |err| {
         return .{ .ok = false, .output = try std.fmt.allocPrint(allocator, "启动失败：{s}", .{@errorName(err)}) };
     };
-    const pid = child.id;
+    const pid: std.posix.pid_t = @intCast(child.id.?);
     const pid_text = try std.fmt.allocPrint(allocator, "{d}\n", .{pid});
     try writeFile(paths.pid, pid_text, 0o600);
 
@@ -293,7 +295,7 @@ fn startInternal(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
         child: std.process.Child,
         allocator: std.mem.Allocator,
         fn wait(self: *@This()) void {
-            _ = self.child.wait() catch {};
+            _ = self.child.wait(compat.io()) catch {};
             self.allocator.destroy(self);
         }
     };
@@ -302,9 +304,9 @@ fn startInternal(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
     const thread = std.Thread.spawn(.{}, Box.wait, .{boxed}) catch null;
     if (thread) |handle| handle.detach() else allocator.destroy(boxed);
 
-    std.time.sleep(400 * std.time.ns_per_ms);
+    compat.sleep(400 * std.time.ns_per_ms);
     if (!pidAlive(pid)) {
-        std.fs.deleteFileAbsolute(paths.pid) catch {};
+        compat.deleteFileAbsolute(paths.pid) catch {};
         if (risk_started) _ = stopPid(allocator, paths.risk_pid);
         const tail = tailFile(allocator, paths.caddy_log, 80) catch null;
         return .{
@@ -331,20 +333,20 @@ pub fn stop(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
     _ = stopPid(allocator, paths.risk_pid);
     const pid = readPid(allocator, paths.pid) orelse return .{ .ok = true, .output = "WAF 未在运行" };
     if (!pidAlive(pid)) {
-        std.fs.deleteFileAbsolute(paths.pid) catch {};
+        compat.deleteFileAbsolute(paths.pid) catch {};
         return .{ .ok = true, .output = "WAF 未在运行" };
     }
     std.posix.kill(pid, std.posix.SIG.TERM) catch {};
     var waited: usize = 0;
     while (waited < 60) : (waited += 1) {
-        std.time.sleep(100 * std.time.ns_per_ms);
+        compat.sleep(100 * std.time.ns_per_ms);
         if (!pidAlive(pid)) {
-            std.fs.deleteFileAbsolute(paths.pid) catch {};
+            compat.deleteFileAbsolute(paths.pid) catch {};
             return .{ .ok = true, .output = "WAF 已停止" };
         }
     }
     std.posix.kill(pid, std.posix.SIG.KILL) catch {};
-    std.fs.deleteFileAbsolute(paths.pid) catch {};
+    compat.deleteFileAbsolute(paths.pid) catch {};
     return .{ .ok = true, .output = "WAF 已强制停止" };
 }
 
@@ -378,31 +380,31 @@ const Paths = struct {
 };
 
 fn buildPaths(allocator: std.mem.Allocator, data_dir: []const u8) !Paths {
-    const root = try std.fs.path.join(allocator, &.{ data_dir, "waf" });
-    const bin_dir = try std.fs.path.join(allocator, &.{ root, "bin" });
+    const root = try compat.path.join(allocator, &.{ data_dir, "waf" });
+    const bin_dir = try compat.path.join(allocator, &.{ root, "bin" });
     return .{
         .root = root,
         .bin_dir = bin_dir,
-        .binary = try std.fs.path.join(allocator, &.{ bin_dir, "caddy-waf" }),
-        .config = try std.fs.path.join(allocator, &.{ root, "config.json" }),
-        .caddyfile = try std.fs.path.join(allocator, &.{ root, "Caddyfile" }),
-        .pid = try std.fs.path.join(allocator, &.{ root, "waf.pid" }),
-        .caddy_log = try std.fs.path.join(allocator, &.{ root, "caddy.log" }),
-        .access_log = try std.fs.path.join(allocator, &.{ root, "access.log" }),
-        .coraza_audit = try std.fs.path.join(allocator, &.{ root, "coraza-audit.log" }),
-        .risk_bin = try std.fs.path.join(allocator, &.{ bin_dir, "hampanel-risk" }),
-        .risk_config = try std.fs.path.join(allocator, &.{ root, "risk.json" }),
-        .risk_pid = try std.fs.path.join(allocator, &.{ root, "risk.pid" }),
-        .risk_log = try std.fs.path.join(allocator, &.{ root, "risk.log" }),
-        .typesafe_cred = try std.fs.path.join(allocator, &.{ root, "typesafe.cred" }),
-        .geo_dir = try std.fs.path.join(allocator, &.{ root, "geo" }),
-        .geo_meta = try std.fs.path.join(allocator, &.{ root, "geo", "meta" }),
-        .risk_source = try std.fs.path.join(allocator, &.{ root, "risk", "main.go" }),
+        .binary = try compat.path.join(allocator, &.{ bin_dir, "caddy-waf" }),
+        .config = try compat.path.join(allocator, &.{ root, "config.json" }),
+        .caddyfile = try compat.path.join(allocator, &.{ root, "Caddyfile" }),
+        .pid = try compat.path.join(allocator, &.{ root, "waf.pid" }),
+        .caddy_log = try compat.path.join(allocator, &.{ root, "caddy.log" }),
+        .access_log = try compat.path.join(allocator, &.{ root, "access.log" }),
+        .coraza_audit = try compat.path.join(allocator, &.{ root, "coraza-audit.log" }),
+        .risk_bin = try compat.path.join(allocator, &.{ bin_dir, "hampanel-risk" }),
+        .risk_config = try compat.path.join(allocator, &.{ root, "risk.json" }),
+        .risk_pid = try compat.path.join(allocator, &.{ root, "risk.pid" }),
+        .risk_log = try compat.path.join(allocator, &.{ root, "risk.log" }),
+        .typesafe_cred = try compat.path.join(allocator, &.{ root, "typesafe.cred" }),
+        .geo_dir = try compat.path.join(allocator, &.{ root, "geo" }),
+        .geo_meta = try compat.path.join(allocator, &.{ root, "geo", "meta" }),
+        .risk_source = try compat.path.join(allocator, &.{ root, "risk", "main.go" }),
     };
 }
 
 fn loadConfig(allocator: std.mem.Allocator, path: []const u8) !Config {
-    const raw = try std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024);
+    const raw = try compat.cwd().readFileAlloc(allocator, path, 1024 * 1024);
     return std.json.parseFromSliceLeaky(Config, allocator, raw, .{ .ignore_unknown_fields = true });
 }
 
@@ -414,7 +416,7 @@ fn validateConfig(config: Config) !void {
         return error.InvalidMode;
     }
     if (config.listen_port == 0 or config.upstream_port == 0) return error.InvalidPort;
-    _ = std.net.Address.parseIp(config.listen_host, config.listen_port) catch return error.InvalidListenHost;
+    _ = std.Io.net.IpAddress.parse(config.listen_host, config.listen_port) catch return error.InvalidListenHost;
     if (!validHost(config.upstream_host)) return error.InvalidUpstream;
     if (config.risk_enabled) {
         if (config.risk_port == 0 or config.risk_port == config.listen_port) return error.InvalidPort;
@@ -468,8 +470,9 @@ fn validHost(value: []const u8) bool {
 }
 
 fn renderCaddyfile(allocator: std.mem.Allocator, paths_value: Paths, config: Config) ![]const u8 {
-    var out = std.ArrayList(u8).init(allocator);
-    const writer = out.writer();
+    var out: std.Io.Writer.Allocating = .init(allocator);
+    defer out.deinit();
+    const writer = &out.writer;
 
     try writer.print(
         \\{{
@@ -519,21 +522,22 @@ fn renderSite(
 ) !void {
     const scheme = if (config.tls_enabled) "https" else "http";
     const default_port: u16 = if (config.tls_enabled) 443 else 80;
-    var addresses = std.ArrayList(u8).init(allocator);
+    var addresses: std.Io.Writer.Allocating = .init(allocator);
+    defer addresses.deinit();
     if (hosts.len == 0) {
         if (config.tls_enabled) return;
-        try addresses.writer().print("http://:{d}", .{config.listen_port});
+        try addresses.writer.print("http://:{d}", .{config.listen_port});
     } else {
         for (hosts, 0..) |host, index| {
-            if (index > 0) try addresses.appendSlice(", ");
+            if (index > 0) try addresses.writer.writeAll(", ");
             if (config.listen_port == default_port)
-                try addresses.writer().print("{s}://{s}", .{ scheme, host })
+                try addresses.writer.print("{s}://{s}", .{ scheme, host })
             else
-                try addresses.writer().print("{s}://{s}:{d}", .{ scheme, host, config.listen_port });
+                try addresses.writer.print("{s}://{s}:{d}", .{ scheme, host, config.listen_port });
         }
     }
 
-    try writer.print("{s} {{\n", .{addresses.items});
+    try writer.print("{s} {{\n", .{addresses.written()});
     if (config.tls_enabled and std.mem.eql(u8, config.tls_mode, "internal")) {
         try writer.writeAll("    tls internal\n");
     }
@@ -630,7 +634,7 @@ const RiskConfig = struct {
 fn writeRiskConfig(allocator: std.mem.Allocator, paths_value: Paths, config: Config) !void {
     const listen = try std.fmt.allocPrint(allocator, "127.0.0.1:{d}", .{config.risk_port});
     const upstream = try std.fmt.allocPrint(allocator, "http://{s}:{d}", .{ config.upstream_host, config.upstream_port });
-    var risk_routes = std.ArrayList(RiskRoute).init(allocator);
+    var risk_routes = std.array_list.Managed(RiskRoute).init(allocator);
     for (config.routes) |route| {
         const route_mode = if (std.mem.eql(u8, route.mode, "inherit")) config.mode else route.mode;
         try risk_routes.append(.{
@@ -667,24 +671,25 @@ fn writeRiskConfig(allocator: std.mem.Allocator, paths_value: Paths, config: Con
         },
         .routes = risk_routes.items,
     };
-    const json = try std.json.stringifyAlloc(allocator, risk, .{ .whitespace = .indent_2 });
+    const json = try std.json.Stringify.valueAlloc(allocator, risk, .{ .whitespace = .indent_2 });
     try writeFile(paths_value.risk_config, json, 0o600);
 }
 
 fn spawnDetached(allocator: std.mem.Allocator, argv: []const []const u8, pid_path: []const u8) !std.posix.pid_t {
-    var child = std.process.Child.init(argv, allocator);
-    child.stdin_behavior = .Ignore;
-    child.stdout_behavior = .Ignore;
-    child.stderr_behavior = .Ignore;
-    try child.spawn();
-    const pid = child.id;
+    const child = try std.process.spawn(compat.io(), .{
+        .argv = argv,
+        .stdin = .ignore,
+        .stdout = .ignore,
+        .stderr = .ignore,
+    });
+    const pid: std.posix.pid_t = @intCast(child.id.?);
     const pid_text = try std.fmt.allocPrint(allocator, "{d}\n", .{pid});
     try writeFile(pid_path, pid_text, 0o600);
     const Box = struct {
         child: std.process.Child,
         allocator: std.mem.Allocator,
         fn wait(self: *@This()) void {
-            _ = self.child.wait() catch {};
+            _ = self.child.wait(compat.io()) catch {};
             self.allocator.destroy(self);
         }
     };
@@ -705,15 +710,18 @@ fn startRisk(allocator: std.mem.Allocator, paths_value: Paths, config: Config) !
     };
     var waited: usize = 0;
     while (waited < 60) : (waited += 1) {
-        std.time.sleep(100 * std.time.ns_per_ms);
+        compat.sleep(100 * std.time.ns_per_ms);
         if (!pidAlive(pid)) {
-            std.fs.deleteFileAbsolute(paths_value.risk_pid) catch {};
+            compat.deleteFileAbsolute(paths_value.risk_pid) catch {};
             const tail = tailFile(allocator, paths_value.risk_log, 60) catch null;
             return .{ .ok = false, .output = if (tail) |value| value.content else "risk gateway 启动后退出" };
         }
-        if (std.net.tcpConnectToHost(allocator, "127.0.0.1", config.risk_port)) |stream| {
-            stream.close();
-            return .{ .ok = true, .output = "risk gateway 已启动" };
+        if (std.Io.net.IpAddress.parse("127.0.0.1", config.risk_port)) |address_value| {
+            var address = address_value;
+            if (address.connect(compat.io(), .{ .mode = .stream })) |stream| {
+                stream.close(compat.io());
+                return .{ .ok = true, .output = "risk gateway 已启动" };
+            } else |_| {}
         } else |_| {}
     }
     _ = stopPid(allocator, paths_value.risk_pid);
@@ -724,20 +732,20 @@ fn stopPid(allocator: std.mem.Allocator, pid_path: []const u8) Outcome {
     _ = allocator;
     const pid = readPid(std.heap.page_allocator, pid_path) orelse return .{ .ok = true, .output = "未在运行" };
     if (!pidAlive(pid)) {
-        std.fs.deleteFileAbsolute(pid_path) catch {};
+        compat.deleteFileAbsolute(pid_path) catch {};
         return .{ .ok = true, .output = "未在运行" };
     }
     std.posix.kill(pid, std.posix.SIG.TERM) catch {};
     var waited: usize = 0;
     while (waited < 30) : (waited += 1) {
-        std.time.sleep(100 * std.time.ns_per_ms);
+        compat.sleep(100 * std.time.ns_per_ms);
         if (!pidAlive(pid)) {
-            std.fs.deleteFileAbsolute(pid_path) catch {};
+            compat.deleteFileAbsolute(pid_path) catch {};
             return .{ .ok = true, .output = "已停止" };
         }
     }
     std.posix.kill(pid, std.posix.SIG.KILL) catch {};
-    std.fs.deleteFileAbsolute(pid_path) catch {};
+    compat.deleteFileAbsolute(pid_path) catch {};
     return .{ .ok = true, .output = "已强制停止" };
 }
 
@@ -752,23 +760,23 @@ fn restore(allocator: std.mem.Allocator, path: []const u8, previous: ?[]u8) void
     if (previous) |contents| {
         writeFile(path, contents, 0o600) catch {};
     } else {
-        std.fs.deleteFileAbsolute(path) catch {};
+        compat.deleteFileAbsolute(path) catch {};
     }
 }
 
-fn writeFile(path: []const u8, data: []const u8, mode: std.fs.File.Mode) !void {
-    var file = try std.fs.createFileAbsolute(path, .{ .truncate = true, .mode = mode });
+fn writeFile(path: []const u8, data: []const u8, mode: compat.File.Mode) !void {
+    var file = try compat.createFileAbsolute(path, .{ .truncate = true, .mode = mode });
     defer file.close();
     try file.writeAll(data);
 }
 
 fn fileExists(path: []const u8) bool {
-    std.fs.cwd().access(path, .{}) catch return false;
+    compat.cwd().access(path, .{}) catch return false;
     return true;
 }
 
 fn readPid(allocator: std.mem.Allocator, path: []const u8) ?std.posix.pid_t {
-    const raw = std.fs.cwd().readFileAlloc(allocator, path, 128) catch return null;
+    const raw = compat.cwd().readFileAlloc(allocator, path, 128) catch return null;
     const trimmed = std.mem.trim(u8, raw, " \t\r\n");
     return std.fmt.parseInt(std.posix.pid_t, trimmed, 10) catch null;
 }
@@ -779,7 +787,7 @@ fn isRunning(allocator: std.mem.Allocator, pid_path: []const u8) bool {
 }
 
 fn pidAlive(pid: std.posix.pid_t) bool {
-    std.posix.kill(pid, 0) catch |err| switch (err) {
+    std.posix.kill(pid, @fromBackingInt(@intCast(0))) catch |err| switch (err) {
         error.PermissionDenied => return true,
         else => return false,
     };
@@ -789,15 +797,14 @@ fn pidAlive(pid: std.posix.pid_t) bool {
 const Tail = struct { content: []const u8, truncated: bool };
 
 fn tailFile(allocator: std.mem.Allocator, path: []const u8, lines: usize) !Tail {
-    var file = try std.fs.openFileAbsolute(path, .{});
+    var file = try compat.openFileAbsolute(path, .{});
     defer file.close();
     const size = (try file.stat()).size;
     const window: u64 = @min(size, 512 * 1024);
     if (window == 0) return .{ .content = "", .truncated = false };
-    try file.seekFromEnd(-@as(i64, @intCast(window)));
     const buffer = try allocator.alloc(u8, window);
-    const read = try file.readAll(buffer);
-    var items = std.ArrayList([]const u8).init(allocator);
+    const read = try file.readPositionalAll(buffer, size - window);
+    var items = std.array_list.Managed([]const u8).init(allocator);
     var iterator = std.mem.splitScalar(u8, buffer[0..read], '\n');
     while (iterator.next()) |line| try items.append(line);
     const wanted = std.math.clamp(lines, 1, 2000);
@@ -814,14 +821,14 @@ pub fn setTypesafeKey(allocator: std.mem.Allocator, data_dir: []const u8, key: [
         if (ch < 0x20 or ch == 0x7f) return error.InvalidKey;
     }
     const paths = try buildPaths(allocator, data_dir);
-    try std.fs.cwd().makePath(paths.root);
+    try compat.cwd().makePath(paths.root);
     const temp = try std.fmt.allocPrint(allocator, "{s}/.typesafe.tmp", .{paths.root});
-    defer std.fs.deleteFileAbsolute(temp) catch {};
+    defer compat.deleteFileAbsolute(temp) catch {};
     try writeFile(temp, key, 0o600);
     const result = exec.run(allocator, &.{ "systemd-creds", "encrypt", "--name=hampanel-typesafe", temp, paths.typesafe_cred }, 1024 * 1024) catch
         return error.SystemdCredsUnavailable;
     if (!result.ok()) return .{ .ok = false, .output = textOf(result) };
-    std.posix.fchmodat(std.posix.AT.FDCWD, paths.typesafe_cred, 0o600, 0) catch {};
+    compat.setFilePermissions(paths.typesafe_cred, 0o600) catch {};
     if (isRunning(allocator, paths.pid)) {
         _ = stop(allocator, data_dir) catch {};
         const restarted = start(allocator, data_dir) catch return .{ .ok = true, .output = "密钥已加密保存；请重新启动 WAF 使其生效" };
@@ -832,7 +839,7 @@ pub fn setTypesafeKey(allocator: std.mem.Allocator, data_dir: []const u8, key: [
 
 pub fn clearTypesafeKey(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
     const paths = try buildPaths(allocator, data_dir);
-    std.fs.deleteFileAbsolute(paths.typesafe_cred) catch |err| switch (err) {
+    compat.deleteFileAbsolute(paths.typesafe_cred) catch |err| switch (err) {
         error.FileNotFound => return .{ .ok = true, .output = "没有已保存的密钥" },
         else => return err,
     };
@@ -856,17 +863,17 @@ const CatalogFile = struct {
 
 pub fn geoCatalog(allocator: std.mem.Allocator, data_dir: []const u8, refresh: bool) !GeoCatalog {
     const paths = try buildPaths(allocator, data_dir);
-    try std.fs.cwd().makePath(paths.geo_meta);
+    try compat.cwd().makePath(paths.geo_meta);
     try ensureCatalog(allocator, paths, refresh);
-    const catalog_path = try std.fs.path.join(allocator, &.{ paths.geo_meta, "catalog.json" });
-    const raw = try std.fs.cwd().readFileAlloc(allocator, catalog_path, 16 * 1024 * 1024);
+    const catalog_path = try compat.path.join(allocator, &.{ paths.geo_meta, "catalog.json" });
+    const raw = try compat.cwd().readFileAlloc(allocator, catalog_path, 16 * 1024 * 1024);
     const parsed = try std.json.parseFromSliceLeaky(CatalogFile, allocator, raw, .{ .ignore_unknown_fields = true });
-    var services = std.ArrayList(GeoSiteService).init(allocator);
+    var services = std.array_list.Managed(GeoSiteService).init(allocator);
     for (parsed.services) |service| {
         if (!std.mem.startsWith(u8, service.src, "source1/")) continue;
         try services.append(.{ .id = service.id, .name = service.name, .category = service.cat, .src = service.src });
     }
-    var countries = std.ArrayList(Country).init(allocator);
+    var countries = std.array_list.Managed(Country).init(allocator);
     for (country_list) |item| try countries.append(item);
     return .{
         .countries = countries.items,
@@ -878,20 +885,21 @@ pub fn geoCatalog(allocator: std.mem.Allocator, data_dir: []const u8, refresh: b
 pub fn downloadGeoRules(allocator: std.mem.Allocator, data_dir: []const u8, geoip: []const GeoRule, geosite: []const GeoRule) !Outcome {
     if (geoip.len == 0 and geosite.len == 0) return .{ .ok = true, .output = "" };
     const paths = try buildPaths(allocator, data_dir);
-    try std.fs.cwd().makePath(paths.geo_dir);
+    try compat.cwd().makePath(paths.geo_dir);
     try ensureCatalog(allocator, paths, false);
-    const catalog_path = try std.fs.path.join(allocator, &.{ paths.geo_meta, "catalog.json" });
-    const raw = try std.fs.cwd().readFileAlloc(allocator, catalog_path, 16 * 1024 * 1024);
+    const catalog_path = try compat.path.join(allocator, &.{ paths.geo_meta, "catalog.json" });
+    const raw = try compat.cwd().readFileAlloc(allocator, catalog_path, 16 * 1024 * 1024);
     const catalog = try std.json.parseFromSliceLeaky(CatalogFile, allocator, raw, .{ .ignore_unknown_fields = true });
 
-    var messages = std.ArrayList(u8).init(allocator);
+    var messages: std.Io.Writer.Allocating = .init(allocator);
+    defer messages.deinit();
     for (geoip) |rule| {
         if (rule.tag.len != 2) continue;
         const url = try std.fmt.allocPrint(allocator, "https://raw.githubusercontent.com/Ground-Zerro/Geo-Aggregator/main/source2/{s}.txt", .{rule.tag});
         const path = try std.fmt.allocPrint(allocator, "{s}/geoip-{s}.txt", .{ paths.geo_dir, rule.tag });
         const result = try downloadFile(allocator, url, path);
         if (!result.ok) return .{ .ok = false, .output = try std.fmt.allocPrint(allocator, "下载 GeoIP {s} 失败：{s}", .{ rule.tag, result.output }) };
-        try messages.writer().print("geoip:{s}\n", .{rule.tag});
+        try messages.writer.print("geoip:{s}\n", .{rule.tag});
     }
     for (geosite) |rule| {
         var source: ?[]const u8 = null;
@@ -908,16 +916,16 @@ pub fn downloadGeoRules(allocator: std.mem.Allocator, data_dir: []const u8, geoi
         const path = try std.fmt.allocPrint(allocator, "{s}/geosite-{s}.txt", .{ paths.geo_dir, rule.tag });
         const result = try downloadFile(allocator, url, path);
         if (!result.ok) return .{ .ok = false, .output = try std.fmt.allocPrint(allocator, "下载 GeoSite {s} 失败：{s}", .{ rule.tag, result.output }) };
-        try messages.writer().print("geosite:{s}\n", .{rule.tag});
+        try messages.writer.print("geosite:{s}\n", .{rule.tag});
     }
-    return .{ .ok = true, .output = messages.items };
+    return .{ .ok = true, .output = try messages.toOwnedSlice() };
 }
 
 fn ensureCatalog(allocator: std.mem.Allocator, paths_value: Paths, refresh: bool) !void {
-    const catalog_path = try std.fs.path.join(allocator, &.{ paths_value.geo_meta, "catalog.json" });
-    const database_path = try std.fs.path.join(allocator, &.{ paths_value.geo_meta, "database.json" });
+    const catalog_path = try compat.path.join(allocator, &.{ paths_value.geo_meta, "catalog.json" });
+    const database_path = try compat.path.join(allocator, &.{ paths_value.geo_meta, "database.json" });
     if (!refresh and fileExists(catalog_path) and fileExists(database_path)) return;
-    try std.fs.cwd().makePath(paths_value.geo_meta);
+    try compat.cwd().makePath(paths_value.geo_meta);
     const base = "https://raw.githubusercontent.com/Ground-Zerro/Geo-Aggregator/main/";
     const catalog_url = try std.fmt.allocPrint(allocator, "{s}db/catalog.json", .{base});
     const database_url = try std.fmt.allocPrint(allocator, "{s}db/database.json", .{base});
@@ -929,14 +937,14 @@ fn ensureCatalog(allocator: std.mem.Allocator, paths_value: Paths, refresh: bool
 
 fn downloadFile(allocator: std.mem.Allocator, url: []const u8, path: []const u8) !Outcome {
     const temp = try std.fmt.allocPrint(allocator, "{s}.part", .{path});
-    defer std.fs.deleteFileAbsolute(temp) catch {};
+    defer compat.deleteFileAbsolute(temp) catch {};
     const result = exec.run(allocator, &.{ "curl", "-fsSL", "--max-time", "60", "-o", temp, url }, 1024 * 1024) catch {
         return .{ .ok = false, .output = "curl 不可用" };
     };
     if (!result.ok()) return .{ .ok = false, .output = textOf(result) };
-    const stat = std.fs.cwd().statFile(temp) catch return .{ .ok = false, .output = "下载文件为空" };
+    const stat = compat.cwd().statFile(temp, .{}) catch return .{ .ok = false, .output = "下载文件为空" };
     if (stat.size == 0) return .{ .ok = false, .output = "下载文件为空" };
-    std.fs.renameAbsolute(temp, path) catch |err| return .{ .ok = false, .output = @errorName(err) };
+    compat.renameAbsolute(temp, path) catch |err| return .{ .ok = false, .output = @errorName(err) };
     return .{ .ok = true, .output = "" };
 }
 
@@ -954,8 +962,8 @@ pub fn auditLogs(allocator: std.mem.Allocator, data_dir: []const u8, lines: usiz
 }
 
 fn auditSummary(allocator: std.mem.Allocator, raw: []const u8, limit: usize) ![]const u8 {
-    var entries = std.ArrayList([]const u8).init(allocator);
-    var rules = std.ArrayList(u8).init(allocator);
+    var entries = std.array_list.Managed([]const u8).init(allocator);
+    var rules = std.array_list.Managed(u8).init(allocator);
     var timestamp: []const u8 = "";
     var client: []const u8 = "";
     var request_line: []const u8 = "";
@@ -964,7 +972,7 @@ fn auditSummary(allocator: std.mem.Allocator, raw: []const u8, limit: usize) ![]
 
     var raw_lines = std.mem.splitScalar(u8, raw, '\n');
     while (raw_lines.next()) |raw_line| {
-        const line = std.mem.trimRight(u8, raw_line, "\r");
+        const line = std.mem.trimEnd(u8, raw_line, "\r");
         if (line.len >= 5 and std.mem.startsWith(u8, line, "--") and std.mem.endsWith(u8, line, "--")) {
             const letter = line[line.len - 3];
             if (letter == 'A') {
@@ -1028,21 +1036,36 @@ pub fn riskLogs(allocator: std.mem.Allocator, data_dir: []const u8, lines: usize
 }
 
 const country_list = [_]Country{
-    .{ .code = "us", .name = "美国 US" },       .{ .code = "cn", .name = "中国 CN" },
-    .{ .code = "ru", .name = "俄罗斯 RU" },    .{ .code = "de", .name = "德国 DE" },
-    .{ .code = "fr", .name = "法国 FR" },       .{ .code = "gb", .name = "英国 GB" },
-    .{ .code = "jp", .name = "日本 JP" },       .{ .code = "kr", .name = "韩国 KR" },
-    .{ .code = "sg", .name = "新加坡 SG" },    .{ .code = "hk", .name = "香港 HK" },
-    .{ .code = "tw", .name = "台湾 TW" },       .{ .code = "ca", .name = "加拿大 CA" },
-    .{ .code = "au", .name = "澳大利亚 AU" }, .{ .code = "in", .name = "印度 IN" },
-    .{ .code = "br", .name = "巴西 BR" },       .{ .code = "nl", .name = "荷兰 NL" },
-    .{ .code = "se", .name = "瑞典 SE" },       .{ .code = "ch", .name = "瑞士 CH" },
-    .{ .code = "it", .name = "意大利 IT" },    .{ .code = "es", .name = "西班牙 ES" },
-    .{ .code = "pl", .name = "波兰 PL" },       .{ .code = "tr", .name = "土耳其 TR" },
-    .{ .code = "vn", .name = "越南 VN" },       .{ .code = "th", .name = "泰国 TH" },
-    .{ .code = "id", .name = "印尼 ID" },       .{ .code = "my", .name = "马来西亚 MY" },
-    .{ .code = "ae", .name = "阿联酋 AE" },    .{ .code = "sa", .name = "沙特 SA" },
-    .{ .code = "za", .name = "南非 ZA" },       .{ .code = "mx", .name = "墨西哥 MX" },
+    .{ .code = "us", .name = "美国 US" },
+    .{ .code = "cn", .name = "中国 CN" },
+    .{ .code = "ru", .name = "俄罗斯 RU" },
+    .{ .code = "de", .name = "德国 DE" },
+    .{ .code = "fr", .name = "法国 FR" },
+    .{ .code = "gb", .name = "英国 GB" },
+    .{ .code = "jp", .name = "日本 JP" },
+    .{ .code = "kr", .name = "韩国 KR" },
+    .{ .code = "sg", .name = "新加坡 SG" },
+    .{ .code = "hk", .name = "香港 HK" },
+    .{ .code = "tw", .name = "台湾 TW" },
+    .{ .code = "ca", .name = "加拿大 CA" },
+    .{ .code = "au", .name = "澳大利亚 AU" },
+    .{ .code = "in", .name = "印度 IN" },
+    .{ .code = "br", .name = "巴西 BR" },
+    .{ .code = "nl", .name = "荷兰 NL" },
+    .{ .code = "se", .name = "瑞典 SE" },
+    .{ .code = "ch", .name = "瑞士 CH" },
+    .{ .code = "it", .name = "意大利 IT" },
+    .{ .code = "es", .name = "西班牙 ES" },
+    .{ .code = "pl", .name = "波兰 PL" },
+    .{ .code = "tr", .name = "土耳其 TR" },
+    .{ .code = "vn", .name = "越南 VN" },
+    .{ .code = "th", .name = "泰国 TH" },
+    .{ .code = "id", .name = "印尼 ID" },
+    .{ .code = "my", .name = "马来西亚 MY" },
+    .{ .code = "ae", .name = "阿联酋 AE" },
+    .{ .code = "sa", .name = "沙特 SA" },
+    .{ .code = "za", .name = "南非 ZA" },
+    .{ .code = "mx", .name = "墨西哥 MX" },
 };
 
 fn buildInfo(allocator: std.mem.Allocator, binary: []const u8) []const u8 {

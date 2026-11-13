@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const common = @import("common.zig");
 const exec = @import("shared").exec;
 
@@ -74,7 +75,7 @@ pub fn add(
     const protocol = port_parts.next() orelse "tcp";
 
     var random: [2]u8 = undefined;
-    std.crypto.random.bytes(&random);
+    compat.randomBytes(&random);
     const suffix = std.fmt.bytesToHex(random, .lower);
 
     _ = comment;

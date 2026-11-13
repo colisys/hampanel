@@ -17,7 +17,7 @@ const AppView = struct {
 
 pub fn apps(ctx: *context.Context) anyerror!void {
     const data_dir = ctx.app.config.data_dir;
-    var items = std.ArrayList(AppView).init(ctx.arena);
+    var items = std.array_list.Managed(AppView).init(ctx.arena);
     for (&catalog.apps) |*app| {
         try items.append(view(ctx.arena, data_dir, app));
     }

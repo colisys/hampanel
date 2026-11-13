@@ -50,7 +50,7 @@ pub const Conn = struct {
     }
 
     pub fn readLine(self: *Conn, allocator: std.mem.Allocator, max: usize) ![]u8 {
-        var line = std.ArrayList(u8).init(allocator);
+        var line = std.array_list.Managed(u8).init(allocator);
         errdefer line.deinit();
 
         while (true) {

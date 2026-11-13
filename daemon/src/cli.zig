@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const builtin = @import("builtin");
 const service = @import("windows_service");
 const config = @import("config.zig");
@@ -26,7 +27,7 @@ const Options = struct {
     endpoint: ?[]const u8 = null,
     entry_prefix: ?[]const u8 = null,
     out: ?[]const u8 = null,
-    sans: std.ArrayList([]const u8),
+    sans: std.array_list.Managed([]const u8),
     force: bool = false,
     json: bool = false,
     service: bool = false,
@@ -41,49 +42,52 @@ const Options = struct {
     service_name: ?[]const u8 = null,
 };
 
-pub fn run(allocator: std.mem.Allocator) !u8 {
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+pub fn run(allocator: std.mem.Allocator, process_args: std.process.Args) !u8 {
+    var args = std.array_list.Managed([]const u8).init(allocator);
+    defer args.deinit();
+    var iterator = try process_args.iterateAllocator(allocator);
+    defer iterator.deinit();
+    while (iterator.next()) |arg| try args.append(arg);
 
-    var opts = Options{ .sans = std.ArrayList([]const u8).init(allocator) };
+    var opts = Options{ .sans = std.array_list.Managed([]const u8).init(allocator) };
     defer opts.sans.deinit();
 
     var index: usize = 1;
-    if (index < args.len and args[index].len > 0 and args[index][0] != '-') {
-        opts.command = parseCommand(args[index]) orelse {
-            std.debug.print("unknown command: {s}\n\n", .{args[index]});
+    if (index < args.items.len and args.items[index].len > 0 and args.items[index][0] != '-') {
+        opts.command = parseCommand(args.items[index]) orelse {
+            std.debug.print("unknown command: {s}\n\n", .{args.items[index]});
             printUsage();
             return 2;
         };
         index += 1;
     }
 
-    while (index < args.len) : (index += 1) {
-        const arg = args[index];
+    while (index < args.items.len) : (index += 1) {
+        const arg = args.items[index];
         if (std.mem.eql(u8, arg, "--config")) {
-            opts.config_path = takeValue(args, &index, arg) orelse return 2;
+            opts.config_path = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--listen")) {
-            opts.listen = takeValue(args, &index, arg) orelse return 2;
+            opts.listen = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--port")) {
-            const raw = takeValue(args, &index, arg) orelse return 2;
+            const raw = takeValue(args.items, &index, arg) orelse return 2;
             opts.port = std.fmt.parseInt(u16, raw, 10) catch {
                 std.debug.print("invalid port: {s}\n", .{raw});
                 return 2;
             };
         } else if (std.mem.eql(u8, arg, "--data-dir")) {
-            opts.data_dir = takeValue(args, &index, arg) orelse return 2;
+            opts.data_dir = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--enroll-file")) {
-            opts.enroll_file = takeValue(args, &index, arg) orelse return 2;
+            opts.enroll_file = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--tls-dir")) {
-            opts.tls_dir = takeValue(args, &index, arg) orelse return 2;
+            opts.tls_dir = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--endpoint")) {
-            opts.endpoint = takeValue(args, &index, arg) orelse return 2;
+            opts.endpoint = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--entry-prefix")) {
-            opts.entry_prefix = takeValue(args, &index, arg) orelse return 2;
+            opts.entry_prefix = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--out")) {
-            opts.out = takeValue(args, &index, arg) orelse return 2;
+            opts.out = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--san")) {
-            const value = takeValue(args, &index, arg) orelse return 2;
+            const value = takeValue(args.items, &index, arg) orelse return 2;
             try opts.sans.append(value);
         } else if (std.mem.eql(u8, arg, "--force")) {
             opts.force = true;
@@ -92,13 +96,13 @@ pub fn run(allocator: std.mem.Allocator) !u8 {
         } else if (std.mem.eql(u8, arg, "--service")) {
             opts.service = true;
         } else if (std.mem.eql(u8, arg, "--service-name")) {
-            opts.service_name = takeValue(args, &index, arg) orelse return 2;
+            opts.service_name = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--install-mode")) {
-            opts.install_mode = takeValue(args, &index, arg) orelse return 2;
+            opts.install_mode = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--update-channel")) {
-            opts.update_channel = takeValue(args, &index, arg) orelse return 2;
+            opts.update_channel = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--update-repo")) {
-            opts.update_repo = takeValue(args, &index, arg) orelse return 2;
+            opts.update_repo = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--check")) {
             opts.check = true;
         } else if (std.mem.eql(u8, arg, "--apply")) {
@@ -119,7 +123,7 @@ pub fn run(allocator: std.mem.Allocator) !u8 {
         }
     }
 
-    if (args.len == 1) {
+    if (args.items.len == 1) {
         printUsage();
         return 0;
     }
@@ -130,8 +134,7 @@ pub fn run(allocator: std.mem.Allocator) !u8 {
             break :blk 0;
         },
         .version => blk: {
-            const stdout = std.io.getStdOut().writer();
-            try stdout.print("hampaneld {s} (GPL-3.0-or-later)\n", .{version.version});
+            try compat.printOut("hampaneld {s} (GPL-3.0-or-later)\n", .{version.version});
             break :blk 0;
         },
         .init => cmdInit(allocator, &opts),
@@ -151,7 +154,7 @@ fn parseCommand(raw: []const u8) ?Command {
     return null;
 }
 
-fn takeValue(args: []const [:0]u8, index: *usize, flag: []const u8) ?[]const u8 {
+fn takeValue(args: []const []const u8, index: *usize, flag: []const u8) ?[]const u8 {
     index.* += 1;
     if (index.* >= args.len) {
         std.debug.print("missing value for {s}\n", .{flag});
@@ -256,7 +259,7 @@ fn cmdInit(allocator: std.mem.Allocator, opts: *Options) !u8 {
         if (!present) try opts.sans.append(parts.host);
     }
 
-    try std.fs.cwd().makePath(cfg.data_dir);
+    try compat.cwd().makePath(cfg.data_dir);
     try cfg.save(a, opts.config_path);
 
     const meta = try pki.initialize(a, cfg.tls_dir, endpoint, opts.sans.items, opts.force);
@@ -303,9 +306,8 @@ fn cmdEnroll(allocator: std.mem.Allocator, opts: *Options) !u8 {
 
     if (opts.json) {
         const json = try enroll.toJson(a, bundle);
-        const stdout = std.io.getStdOut().writer();
-        try stdout.writeAll(json);
-        try stdout.writeAll("\n");
+        try compat.writeOut(json);
+        try compat.writeOut("\n");
     } else {
         std.debug.print("Enrollment bundle written to {s}\n", .{out_path});
         std.debug.print("  endpoint   : {s}\n", .{bundle.endpoint});
@@ -326,7 +328,7 @@ fn cmdUpdate(allocator: std.mem.Allocator, opts: *Options) !u8 {
     log.setLevelName(cfg.log_level);
 
     if (opts.install_schedule) {
-        const self_exe = try std.fs.selfExePathAlloc(a);
+        const self_exe = try compat.selfExePathAlloc(a);
         const outcome = update.installSchedule(a, cfg, self_exe, opts.config_path) catch |err| switch (err) {
             error.UpdateDisabled => {
                 std.debug.print("update checks are disabled for source installs\n", .{});
@@ -382,18 +384,16 @@ fn cmdUpdate(allocator: std.mem.Allocator, opts: *Options) !u8 {
     }
 
     if (opts.json) {
-        const body = try std.json.stringifyAlloc(a, state, .{});
-        const stdout = std.io.getStdOut().writer();
-        try stdout.print("{s}\n", .{body});
+        const body = try std.json.Stringify.valueAlloc(a, state, .{});
+        try compat.printOut("{s}\n", .{body});
     } else {
-        const stdout = std.io.getStdOut().writer();
-        try stdout.print("current:     {s}\n", .{state.current_version});
-        try stdout.print("channel:     {s} ({s})\n", .{ state.channel, state.install_mode });
-        try stdout.print("latest:      {s}\n", .{if (state.latest_version.len > 0) state.latest_version else "unknown"});
-        try stdout.print("available:   {s}\n", .{if (state.update_available) "yes" else "no"});
-        try stdout.print("scheduled:   {s}\n", .{if (update.scheduleInstalled(a)) "yes" else "no"});
+        try compat.printOut("current:     {s}\n", .{state.current_version});
+        try compat.printOut("channel:     {s} ({s})\n", .{ state.channel, state.install_mode });
+        try compat.printOut("latest:      {s}\n", .{if (state.latest_version.len > 0) state.latest_version else "unknown"});
+        try compat.printOut("available:   {s}\n", .{if (state.update_available) "yes" else "no"});
+        try compat.printOut("scheduled:   {s}\n", .{if (update.scheduleInstalled(a)) "yes" else "no"});
         if (state.error_message.len > 0) {
-            try stdout.print("error:       {s}\n", .{state.error_message});
+            try compat.printOut("error:       {s}\n", .{state.error_message});
         }
     }
 
@@ -428,7 +428,7 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
         .allocator = allocator,
         .config = cfg,
         .config_path = opts.config_path,
-        .started_at = std.time.timestamp(),
+        .started_at = compat.timestamp(),
         .tls = tls_context,
         .pki = paths,
         .audit = audit_log,
@@ -499,16 +499,17 @@ fn formatEndpoint(allocator: std.mem.Allocator, host: []const u8, port: u16) ![]
 }
 
 fn pickFreePort(listen: []const u8) !u16 {
-    const address = std.net.Address.parseIp(listen, 0) catch
-        std.net.Address.parseIp("0.0.0.0", 0) catch return error.NoAddress;
-    var listener = try address.listen(.{ .reuse_address = true });
-    defer listener.deinit();
-    return listener.listen_address.getPort();
+    const io = compat.io();
+    var address = std.Io.net.IpAddress.parse(listen, 0) catch
+        std.Io.net.IpAddress.parse("0.0.0.0", 0) catch return error.NoAddress;
+    var listener = try address.listen(io, .{ .reuse_address = true });
+    defer listener.deinit(io);
+    return listener.socket.address.getPort();
 }
 
 fn randomEntryPrefix(allocator: std.mem.Allocator) ![]const u8 {
     var raw: [12]u8 = undefined;
-    std.crypto.random.bytes(&raw);
+    compat.randomBytes(&raw);
     return std.fmt.allocPrint(allocator, "/{s}", .{std.fmt.bytesToHex(raw, .lower)});
 }
 
@@ -516,14 +517,13 @@ fn normalizeEntryPrefix(allocator: std.mem.Allocator, raw: []const u8) ![]const 
     if (raw.len == 0) return "";
     var value = raw;
     if (value[0] != '/') value = try std.fmt.allocPrint(allocator, "/{s}", .{value});
-    const trimmed = std.mem.trimRight(u8, value, "/");
+    const trimmed = std.mem.trimEnd(u8, value, "/");
     if (!validate.isEntryPrefix(trimmed)) return error.InvalidEntryPrefix;
     return trimmed;
 }
 
 fn printUsage() void {
-    const out = std.io.getStdOut().writer();
-    out.writeAll(
+    compat.writeOut(
         \\Hampanel daemon
         \\
         \\Usage:

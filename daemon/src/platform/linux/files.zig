@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 
 pub const Meta = struct {
     size: u64,
@@ -13,30 +14,43 @@ pub const Meta = struct {
 pub fn resolve(allocator: std.mem.Allocator, raw: []const u8) ![]const u8 {
     if (raw.len == 0 or raw[0] != '/') return error.InvalidPath;
     if (std.mem.indexOfScalar(u8, raw, 0) != null) return error.InvalidPath;
-    return std.fs.path.resolve(allocator, &.{raw});
+    return compat.path.resolve(allocator, &.{raw});
 }
 
 pub fn stat(allocator: std.mem.Allocator, path: []const u8) !Meta {
-    const st = try std.posix.fstatat(std.posix.AT.FDCWD, path, std.posix.AT.SYMLINK_NOFOLLOW);
+    const path_z = try compat.dupeZ(allocator, path);
+    defer allocator.free(path_z);
+
+    var st: std.os.linux.Statx = undefined;
+    const rc = std.os.linux.statx(
+        std.os.linux.AT.FDCWD,
+        path_z.ptr,
+        std.os.linux.AT.SYMLINK_NOFOLLOW,
+        std.os.linux.STATX.BASIC_STATS,
+        &st,
+    );
+    if (std.os.linux.errno(rc) != .SUCCESS) return error.StatFailed;
+
+    const mode: u32 = st.mode;
     var mode_buf: [10]u8 = undefined;
-    formatMode(st.mode, &mode_buf);
+    formatMode(mode, &mode_buf);
 
     return .{
         .size = @intCast(st.size),
-        .kind = kindName(st.mode),
+        .kind = kindName(mode),
         .mode = try allocator.dupe(u8, &mode_buf),
         .uid = st.uid,
         .gid = st.gid,
-        .modified_ms = @as(i64, @intCast(st.mtim.sec)) * 1000 + @divTrunc(@as(i64, @intCast(st.mtim.nsec)), 1_000_000),
-        .symlink = (st.mode & 0o170000) == 0o120000,
+        .modified_ms = @as(i64, @intCast(st.mtime.sec)) * 1000 + @divTrunc(@as(i64, @intCast(st.mtime.nsec)), 1_000_000),
+        .symlink = (mode & 0o170000) == 0o120000,
     };
 }
 
 pub fn secureDir(path: []const u8) !void {
-    try std.posix.fchmodat(std.posix.AT.FDCWD, path, 0o700, 0);
+    try compat.setFilePermissions(path, 0o700);
 }
 
-pub fn secureFile(file: std.fs.File, mode: std.fs.File.Mode) !void {
+pub fn secureFile(file: compat.File, mode: compat.File.Mode) !void {
     try file.chmod(mode);
 }
 

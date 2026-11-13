@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const context = @import("context.zig");
 const websocket = @import("../http/websocket.zig");
 const Conn = @import("../net/conn.zig").Conn;
@@ -9,7 +10,7 @@ const Session = struct {
     term: *platform.Terminal,
     conn: *Conn,
     stopped: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-    write_lock: std.Thread.Mutex = .{},
+    write_lock: std.Io.Mutex = .init,
 };
 
 pub fn ws(ctx: *context.Context) anyerror!void {
@@ -54,8 +55,8 @@ pub fn ws(ctx: *context.Context) anyerror!void {
             .text => handleText(&term, frame.payload) catch return,
             .close => return,
             .ping => {
-                session.write_lock.lock();
-                defer session.write_lock.unlock();
+                session.write_lock.lockUncancelable(compat.io());
+                defer session.write_lock.unlock(compat.io());
                 websocket.writeFrame(ctx.conn, .pong, frame.payload) catch return;
             },
             else => {},
@@ -68,14 +69,14 @@ fn readFromTerminal(session: *Session) void {
     while (!session.stopped.load(.acquire)) {
         const n = session.term.read(&buffer) catch break;
         if (n == 0) break;
-        session.write_lock.lock();
-        defer session.write_lock.unlock();
+        session.write_lock.lockUncancelable(compat.io());
+        defer session.write_lock.unlock(compat.io());
         websocket.writeBinary(session.conn, buffer[0..n]) catch break;
     }
 
     session.stopped.store(true, .release);
-    session.write_lock.lock();
-    defer session.write_lock.unlock();
+    session.write_lock.lockUncancelable(compat.io());
+    defer session.write_lock.unlock(compat.io());
     websocket.writeClose(session.conn, 1000, "shell exited");
 }
 

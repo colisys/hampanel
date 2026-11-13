@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const context = @import("context.zig");
 const platform = @import("../platform/mod.zig");
 const validate = @import("shared").validate;
@@ -136,7 +137,7 @@ pub fn reload(ctx: *context.Context) anyerror!void {
 
 fn isSafeRoot(root: []const u8) bool {
     if (root.len == 0) return false;
-    if (!std.fs.path.isAbsolute(root)) return false;
+    if (!compat.path.isAbsolute(root)) return false;
     for (root) |ch| {
         if (ch < 0x20 or ch == 0x7f) return false;
     }

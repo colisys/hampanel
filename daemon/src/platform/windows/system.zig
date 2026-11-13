@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const types = @import("shared").types;
 const common = @import("common.zig");
 const c = common.c;
@@ -57,6 +58,6 @@ fn cpuCount() usize {
 }
 
 fn cpuModel(allocator: std.mem.Allocator) ![]const u8 {
-    return std.process.getEnvVarOwned(allocator, "PROCESSOR_IDENTIFIER") catch
-        allocator.dupe(u8, "unknown");
+    if (compat.getEnv("PROCESSOR_IDENTIFIER")) |value| return allocator.dupe(u8, value);
+    return allocator.dupe(u8, "unknown");
 }

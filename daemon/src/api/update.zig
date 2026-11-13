@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const context = @import("context.zig");
 const update = @import("../update.zig");
 const version = @import("../version.zig");
@@ -53,7 +54,7 @@ pub fn apply(ctx: *context.Context) anyerror!void {
 }
 
 pub fn schedule(ctx: *context.Context) anyerror!void {
-    const self_exe = try std.fs.selfExePathAlloc(ctx.arena);
+    const self_exe = try compat.selfExePathAlloc(ctx.arena);
     const outcome = update.installSchedule(
         ctx.arena,
         ctx.app.config,

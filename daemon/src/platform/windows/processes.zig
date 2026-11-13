@@ -1,11 +1,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 const c = common.c;
-const c2 = @cImport({
-    @cInclude("windows.h");
-    @cInclude("tlhelp32.h");
-    @cInclude("psapi.h");
-});
+const c2 = @import("windows_c");
 
 pub const Process = struct {
     pid: u32,
@@ -30,7 +26,7 @@ pub fn list(allocator: std.mem.Allocator, limit: usize) !ProcessList {
     entry.dwSize = @sizeOf(c2.PROCESSENTRY32W);
     if (c2.Process32FirstW(snapshot, &entry) == 0) return .{ .total = 0, .processes = &.{} };
 
-    var items = std.ArrayList(Process).init(allocator);
+    var items = std.array_list.Managed(Process).init(allocator);
     var total: usize = 0;
 
     while (true) {

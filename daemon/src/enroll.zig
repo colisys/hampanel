@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const pki = @import("pki.zig");
 
 pub const Bundle = struct {
@@ -22,9 +23,9 @@ pub fn build(
     endpoint_override: ?[]const u8,
     entry_prefix: []const u8,
 ) !Bundle {
-    const ca_pem = try std.fs.cwd().readFileAlloc(allocator, paths.ca_cert, 1024 * 1024);
-    const client_cert_pem = try std.fs.cwd().readFileAlloc(allocator, paths.client_cert, 1024 * 1024);
-    const client_key_pem = try std.fs.cwd().readFileAlloc(allocator, paths.client_key, 1024 * 1024);
+    const ca_pem = try compat.cwd().readFileAlloc(allocator, paths.ca_cert, 1024 * 1024);
+    const client_cert_pem = try compat.cwd().readFileAlloc(allocator, paths.client_cert, 1024 * 1024);
+    const client_key_pem = try compat.cwd().readFileAlloc(allocator, paths.client_key, 1024 * 1024);
 
     return .{
         .endpoint = endpoint_override orelse meta.endpoint,
@@ -40,13 +41,13 @@ pub fn build(
 }
 
 pub fn save(allocator: std.mem.Allocator, bundle: Bundle, path: []const u8) !void {
-    if (std.fs.path.dirname(path)) |dir| {
-        try std.fs.cwd().makePath(dir);
+    if (compat.path.dirname(path)) |dir| {
+        try compat.cwd().makePath(dir);
     }
-    const json = try std.json.stringifyAlloc(allocator, bundle, .{ .whitespace = .indent_2 });
+    const json = try std.json.Stringify.valueAlloc(allocator, bundle, .{ .whitespace = .indent_2 });
     defer allocator.free(json);
 
-    var file = try std.fs.cwd().createFile(path, .{ .mode = 0o600, .truncate = true });
+    var file = try compat.cwd().createFile(path, .{ .mode = 0o600, .truncate = true });
     defer file.close();
     try file.chmod(0o600);
     try file.writeAll(json);
@@ -54,5 +55,5 @@ pub fn save(allocator: std.mem.Allocator, bundle: Bundle, path: []const u8) !voi
 }
 
 pub fn toJson(allocator: std.mem.Allocator, bundle: Bundle) ![]u8 {
-    return std.json.stringifyAlloc(allocator, bundle, .{ .whitespace = .indent_2 });
+    return std.json.Stringify.valueAlloc(allocator, bundle, .{ .whitespace = .indent_2 });
 }

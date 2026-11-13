@@ -1,10 +1,8 @@
 const std = @import("std");
+const compat = @import("compat");
 const common = @import("common.zig");
 const c = common.c;
-const net = @cImport({
-    @cInclude("windows.h");
-    @cInclude("iphlpapi.h");
-});
+const net = @import("windows_c");
 
 pub const CpuMetrics = struct {
     usage_percent: f64,
@@ -48,7 +46,7 @@ pub const Metrics = struct {
 };
 
 pub const State = struct {
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = .init,
     prev_idle: u64 = 0,
     prev_total: u64 = 0,
     prev_rx: u64 = 0,
@@ -57,8 +55,8 @@ pub const State = struct {
 };
 
 pub fn sample(allocator: std.mem.Allocator, state: *State) !Metrics {
-    state.mutex.lock();
-    defer state.mutex.unlock();
+    state.mutex.lockUncancelable(compat.io());
+    defer state.mutex.unlock(compat.io());
 
     var idle_time: c.FILETIME = undefined;
     var kernel_time: c.FILETIME = undefined;
@@ -79,7 +77,7 @@ pub fn sample(allocator: std.mem.Allocator, state: *State) !Metrics {
     const memory = memoryInfo();
     const network = networkInfo(allocator) catch NetCounters{ .rx = 0, .tx = 0 };
 
-    const now = std.time.milliTimestamp();
+    const now = compat.milliTimestamp();
     var rx_rate: f64 = 0;
     var tx_rate: f64 = 0;
     if (state.prev_at_ms > 0) {
@@ -163,7 +161,7 @@ fn networkInfo(allocator: std.mem.Allocator) !NetCounters {
     _ = net.GetIfTable(null, &size, 0);
     if (size == 0) return .{ .rx = 0, .tx = 0 };
 
-    const buffer = try allocator.alignedAlloc(u8, @alignOf(net.MIB_IFROW), size);
+    const buffer = try allocator.alignedAlloc(u8, std.mem.Alignment.of(net.MIB_IFROW), size);
     const table: *net.MIB_IFTABLE = @ptrCast(@alignCast(buffer.ptr));
     if (net.GetIfTable(table, &size, 0) != 0) return error.NetworkInfo;
 
@@ -184,7 +182,7 @@ fn diskInfo(allocator: std.mem.Allocator) ![]DiskMetrics {
     const length = c.GetLogicalDriveStringsW(buffer.len, &buffer);
     if (length == 0) return &.{};
 
-    var disks = std.ArrayList(DiskMetrics).init(allocator);
+    var disks = std.array_list.Managed(DiskMetrics).init(allocator);
     var offset: usize = 0;
     while (offset < length and offset < buffer.len) {
         const start = offset;

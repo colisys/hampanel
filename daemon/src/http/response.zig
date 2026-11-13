@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const Conn = @import("../net/conn.zig").Conn;
 const version = @import("../version.zig");
 
@@ -40,20 +41,20 @@ pub fn statusText(status: u16) []const u8 {
 }
 
 pub fn write(conn: *Conn, resp: Response, keep_alive: bool) !void {
-    var file: ?std.fs.File = null;
+    var file: ?compat.File = null;
     defer if (file) |f| f.close();
 
     var body_length: u64 = resp.body.len;
     if (resp.file_path) |path| {
-        const handle = std.fs.cwd().openFile(path, .{}) catch return error.FileOpen;
+        const handle = compat.cwd().openFile(path, .{}) catch return error.FileOpen;
         file = handle;
         const stat = handle.stat() catch return error.FileStat;
         body_length = stat.size;
     }
 
-    var head = std.ArrayList(u8).init(std.heap.page_allocator);
+    var head: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
     defer head.deinit();
-    const writer = head.writer();
+    const writer = &head.writer;
     try writer.print("HTTP/1.1 {d} {s}\r\n", .{ resp.status, statusText(resp.status) });
     try writer.print("Server: {s}\r\n", .{version.user_agent});
     try writer.print("Content-Type: {s}\r\n", .{resp.content_type});
@@ -66,7 +67,7 @@ pub fn write(conn: *Conn, resp: Response, keep_alive: bool) !void {
     }
     try writer.print("\r\n", .{});
 
-    try conn.writeAll(head.items);
+    try conn.writeAll(head.written());
 
     if (resp.file_path != null) {
         var buffer: [64 * 1024]u8 = undefined;

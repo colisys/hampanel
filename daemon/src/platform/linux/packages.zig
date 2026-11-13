@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const exec = @import("shared").exec;
 
 pub const ToolStatus = struct {
@@ -64,7 +65,7 @@ const tools = [_]Tool{
 
 pub fn list(allocator: std.mem.Allocator) !Status {
     const manager = detect(allocator);
-    var items = std.ArrayList(ToolStatus).init(allocator);
+    var items = std.array_list.Managed(ToolStatus).init(allocator);
     for (tools) |tool| {
         try items.append(.{
             .id = tool.id,
@@ -86,7 +87,7 @@ pub fn install(allocator: std.mem.Allocator, id: []const u8) !Outcome {
     const manager = detect(allocator);
     if (manager == .none) return error.ManagerUnavailable;
 
-    var argv = std.ArrayList([]const u8).init(allocator);
+    var argv = std.array_list.Managed([]const u8).init(allocator);
     const package = packageFor(tool, manager);
     switch (manager) {
         .apt => try argv.appendSlice(&.{
@@ -148,12 +149,12 @@ fn findTool(id: []const u8) ?Tool {
 }
 
 fn binaryExists(allocator: std.mem.Allocator, binary: []const u8) bool {
-    const path = std.process.getEnvVarOwned(allocator, "PATH") catch return false;
+    const path = compat.getEnv("PATH") orelse return false;
     var dirs = std.mem.splitScalar(u8, path, ':');
     while (dirs.next()) |dir| {
         if (dir.len == 0) continue;
-        const full = std.fs.path.join(allocator, &.{ dir, binary }) catch continue;
-        std.fs.cwd().access(full, .{}) catch continue;
+        const full = compat.path.join(allocator, &.{ dir, binary }) catch continue;
+        compat.cwd().access(full, .{}) catch continue;
         return true;
     }
     return false;

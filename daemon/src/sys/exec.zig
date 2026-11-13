@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 
 pub const Result = struct {
     stdout: []u8,
@@ -16,17 +17,17 @@ pub const RunError = error{
 };
 
 pub fn run(allocator: std.mem.Allocator, argv: []const []const u8, max_output: usize) RunError!Result {
-    const res = std.process.Child.run(.{
-        .allocator = allocator,
+    const res = std.process.run(allocator, compat.io(), .{
         .argv = argv,
-        .max_output_bytes = max_output,
+        .stdout_limit = .limited(max_output),
+        .stderr_limit = .limited(max_output),
     }) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         else => return error.SpawnFailed,
     };
 
     const code: u8 = switch (res.term) {
-        .Exited => |exit_code| exit_code,
+        .exited => |exit_code| exit_code,
         else => 255,
     };
 

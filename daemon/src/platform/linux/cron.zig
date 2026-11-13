@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const exec = @import("shared").exec;
 
 const begin_marker = "# BEGIN HAMPANEL MANAGED";
@@ -24,11 +25,11 @@ pub fn list(allocator: std.mem.Allocator) ![]Entry {
 
 pub fn add(allocator: std.mem.Allocator, schedule: []const u8, command: []const u8) !Outcome {
     const current = try readCrontab(allocator);
-    var entries = std.ArrayList(Entry).init(allocator);
+    var entries = std.array_list.Managed(Entry).init(allocator);
     for (try parseEntries(allocator, current)) |entry| try entries.append(entry);
 
     var random: [4]u8 = undefined;
-    std.crypto.random.bytes(&random);
+    compat.randomBytes(&random);
     const id = try std.fmt.allocPrint(allocator, "{s}", .{std.fmt.bytesToHex(random, .lower)});
     const line = try std.fmt.allocPrint(allocator, "{s} {s}{s}{s}", .{ schedule, command, id_marker, id });
     try entries.append(.{
@@ -45,7 +46,7 @@ pub fn add(allocator: std.mem.Allocator, schedule: []const u8, command: []const 
 
 pub fn remove(allocator: std.mem.Allocator, id: []const u8) !Outcome {
     const current = try readCrontab(allocator);
-    var kept = std.ArrayList(Entry).init(allocator);
+    var kept = std.array_list.Managed(Entry).init(allocator);
     var found = false;
     for (try parseEntries(allocator, current)) |entry| {
         if (std.mem.eql(u8, entry.id, id)) {
@@ -69,21 +70,21 @@ fn readCrontab(allocator: std.mem.Allocator) ![]const u8 {
 
 fn installCrontab(allocator: std.mem.Allocator, text: []const u8) !exec.Result {
     var random: [6]u8 = undefined;
-    std.crypto.random.bytes(&random);
+    compat.randomBytes(&random);
     const path = try std.fmt.allocPrint(allocator, "/tmp/hampanel-cron-{s}", .{std.fmt.bytesToHex(random, .lower)});
-    errdefer std.fs.deleteFileAbsolute(path) catch {};
+    errdefer compat.deleteFileAbsolute(path) catch {};
 
-    var file = try std.fs.createFileAbsolute(path, .{ .truncate = true, .mode = 0o600 });
+    var file = try compat.createFileAbsolute(path, .{ .truncate = true, .mode = 0o600 });
     try file.writeAll(text);
     file.close();
 
     const result = try exec.run(allocator, &.{ "crontab", path }, 1024 * 1024);
-    std.fs.deleteFileAbsolute(path) catch {};
+    compat.deleteFileAbsolute(path) catch {};
     return result;
 }
 
 fn parseEntries(allocator: std.mem.Allocator, contents: []const u8) ![]Entry {
-    var entries = std.ArrayList(Entry).init(allocator);
+    var entries = std.array_list.Managed(Entry).init(allocator);
     var in_block = false;
 
     var lines = std.mem.splitScalar(u8, contents, '\n');
@@ -104,7 +105,7 @@ fn parseEntries(allocator: std.mem.Allocator, contents: []const u8) ![]Entry {
         if (id.len == 0) continue;
         const body = std.mem.trim(u8, line[0..marker_at], " \t");
 
-        var tokens = std.ArrayList([]const u8).init(allocator);
+        var tokens = std.array_list.Managed([]const u8).init(allocator);
         var it = std.mem.tokenizeAny(u8, body, " \t");
         while (it.next()) |token| try tokens.append(token);
         if (tokens.items.len < 2) continue;
@@ -133,7 +134,9 @@ fn parseEntries(allocator: std.mem.Allocator, contents: []const u8) ![]Entry {
 }
 
 fn rewrite(allocator: std.mem.Allocator, contents: []const u8, entries: []const Entry) ![]u8 {
-    var out = std.ArrayList(u8).init(allocator);
+    var out: std.Io.Writer.Allocating = .init(allocator);
+    defer out.deinit();
+    const writer = &out.writer;
     var in_block = false;
 
     var lines = std.mem.splitScalar(u8, contents, '\n');
@@ -148,20 +151,20 @@ fn rewrite(allocator: std.mem.Allocator, contents: []const u8, entries: []const 
             continue;
         }
         if (in_block) continue;
-        try out.appendSlice(raw_line);
-        try out.append('\n');
+        try writer.writeAll(raw_line);
+        try writer.writeAll("\n");
     }
 
-    if (out.items.len > 0 and out.items[out.items.len - 1] != '\n') try out.append('\n');
+    if (out.written().len > 0 and out.written()[out.written().len - 1] != '\n') try writer.writeAll("\n");
 
     if (entries.len > 0) {
-        try out.appendSlice(begin_marker);
-        try out.append('\n');
+        try writer.writeAll(begin_marker);
+        try writer.writeAll("\n");
         for (entries) |entry| {
-            try out.writer().print("{s} {s}{s}{s}\n", .{ entry.schedule, entry.command, id_marker, entry.id });
+            try writer.print("{s} {s}{s}{s}\n", .{ entry.schedule, entry.command, id_marker, entry.id });
         }
-        try out.appendSlice(end_marker);
-        try out.append('\n');
+        try writer.writeAll(end_marker);
+        try writer.writeAll("\n");
     }
 
     return out.toOwnedSlice();

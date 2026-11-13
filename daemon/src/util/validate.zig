@@ -63,13 +63,13 @@ pub fn isIpOrCidr(value: []const u8) bool {
         const addr = value[0..idx];
         const bits = std.fmt.parseInt(u8, value[idx + 1 ..], 10) catch return false;
         if (std.mem.indexOfScalar(u8, addr, ':')) |_| {
-            _ = std.net.Address.parseIp6(addr, 0) catch return false;
+            _ = std.Io.net.IpAddress.parseIp6(addr, 0) catch return false;
             return bits <= 128;
         }
-        _ = std.net.Address.parseIp4(addr, 0) catch return false;
+        _ = std.Io.net.IpAddress.parseIp4(addr, 0) catch return false;
         return bits <= 32;
     }
-    _ = std.net.Address.parseIp(value, 0) catch return false;
+    _ = std.Io.net.IpAddress.parse(value, 0) catch return false;
     return true;
 }
 

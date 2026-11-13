@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const os = @import("openssl.zig");
 const c = os.c;
 const log = @import("log.zig");
@@ -12,11 +13,11 @@ pub const Context = struct {
         key_path: []const u8,
         ca_path: []const u8,
     ) !Context {
-        const cert_z = try allocator.dupeZ(u8, cert_path);
+        const cert_z = try compat.dupeZ(allocator, cert_path);
         defer allocator.free(cert_z);
-        const key_z = try allocator.dupeZ(u8, key_path);
+        const key_z = try compat.dupeZ(allocator, key_path);
         defer allocator.free(key_z);
-        const ca_z = try allocator.dupeZ(u8, ca_path);
+        const ca_z = try compat.dupeZ(allocator, ca_path);
         defer allocator.free(ca_z);
 
         const ctx = c.SSL_CTX_new(c.TLS_server_method()) orelse return error.TlsContext;

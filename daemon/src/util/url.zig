@@ -1,7 +1,7 @@
 const std = @import("std");
 
 pub fn decode(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
-    var out = try std.ArrayList(u8).initCapacity(allocator, raw.len);
+    var out = try std.array_list.Managed(u8).initCapacity(allocator, raw.len);
     errdefer out.deinit();
 
     var i: usize = 0;

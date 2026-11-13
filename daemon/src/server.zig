@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const app_mod = @import("app.zig");
 const Conn = @import("net/conn.zig").Conn;
 const tls = @import("tls.zig");
@@ -13,14 +14,15 @@ const timeutil = @import("util/time.zig");
 const prefix = @import("util/prefix.zig");
 
 pub fn serve(app: *app_mod.App) !void {
-    const address = try std.net.Address.parseIp(app.config.listen, app.config.port);
-    var listener = try address.listen(.{ .reuse_address = true });
-    defer listener.deinit();
+    const io = compat.io();
+    var address = try std.Io.net.IpAddress.parse(app.config.listen, app.config.port);
+    var listener = try address.listen(io, .{ .reuse_address = true });
+    defer listener.deinit(io);
 
     log.info("hampaneld listening on {s}:{d} with mutual TLS", .{ app.config.listen, app.config.port });
 
     while (true) {
-        const connection = listener.accept() catch |err| {
+        const connection = listener.accept(io) catch |err| {
             log.warn("accept failed: {s}", .{@errorName(err)});
             continue;
         };
@@ -28,30 +30,31 @@ pub fn serve(app: *app_mod.App) !void {
         const active = app.active_connections.fetchAdd(1, .monotonic) + 1;
         if (active > app.config.max_connections) {
             _ = app.active_connections.fetchSub(1, .monotonic);
-            log.warn("connection limit reached, dropping {any}", .{connection.address});
-            connection.stream.close();
+            log.warn("connection limit reached, dropping {f}", .{connection.socket.address});
+            connection.close(io);
             continue;
         }
 
         const thread = std.Thread.spawn(.{}, handleConnection, .{ app, connection }) catch {
             _ = app.active_connections.fetchSub(1, .monotonic);
-            connection.stream.close();
+            connection.close(io);
             continue;
         };
         thread.detach();
     }
 }
 
-fn handleConnection(app: *app_mod.App, connection: std.net.Server.Connection) void {
+fn handleConnection(app: *app_mod.App, connection: std.Io.net.Stream) void {
+    const io = compat.io();
     defer _ = app.active_connections.fetchSub(1, .monotonic);
-    defer connection.stream.close();
+    defer connection.close(io);
 
-    const ssl = app.tls.accept(connection.stream.handle) catch return;
+    const ssl = app.tls.accept(connection.socket.handle) catch return;
     var conn = Conn.init(ssl);
     defer conn.close();
 
     var identity = tls.peerIdentity(ssl) catch {
-        log.warn("client without a usable certificate from {any}", .{connection.address});
+        log.warn("client without a usable certificate from {f}", .{connection.socket.address});
         return;
     };
     if (!std.mem.startsWith(u8, identity.cn(), app.config.client_cn_prefix)) {
@@ -59,14 +62,14 @@ fn handleConnection(app: *app_mod.App, connection: std.net.Server.Connection) vo
         return;
     }
 
-    log.debug("client {s} connected from {any}", .{ identity.cn(), connection.address });
+    log.debug("client {s} connected from {f}", .{ identity.cn(), connection.socket.address });
 
     while (true) {
         var arena = std.heap.ArenaAllocator.init(app.allocator);
         defer arena.deinit();
         const allocator = arena.allocator();
 
-        const started_ms = std.time.milliTimestamp();
+        const started_ms = compat.milliTimestamp();
         const req = http_request.read(&conn, allocator, app.config.max_body_bytes) catch |err| {
             switch (err) {
                 error.EndOfStream, error.Io, error.WouldBlock => return,
@@ -126,14 +129,14 @@ fn handleConnection(app: *app_mod.App, connection: std.net.Server.Connection) vo
 fn recordAudit(
     app: *app_mod.App,
     ctx: context.Context,
-    connection: std.net.Server.Connection,
+    connection: std.Io.net.Stream,
     started_ms: i64,
     route_path: []const u8,
     allocator: std.mem.Allocator,
 ) void {
     var ts_buf: [32]u8 = undefined;
-    const peer = std.fmt.allocPrint(allocator, "{}", .{connection.address}) catch "unknown";
-    const now = std.time.milliTimestamp();
+    const peer = std.fmt.allocPrint(allocator, "{f}", .{connection.socket.address}) catch "unknown";
+    const now = compat.milliTimestamp();
     const elapsed: u64 = if (now >= started_ms) @intCast(now - started_ms) else 0;
     app.audit.append(audit.Entry{
         .at = timeutil.nowIso(&ts_buf),

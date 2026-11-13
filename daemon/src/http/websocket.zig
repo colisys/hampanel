@@ -112,7 +112,7 @@ pub fn readFrame(conn: *Conn, allocator: std.mem.Allocator, max_payload: usize) 
 pub fn writeFrame(conn: *Conn, opcode: Opcode, payload: []const u8) Error!void {
     var header: [10]u8 = undefined;
     var head_len: usize = 2;
-    header[0] = 0x80 | @intFromEnum(opcode);
+    header[0] = 0x80 | @backingInt(opcode);
     if (payload.len < 126) {
         header[1] = @intCast(payload.len);
     } else if (payload.len <= 0xFFFF) {

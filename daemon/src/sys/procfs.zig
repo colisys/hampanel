@@ -1,7 +1,6 @@
 const std = @import("std");
-const c = @cImport({
-    @cInclude("sys/statvfs.h");
-});
+const compat = @import("compat");
+const c = @import("libc_c");
 
 pub const CpuMetrics = struct {
     usage_percent: f64,
@@ -45,7 +44,7 @@ pub const Metrics = struct {
 };
 
 pub const Sampler = struct {
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = .init,
     prev_cpu_total: u64 = 0,
     prev_cpu_idle: u64 = 0,
     prev_rx: u64 = 0,
@@ -54,8 +53,8 @@ pub const Sampler = struct {
 };
 
 pub fn sample(allocator: std.mem.Allocator, sampler: *Sampler) !Metrics {
-    sampler.mutex.lock();
-    defer sampler.mutex.unlock();
+    sampler.mutex.lockUncancelable(compat.io());
+    defer sampler.mutex.unlock(compat.io());
 
     const stat = try readFile(allocator, "/proc/stat");
     defer allocator.free(stat);
@@ -84,7 +83,7 @@ pub fn sample(allocator: std.mem.Allocator, sampler: *Sampler) !Metrics {
     const disks = try parseDisks(allocator);
     const net = try parseNetwork(allocator);
 
-    const now = std.time.milliTimestamp();
+    const now = compat.milliTimestamp();
     var rx_rate: f64 = 0;
     var tx_rate: f64 = 0;
     if (sampler.prev_at_ms > 0) {
@@ -125,7 +124,7 @@ fn clampPercent(value: f64) f64 {
 }
 
 fn readFile(allocator: std.mem.Allocator, path: []const u8) ![]u8 {
-    return std.fs.cwd().readFileAlloc(allocator, path, 4 * 1024 * 1024);
+    return compat.cwd().readFileAlloc(allocator, path, 4 * 1024 * 1024);
 }
 
 const CpuTimes = struct { total: u64, idle: u64, cores: u32 };
@@ -138,7 +137,7 @@ fn parseCpu(stat: []const u8) !CpuTimes {
         if (line.len > 3 and line[3] == ' ') {
             var fields = std.mem.tokenizeAny(u8, line, " \t");
             _ = fields.next();
-            var values: [10]u64 = [_]u64{0} ** 10;
+            var values: [10]u64 = @splat(0);
             var idx: usize = 0;
             while (fields.next()) |field| : (idx += 1) {
                 if (idx >= values.len) break;
@@ -235,7 +234,7 @@ fn parseDisks(allocator: std.mem.Allocator) ![]DiskMetrics {
     const raw = try readFile(allocator, "/proc/mounts");
     defer allocator.free(raw);
 
-    var disks = std.ArrayList(DiskMetrics).init(allocator);
+    var disks = std.array_list.Managed(DiskMetrics).init(allocator);
     var lines = std.mem.splitScalar(u8, raw, '\n');
     while (lines.next()) |line| {
         var fields = std.mem.tokenizeAny(u8, line, " \t");
@@ -257,7 +256,7 @@ fn parseDisks(allocator: std.mem.Allocator) ![]DiskMetrics {
         }
         if (duplicate) continue;
 
-        const mount_z = try allocator.dupeZ(u8, mount);
+        const mount_z = try compat.dupeZ(allocator, mount);
         defer allocator.free(mount_z);
         var stat: c.struct_statvfs = undefined;
         if (c.statvfs(mount_z.ptr, &stat) != 0) continue;
@@ -283,7 +282,7 @@ fn parseDisks(allocator: std.mem.Allocator) ![]DiskMetrics {
 
 fn decodeMount(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
     if (std.mem.indexOfScalar(u8, raw, '\\') == null) return allocator.dupe(u8, raw);
-    var out = std.ArrayList(u8).init(allocator);
+    var out = std.array_list.Managed(u8).init(allocator);
     var i: usize = 0;
     while (i < raw.len) {
         if (raw[i] == '\\' and i + 3 < raw.len) {
@@ -316,7 +315,7 @@ fn parseNetwork(allocator: std.mem.Allocator) !NetCounters {
         const iface = std.mem.trim(u8, line[0..colon], " \t");
         if (std.mem.eql(u8, iface, "lo")) continue;
         var fields = std.mem.tokenizeAny(u8, line[colon + 1 ..], " \t");
-        var values: [16]u64 = [_]u64{0} ** 16;
+        var values: [16]u64 = @splat(0);
         var idx: usize = 0;
         while (fields.next()) |field| : (idx += 1) {
             if (idx >= values.len) break;

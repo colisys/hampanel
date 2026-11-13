@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const common = @import("common.zig");
 const exec = @import("shared").exec;
 
@@ -51,12 +52,12 @@ pub fn add(allocator: std.mem.Allocator, schedule: []const u8, command: []const 
     const parsed = translateSchedule(allocator, schedule) catch return error.Unsupported;
 
     var random: [4]u8 = undefined;
-    std.crypto.random.bytes(&random);
+    compat.randomBytes(&random);
     const id = std.fmt.bytesToHex(random, .lower);
     const task_name = try std.fmt.allocPrint(allocator, "{s}{s}", .{ task_path, id });
     const task_run = try std.fmt.allocPrint(allocator, "cmd.exe /c {s}", .{command});
 
-    var argv = std.ArrayList([]const u8).init(allocator);
+    var argv = std.array_list.Managed([]const u8).init(allocator);
     try argv.appendSlice(&.{ "schtasks.exe", "/Create", "/F", "/TN", task_name, "/TR", task_run });
     try argv.appendSlice(parsed.args);
 

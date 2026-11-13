@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 
 pub const Entry = struct {
     at: []const u8,
@@ -12,31 +13,31 @@ pub const Entry = struct {
 pub const Log = struct {
     allocator: std.mem.Allocator,
     dir: []const u8,
-    mutex: std.Thread.Mutex = .{},
+    mutex: std.Io.Mutex = .init,
 
     pub fn init(allocator: std.mem.Allocator, dir: []const u8) !Log {
-        try std.fs.cwd().makePath(dir);
+        try compat.cwd().makePath(dir);
         return .{ .allocator = allocator, .dir = dir };
     }
 
     pub fn append(self: *Log, entry: Entry) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lockUncancelable(compat.io());
+        defer self.mutex.unlock(compat.io());
 
-        const file_path = std.fs.path.join(self.allocator, &.{ self.dir, "audit.jsonl" }) catch return;
+        const file_path = compat.path.join(self.allocator, &.{ self.dir, "audit.jsonl" }) catch return;
         defer self.allocator.free(file_path);
 
-        const line = std.json.stringifyAlloc(self.allocator, entry, .{}) catch return;
+        const line = std.json.Stringify.valueAlloc(self.allocator, entry, .{}) catch return;
         defer self.allocator.free(line);
 
-        var file = std.fs.cwd().createFile(file_path, .{ .mode = 0o600, .truncate = false }) catch return;
+        var file = compat.cwd().createFile(file_path, .{ .mode = 0o600, .truncate = false }) catch return;
         defer file.close();
-        file.seekFromEnd(0) catch {};
-        file.writeAll(line) catch return;
-        file.writeAll("\n") catch {};
+        const size = file.length() catch return;
+        file.writePositionalAll(line, size) catch return;
+        file.writePositionalAll("\n", size + line.len) catch {};
     }
 
     pub fn path(self: *Log, allocator: std.mem.Allocator) ![]u8 {
-        return std.fs.path.join(allocator, &.{ self.dir, "audit.jsonl" });
+        return compat.path.join(allocator, &.{ self.dir, "audit.jsonl" });
     }
 };

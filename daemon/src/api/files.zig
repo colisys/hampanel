@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const context = @import("context.zig");
 const platform = @import("../platform/mod.zig");
 const recycle = @import("../recycle.zig");
@@ -21,17 +22,17 @@ pub fn list(ctx: *context.Context) anyerror!void {
     const path = try requirePath(ctx);
     const a = ctx.arena;
 
-    var dir = std.fs.openDirAbsolute(path, .{ .iterate = true }) catch |err| {
+    var dir = compat.openDirAbsolute(path, .{ .iterate = true }) catch |err| {
         ctx.fail(404, "not_found", @errorName(err));
         return;
     };
     defer dir.close();
 
-    var entries = std.ArrayList(Entry).init(a);
+    var entries = std.array_list.Managed(Entry).init(a);
     var it = dir.iterate();
     while (try it.next()) |item| {
         if (entries.items.len >= 3000) break;
-        const full = try std.fs.path.join(a, &.{ path, item.name });
+        const full = try compat.path.join(a, &.{ path, item.name });
         const meta = platform.files.stat(a, full) catch null;
 
         try entries.append(.{
@@ -82,7 +83,7 @@ pub fn content(ctx: *context.Context) anyerror!void {
         return;
     }
 
-    const file = std.fs.openFileAbsolute(path, .{}) catch |err| {
+    const file = compat.openFileAbsolute(path, .{}) catch |err| {
         ctx.fail(404, "not_found", @errorName(err));
         return;
     };
@@ -160,7 +161,7 @@ pub fn write(ctx: *context.Context) anyerror!void {
         return;
     };
 
-    var file = std.fs.createFileAbsolute(path, .{ .truncate = true, .mode = 0o644 }) catch |err| {
+    var file = compat.createFileAbsolute(path, .{ .truncate = true, .mode = 0o644 }) catch |err| {
         ctx.fail(400, "write_failed", @errorName(err));
         return;
     };
@@ -183,12 +184,12 @@ pub fn mkdir(ctx: *context.Context) anyerror!void {
     const path = resolvePath(ctx, body.path) catch return;
 
     if (body.recursive) {
-        std.fs.cwd().makePath(path) catch |err| {
+        compat.cwd().makePath(path) catch |err| {
             ctx.fail(400, "mkdir_failed", @errorName(err));
             return;
         };
     } else {
-        std.fs.makeDirAbsolute(path) catch |err| {
+        compat.makeDirAbsolute(path, 0o777) catch |err| {
             ctx.fail(400, "mkdir_failed", @errorName(err));
             return;
         };
@@ -209,7 +210,7 @@ pub fn rename(ctx: *context.Context) anyerror!void {
     const from = resolvePath(ctx, body.from) catch return;
     const to = resolvePath(ctx, body.to) catch return;
 
-    std.fs.renameAbsolute(from, to) catch |err| {
+    compat.renameAbsolute(from, to) catch |err| {
         ctx.fail(400, "rename_failed", @errorName(err));
         return;
     };
@@ -233,7 +234,7 @@ pub fn delete(ctx: *context.Context) anyerror!void {
     }
 
     const Result = struct { path: []const u8, ok: bool, message: []const u8, recycle_id: ?[]const u8 = null };
-    var results = std.ArrayList(Result).init(ctx.arena);
+    var results = std.array_list.Managed(Result).init(ctx.arena);
 
     for (body.paths) |raw| {
         const path = resolvePath(ctx, raw) catch {
@@ -266,7 +267,7 @@ pub fn download(ctx: *context.Context) anyerror!void {
         return;
     }
 
-    const name = std.fs.path.basename(path);
+    const name = compat.path.basename(path);
     const disposition = try std.fmt.allocPrint(ctx.arena, "attachment; filename=\"{s}\"", .{name});
     const headers = try ctx.arena.alloc(http_response.Header, 1);
     headers[0] = .{ .name = "Content-Disposition", .value = disposition };
@@ -285,11 +286,11 @@ pub fn upload(ctx: *context.Context) anyerror!void {
         ctx.fail(400, "bad_request", "empty body");
         return;
     }
-    const parent = std.fs.path.dirname(path) orelse {
+    const parent = compat.path.dirname(path) orelse {
         ctx.fail(400, "bad_path", "path has no parent directory");
         return;
     };
-    var parent_dir = std.fs.openDirAbsolute(parent, .{}) catch {
+    var parent_dir = compat.openDirAbsolute(parent, .{}) catch {
         ctx.fail(404, "not_found", "parent directory does not exist");
         return;
     };
@@ -301,7 +302,7 @@ pub fn upload(ctx: *context.Context) anyerror!void {
     };
 
     var random: [6]u8 = undefined;
-    std.crypto.random.bytes(&random);
+    compat.randomBytes(&random);
     const temp_name = try std.fmt.allocPrint(ctx.arena, ".hampanel-upload-{s}", .{std.fmt.bytesToHex(random, .lower)});
 
     var temp = parent_dir.createFile(temp_name, .{ .truncate = true, .mode = 0o644 }) catch |err| {
@@ -316,7 +317,7 @@ pub fn upload(ctx: *context.Context) anyerror!void {
     };
     temp.close();
 
-    std.fs.renameAbsolute(try std.fs.path.join(ctx.arena, &.{ parent, temp_name }), path) catch |err| {
+    compat.renameAbsolute(try compat.path.join(ctx.arena, &.{ parent, temp_name }), path) catch |err| {
         parent_dir.deleteFile(temp_name) catch {};
         ctx.fail(400, "rename_failed", @errorName(err));
         return;
@@ -340,7 +341,7 @@ fn resolvePath(ctx: *context.Context, raw: []const u8) ![]const u8 {
     };
 }
 
-fn kindName(kind: std.fs.File.Kind) []const u8 {
+fn kindName(kind: compat.File.Kind) []const u8 {
     return switch (kind) {
         .directory => "dir",
         .sym_link => "symlink",

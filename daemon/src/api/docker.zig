@@ -35,7 +35,7 @@ pub fn containers(ctx: *context.Context) anyerror!void {
         return;
     }
 
-    var items = std.ArrayList(Container).init(ctx.arena);
+    var items = std.array_list.Managed(Container).init(ctx.arena);
     var lines = std.mem.splitScalar(u8, result.stdout, '\n');
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");
@@ -68,7 +68,7 @@ pub fn images(ctx: *context.Context) anyerror!void {
         return;
     }
 
-    var items = std.ArrayList(Image).init(ctx.arena);
+    var items = std.array_list.Managed(Image).init(ctx.arena);
     var lines = std.mem.splitScalar(u8, result.stdout, '\n');
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \t\r");

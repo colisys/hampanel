@@ -115,13 +115,18 @@ Windows 绿色版首次运行时会解压到用户临时目录并启动客户端
 
 ### 安装方式与更新
 
-- **发布二进制**（默认）：安装器校验 `SHA256SUMS.txt` 后安装 release 产物；
-  daemon 记录 `install_mode=binary`，安装时自动加入每日更新检查（Linux
-  `/etc/cron.d/hampanel-update`，Windows 计划任务 `\Hampanel\update`），并在
+- **发布二进制**（默认）：按所选通道直接从 GitHub Release 下载对应架构的产物并校验
+  `SHA256SUMS.txt`。`stable` 对应正式 Release（tag），`nightly` 对应滚动预发布；
+  不会自动切换通道。daemon 记录 `install_mode=binary`，安装时自动加入每日更新检查
+  （Linux `/etc/cron.d/hampanel-update`，Windows 计划任务 `\Hampanel\update`），并在
   面板「设置 → 更新」中提供检查/立即更新与开关。
-- **源码构建**：使用 `--mode source`（Linux）或 `-Mode source`（Windows），
-  从 GitHub 源码构建；daemon 记录 `install_mode=source`，**不会**启用更新检查，
-  面板 API 也会拒绝再添加检查更新的计划任务。
+- **源码构建**：必须显式选择通道或引用，`--channel stable` 解析为最新正式 tag，
+  `--channel nightly` 拉取 nightly 分支，也可用 `--ref <tag|branch>` 指定。daemon
+  记录 `install_mode=source`，**不会**启用更新检查，面板 API 也会拒绝再添加检查更新
+  的计划任务。
+
+> 当前尚未发布正式版，请使用 `--channel nightly`（Linux）或 `-Channel nightly`
+> （Windows）安装预发布产物；`stable` 会在没有正式 Release 时给出明确错误。
 
 ## 快速开始
 
@@ -136,6 +141,10 @@ dart run tool/hampanelctl/bin/hampanelctl.dart deploy \
   --san 203.0.113.10 \
   --out hampanel-203.0.113.10.json
 
+# 当前只有预发布：显式选择 nightly
+dart run tool/hampanelctl/bin/hampanelctl.dart deploy --channel nightly \
+  --host 203.0.113.10 --user root --san 203.0.113.10
+
 # 从源码构建（不启用更新检查）
 dart run tool/hampanelctl/bin/hampanelctl.dart deploy --mode source \
   --host 203.0.113.10 --user root \
@@ -144,7 +153,7 @@ dart run tool/hampanelctl/bin/hampanelctl.dart deploy --mode source \
 
 安装器会自动：
 
-1. 下载并校验对应平台的 release 产物（或下载源码并编译）
+1. 按通道下载并校验对应架构的 release 产物（或拉取源码并编译）
 2. 安装 `/usr/local/bin/hampaneld`（源码模式还包含风险网关）与 systemd 单元
 3. 自动选择空闲端口并生成随机安全入口前缀（如 `/a1b2c3d4e5f6`），随后生成 CA、服务端证书、客户端证书并启动服务
 4. 二进制模式自动加入每日更新检查；源码模式不启用
@@ -153,9 +162,13 @@ dart run tool/hampanelctl/bin/hampanelctl.dart deploy --mode source \
 也可以直接在目标机执行安装器：
 
 ```bash
-curl -fsSL https://github.com/colisys/hampanel/releases/latest/download/hampanel-install-linux.sh \
-  | sudo bash -s -- --endpoint 203.0.113.10
-echo $?   # nightly: 把 latest 换成 /releases/download/nightly
+# 正式版发布后使用 latest；当前请使用 nightly 预发布
+curl -fsSL https://github.com/colisys/hampanel/releases/download/nightly/hampanel-install-linux.sh \
+  | sudo bash -s -- --mode binary --channel nightly --endpoint 203.0.113.10
+
+# 源码构建（stable 按 tag，nightly 按分支；也可 --ref <tag|branch>）
+curl -fsSL https://github.com/colisys/hampanel/releases/download/nightly/hampanel-install-linux.sh \
+  | sudo bash -s -- --mode source --channel nightly --endpoint 203.0.113.10
 ```
 
 ### Windows 部署
@@ -164,10 +177,11 @@ echo $?   # nightly: 把 latest 换成 /releases/download/nightly
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing `
-  https://github.com/colisys/hampanel/releases/latest/download/hampanel-install-windows.ps1 `
+  https://github.com/colisys/hampanel/releases/download/nightly/hampanel-install-windows.ps1 `
   -OutFile install.ps1
-.\install.ps1 -Endpoint 203.0.113.10 -San 203.0.113.10
-# 源码构建：.\install.ps1 -Mode source -Endpoint ... -San ...
+.\install.ps1 -Endpoint 203.0.113.10 -San 203.0.113.10 -Channel nightly
+# 源码构建：.\install.ps1 -Mode source -Channel nightly -Endpoint ... -San ...
+# 或按 tag 构建：.\install.ps1 -Mode source -Ref v0.1.0 -Endpoint ... -San ...
 # 可选：-InstallDriver 安装内核伴随驱动（需测试签名）
 ```
 
@@ -230,7 +244,7 @@ zig build -Doptimize=ReleaseSafe
 # 或关闭前缀：--entry-prefix ""
 ```
 
-依赖：Zig 0.14+、OpenSSL 1.1.1+/3.x（开发头文件）、Linux、glibc。
+依赖：Zig 0.17.1+、OpenSSL 1.1.1+/3.x（开发头文件）、Linux、glibc。
 
 ## 安全模型
 

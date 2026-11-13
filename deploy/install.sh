@@ -9,8 +9,11 @@ set -euo pipefail
 REPO="${HAMPANEL_REPO:-colisys/hampanel}"
 CHANNEL="${HAMPANEL_CHANNEL:-stable}"
 RELEASE_BASE="${HAMPANEL_RELEASE_BASE:-}"
+SOURCE_BASE="${HAMPANEL_SOURCE_BASE:-}"
 MODE="binary"
+CHANNEL_SET=0
 REF=""
+REF_SET=0
 ENDPOINT=""
 PORT=""
 ENTRY_PREFIX=""
@@ -36,8 +39,8 @@ Usage:
   hampanel-install-linux.sh --endpoint HOST [options]
 
   --mode binary|source   install a release binary (default) or build from source
-  --channel stable|nightly   binary release channel (default: stable)
-  --ref <branch|tag>     source ref for --mode source (default: nightly)
+  --channel stable|nightly   release channel; source builds require this or --ref
+  --ref <branch|tag>     source ref for --mode source (stable channel resolves to the latest tag)
   --repo <owner/repo>    GitHub repository (default: colisys/hampanel)
   --endpoint <host>      public endpoint host (port optional)
   --port <port>          daemon port (default: random free port)
@@ -57,8 +60,8 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --mode) MODE="${2:?}"; shift 2 ;;
-    --channel) CHANNEL="${2:?}"; shift 2 ;;
-    --ref) REF="${2:?}"; shift 2 ;;
+    --channel) CHANNEL="${2:?}"; CHANNEL_SET=1; shift 2 ;;
+    --ref) REF="${2:?}"; REF_SET=1; shift 2 ;;
     --repo) REPO="${2:?}"; shift 2 ;;
     --endpoint) ENDPOINT="${2:?}"; shift 2 ;;
     --port) PORT="${2:?}"; shift 2 ;;
@@ -112,6 +115,15 @@ release_base() {
   fi
 }
 
+latest_stable_tag() {
+  curl -fsSL --retry 2 --connect-timeout 15 \
+    -H 'Accept: application/vnd.github+json' \
+    -H 'User-Agent: hampanel-install' \
+    "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null |
+    sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
+    head -n1 || true
+}
+
 verify_checksum() {
   local asset="$1" sums="$2" file="$3" expected actual
   expected="$(awk -v a="$asset" '$2==a || $2=="*"a {print $1; exit}' "$sums")"
@@ -123,6 +135,9 @@ verify_checksum() {
 
 if [[ "$MODE" == "binary" ]]; then
   BASE="$(release_base "$CHANNEL")"
+  if ! curl -fsSL --retry 1 --connect-timeout 10 -o "$TMP/version.txt" "$BASE/version.txt"; then
+    fail "no release found for channel ${CHANNEL}; use --channel nightly for prereleases or publish a stable tag"
+  fi
   asset="hampanel-daemon-linux-x86_64.tar.gz"
   log "downloading ${BASE}/${asset}"
   curl -fsSL --retry 3 --connect-timeout 15 -o "$TMP/$asset" "$BASE/$asset" ||
@@ -145,8 +160,22 @@ if [[ "$MODE" == "binary" ]]; then
     --update-repo "$REPO" \
     "${BOOTSTRAP_ARGS[@]}"
 else
-  REF="${REF:-nightly}"
-  if [[ "$REF" == v* || "$REF" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+  if [[ "$REF_SET" == "0" && "$CHANNEL_SET" == "0" ]]; then
+    fail "source builds require --channel stable|nightly or --ref <tag|branch>"
+  fi
+  if [[ "$REF_SET" == "0" ]]; then
+    if [[ "$CHANNEL" == "nightly" ]]; then
+      REF="nightly"
+    elif [[ "$CHANNEL" == "stable" || "$CHANNEL" == "latest" ]]; then
+      REF="$(latest_stable_tag)"
+      [[ -n "$REF" ]] || fail "no stable release tag found; pass --ref <tag> for a source build"
+    else
+      fail "unknown channel ${CHANNEL}; use stable, nightly or --ref <tag|branch>"
+    fi
+  fi
+  if [[ -n "$SOURCE_BASE" ]]; then
+    src_url="${SOURCE_BASE%/}/${REF}.tar.gz"
+  elif [[ "$REF" == v* || "$REF" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
     src_url="https://github.com/${REPO}/archive/refs/tags/${REF}.tar.gz"
   else
     src_url="https://github.com/${REPO}/archive/refs/heads/${REF}.tar.gz"

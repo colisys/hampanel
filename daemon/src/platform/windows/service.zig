@@ -1,9 +1,6 @@
 const std = @import("std");
 
-const c = @cImport({
-    @cInclude("windows.h");
-    @cInclude("winsvc.h");
-});
+const c = @import("windows_c");
 
 pub const ServeFn = *const fn () anyerror!void;
 

@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const types = @import("shared").types;
 
 pub fn info(allocator: std.mem.Allocator) !types.SystemInfo {
@@ -18,7 +19,7 @@ pub fn info(allocator: std.mem.Allocator) !types.SystemInfo {
 }
 
 fn readOsPretty(allocator: std.mem.Allocator) ![]const u8 {
-    const raw = try std.fs.cwd().readFileAlloc(allocator, "/etc/os-release", 64 * 1024);
+    const raw = try compat.cwd().readFileAlloc(allocator, "/etc/os-release", 64 * 1024);
     var lines = std.mem.splitScalar(u8, raw, '\n');
     while (lines.next()) |line| {
         const prefix = "PRETTY_NAME=";
@@ -33,7 +34,7 @@ fn readOsPretty(allocator: std.mem.Allocator) ![]const u8 {
 }
 
 fn readCpuModel(allocator: std.mem.Allocator) ![]const u8 {
-    const raw = try std.fs.cwd().readFileAlloc(allocator, "/proc/cpuinfo", 1024 * 1024);
+    const raw = try compat.cwd().readFileAlloc(allocator, "/proc/cpuinfo", 1024 * 1024);
     var lines = std.mem.splitScalar(u8, raw, '\n');
     while (lines.next()) |line| {
         if (std.mem.indexOfScalar(u8, line, ':')) |colon| {
@@ -47,7 +48,7 @@ fn readCpuModel(allocator: std.mem.Allocator) ![]const u8 {
 }
 
 fn readUptime(allocator: std.mem.Allocator) !u64 {
-    const raw = try std.fs.cwd().readFileAlloc(allocator, "/proc/uptime", 4096);
+    const raw = try compat.cwd().readFileAlloc(allocator, "/proc/uptime", 4096);
     var it = std.mem.tokenizeAny(u8, raw, " \t\n");
     const first = it.next() orelse return 0;
     const seconds = std.fmt.parseFloat(f64, first) catch 0;

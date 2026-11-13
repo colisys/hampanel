@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const exec = @import("shared").exec;
 const fail2ban = @import("fail2ban.zig");
 
@@ -21,7 +22,7 @@ pub const Outcome = struct {
 };
 
 pub fn list(allocator: std.mem.Allocator, data_dir: []const u8) ![]Item {
-    var items = std.ArrayList(Item).init(allocator);
+    var items = std.array_list.Managed(Item).init(allocator);
 
     const f2b_version = fail2ban.version(allocator);
     try items.append(.{
@@ -86,7 +87,7 @@ fn initializeNginx(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome 
 
     _ = exec.run(allocator, &.{ "systemctl", "stop", "nginx" }, 256 * 1024) catch {};
 
-    std.fs.cwd().makePath("/etc/nginx/conf.d/hampanel") catch |err| {
+    compat.cwd().makePath("/etc/nginx/conf.d/hampanel") catch |err| {
         _ = exec.run(allocator, &.{ "systemctl", "start", "nginx" }, 256 * 1024) catch {};
         return err;
     };
@@ -138,8 +139,8 @@ fn serviceActive(allocator: std.mem.Allocator, service: []const u8) bool {
 }
 
 fn stateExists(allocator: std.mem.Allocator, data_dir: []const u8, id: []const u8) bool {
-    const path = std.fs.path.join(allocator, &.{ data_dir, "software", std.fmt.allocPrint(allocator, "{s}.json", .{id}) catch return false }) catch return false;
-    std.fs.cwd().access(path, .{}) catch return false;
+    const path = compat.path.join(allocator, &.{ data_dir, "software", std.fmt.allocPrint(allocator, "{s}.json", .{id}) catch return false }) catch return false;
+    compat.cwd().access(path, .{}) catch return false;
     return true;
 }
 
@@ -151,22 +152,22 @@ fn writeState(
     managed_dir: []const u8,
 ) !void {
     const filename = try std.fmt.allocPrint(allocator, "{s}.json", .{id});
-    const path = try std.fs.path.join(allocator, &.{ data_dir, "software", filename });
-    const dir = std.fs.path.dirname(path) orelse data_dir;
-    try std.fs.cwd().makePath(dir);
+    const path = try compat.path.join(allocator, &.{ data_dir, "software", filename });
+    const dir = compat.path.dirname(path) orelse data_dir;
+    try compat.cwd().makePath(dir);
 
     const State = struct {
         initialized_at: i64,
         service: []const u8,
         managed_dir: []const u8,
     };
-    const json = try std.json.stringifyAlloc(allocator, State{
-        .initialized_at = std.time.timestamp(),
+    const json = try std.json.Stringify.valueAlloc(allocator, State{
+        .initialized_at = compat.timestamp(),
         .service = service,
         .managed_dir = managed_dir,
     }, .{ .whitespace = .indent_2 });
 
-    var file = try std.fs.createFileAbsolute(path, .{ .truncate = true, .mode = 0o600 });
+    var file = try compat.createFileAbsolute(path, .{ .truncate = true, .mode = 0o600 });
     defer file.close();
     try file.writeAll(json);
 }

@@ -7,36 +7,16 @@ const GitInfo = struct {
     dirty: bool = false,
 };
 
-fn gitOutput(b: *std.Build, argv: []const []const u8) ?[]u8 {
-    const result = std.process.Child.run(.{
-        .allocator = b.allocator,
+fn gitOutput(b: *std.Build, argv: []const []const u8) ?[]const u8 {
+    const result = std.process.run(b.graph.arena, b.graph.io, .{
         .argv = argv,
-        .max_output_bytes = 64 * 1024,
+        .stdout_limit = .limited(64 * 1024),
+        .stderr_limit = .limited(64 * 1024),
     }) catch return null;
-    defer b.allocator.free(result.stderr);
-
-    switch (result.term) {
-        .Exited => |code| if (code != 0) {
-            b.allocator.free(result.stdout);
-            return null;
-        },
-        else => {
-            b.allocator.free(result.stdout);
-            return null;
-        },
-    }
-
+    if (!result.term.success()) return null;
     const trimmed = std.mem.trim(u8, result.stdout, " \t\r\n");
-    if (trimmed.len == 0) {
-        b.allocator.free(result.stdout);
-        return null;
-    }
-    const copy = b.allocator.dupe(u8, trimmed) catch {
-        b.allocator.free(result.stdout);
-        return null;
-    };
-    b.allocator.free(result.stdout);
-    return copy;
+    if (trimmed.len == 0) return null;
+    return b.dupe(trimmed);
 }
 
 fn detectGit(b: *std.Build) GitInfo {
@@ -48,6 +28,13 @@ fn detectGit(b: *std.Build) GitInfo {
         }
     }
     return info;
+}
+
+fn addOpensslIncludePaths(
+    translate: *std.Build.Step.TranslateC,
+    openssl_include: ?[]const u8,
+) void {
+    if (openssl_include) |dir| translate.addIncludePath(.{ .cwd_relative = dir });
 }
 
 pub fn build(b: *std.Build) void {
@@ -65,15 +52,41 @@ pub fn build(b: *std.Build) void {
 
     const openssl_include = b.option([]const u8, "openssl-include", "Extra OpenSSL include directory");
     const openssl_lib_dir = b.option([]const u8, "openssl-lib-dir", "Extra OpenSSL library directory");
+    const openssl_dir = b.option([]const u8, "openssl-dir", "OpenSSL installation prefix (Windows)");
 
     const build_info = b.addOptions();
     build_info.addOption([]const u8, "version", full_version);
     build_info.addOption([]const u8, "commit", commit);
     build_info.addOption(bool, "dirty", dirty);
 
+    // C imports are translated by dedicated build steps in Zig 0.17.
+    const openssl_headers = b.addTranslateC(.{
+        .root_source_file = b.path("src/openssl_headers.h"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    addOpensslIncludePaths(openssl_headers, openssl_include);
+    if (openssl_dir) |dir| openssl_headers.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ dir, "include" }) });
+    const openssl_c = openssl_headers.createModule();
+
+    const libc_headers = b.addTranslateC(.{
+        .root_source_file = b.path("src/libc_headers.h"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const libc_c = libc_headers.createModule();
+
+    const compat = b.createModule(.{
+        .root_source_file = b.path("src/compat.zig"),
+    });
+
     const shared = b.createModule(.{
         .root_source_file = b.path("src/shared.zig"),
     });
+    shared.addImport("libc_c", libc_c);
+    shared.addImport("compat", compat);
 
     const backend = b.createModule(.{
         .root_source_file = b.path(if (target.result.os.tag == .windows)
@@ -82,6 +95,25 @@ pub fn build(b: *std.Build) void {
             "src/platform/linux/backend.zig"),
     });
     backend.addImport("shared", shared);
+    backend.addImport("compat", compat);
+
+    if (target.result.os.tag == .linux) {
+        const terminal_headers = b.addTranslateC(.{
+            .root_source_file = b.path("src/terminal_headers.h"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        backend.addImport("terminal_c", terminal_headers.createModule());
+    } else if (target.result.os.tag == .windows) {
+        const windows_headers = b.addTranslateC(.{
+            .root_source_file = b.path("src/windows_headers.h"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        backend.addImport("windows_c", windows_headers.createModule());
+    }
 
     const service_module = b.createModule(.{
         .root_source_file = b.path(if (target.result.os.tag == .windows)
@@ -92,61 +124,71 @@ pub fn build(b: *std.Build) void {
     service_module.addImport("platform_backend", backend);
     service_module.addImport("shared", shared);
 
-    const exe = b.addExecutable(.{
-        .name = "hampaneld",
+    const exe_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
-    exe.root_module.addImport("platform_backend", backend);
-    exe.root_module.addImport("shared", shared);
-    exe.root_module.addImport("windows_service", service_module);
-    exe.root_module.addOptions("build_info", build_info);
-    if (openssl_include) |dir| exe.addIncludePath(.{ .cwd_relative = dir });
-    if (openssl_lib_dir) |dir| exe.addLibraryPath(.{ .cwd_relative = dir });
-    exe.linkLibC();
+    exe_module.addImport("platform_backend", backend);
+    exe_module.addImport("shared", shared);
+    exe_module.addImport("windows_service", service_module);
+    exe_module.addImport("openssl_c", openssl_c);
+    exe_module.addImport("compat", compat);
+    exe_module.addOptions("build_info", build_info);
+    if (openssl_include) |dir| exe_module.addIncludePath(.{ .cwd_relative = dir });
+    if (openssl_lib_dir) |dir| exe_module.addLibraryPath(.{ .cwd_relative = dir });
 
-    const openssl_dir = b.option([]const u8, "openssl-dir", "OpenSSL installation prefix (Windows)");
     if (target.result.os.tag == .windows) {
         if (openssl_dir) |dir| {
-            exe.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ dir, "include" }) });
-            exe.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ dir, "lib" }) });
-            exe.addObjectFile(.{ .cwd_relative = b.pathJoin(&.{ dir, "lib", "libssl.lib" }) });
-            exe.addObjectFile(.{ .cwd_relative = b.pathJoin(&.{ dir, "lib", "libcrypto.lib" }) });
+            exe_module.addIncludePath(.{ .cwd_relative = b.pathJoin(&.{ dir, "include" }) });
+            exe_module.addLibraryPath(.{ .cwd_relative = b.pathJoin(&.{ dir, "lib" }) });
+            exe_module.addObjectFile(.{ .cwd_relative = b.pathJoin(&.{ dir, "lib", "libssl.lib" }) });
+            exe_module.addObjectFile(.{ .cwd_relative = b.pathJoin(&.{ dir, "lib", "libcrypto.lib" }) });
         } else {
-            exe.linkSystemLibrary("ssl");
-            exe.linkSystemLibrary("crypto");
+            exe_module.linkSystemLibrary("ssl", .{});
+            exe_module.linkSystemLibrary("crypto", .{});
         }
-        exe.linkSystemLibrary("advapi32");
-        exe.linkSystemLibrary("iphlpapi");
-        exe.linkSystemLibrary("psapi");
-        exe.linkSystemLibrary("ws2_32");
+        exe_module.linkSystemLibrary("advapi32", .{});
+        exe_module.linkSystemLibrary("iphlpapi", .{});
+        exe_module.linkSystemLibrary("psapi", .{});
+        exe_module.linkSystemLibrary("ws2_32", .{});
     } else {
-        exe.linkSystemLibrary("ssl");
-        exe.linkSystemLibrary("crypto");
+        exe_module.linkSystemLibrary("ssl", .{});
+        exe_module.linkSystemLibrary("crypto", .{});
     }
+
+    const exe = b.addExecutable(.{
+        .name = "hampaneld",
+        .root_module = exe_module,
+    });
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| run_cmd.addArgs(args);
     const run_step = b.step("run", "Run hampaneld");
     run_step.dependOn(&run_cmd.step);
 
-    const tests = b.addTest(.{
+    const tests_module = b.createModule(.{
         .root_source_file = b.path("src/tests.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
-    tests.root_module.addImport("platform_backend", backend);
-    tests.root_module.addImport("shared", shared);
-    tests.root_module.addImport("windows_service", service_module);
-    tests.root_module.addOptions("build_info", build_info);
-    if (openssl_include) |dir| tests.addIncludePath(.{ .cwd_relative = dir });
-    if (openssl_lib_dir) |dir| tests.addLibraryPath(.{ .cwd_relative = dir });
-    tests.linkLibC();
-    tests.linkSystemLibrary("ssl");
-    tests.linkSystemLibrary("crypto");
+    tests_module.addImport("platform_backend", backend);
+    tests_module.addImport("shared", shared);
+    tests_module.addImport("windows_service", service_module);
+    tests_module.addImport("openssl_c", openssl_c);
+    tests_module.addImport("compat", compat);
+    tests_module.addOptions("build_info", build_info);
+    if (openssl_include) |dir| tests_module.addIncludePath(.{ .cwd_relative = dir });
+    if (openssl_lib_dir) |dir| tests_module.addLibraryPath(.{ .cwd_relative = dir });
+    tests_module.linkSystemLibrary("ssl", .{});
+    tests_module.linkSystemLibrary("crypto", .{});
+
+    const tests = b.addTest(.{
+        .root_module = tests_module,
+    });
     const test_cmd = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&test_cmd.step);
@@ -156,14 +198,25 @@ pub fn build(b: *std.Build) void {
         .os_tag = .windows,
         .abi = .gnu,
     });
-    const windows_check = b.addObject(.{
-        .name = "hampanel-windows-check",
+    const windows_check_headers = b.addTranslateC(.{
+        .root_source_file = b.path("src/windows_headers.h"),
+        .target = windows_target,
+        .optimize = .Debug,
+        .link_libc = true,
+    });
+    const windows_check_module = b.createModule(.{
         .root_source_file = b.path("src/platform/windows/check.zig"),
         .target = windows_target,
         .optimize = .Debug,
+        .link_libc = true,
     });
-    windows_check.linkLibC();
-    windows_check.root_module.addImport("shared", shared);
+    windows_check_module.addImport("shared", shared);
+    windows_check_module.addImport("compat", compat);
+    windows_check_module.addImport("windows_c", windows_check_headers.createModule());
+    const windows_check = b.addObject(.{
+        .name = "hampanel-windows-check",
+        .root_module = windows_check_module,
+    });
     const check_step = b.step("check-windows", "Type-check the Windows backend");
     check_step.dependOn(&windows_check.step);
 }

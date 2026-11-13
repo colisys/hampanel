@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const exec = @import("shared").exec;
 
 const sshd_config = "/etc/ssh/sshd_config";
@@ -72,7 +73,7 @@ pub fn apply(
     if (port == 0) return error.InvalidPort;
     if (!validRootLogin(permit_root_login)) return error.InvalidRootLogin;
 
-    const original = std.fs.cwd().readFileAlloc(allocator, sshd_config, 1024 * 1024) catch |err| switch (err) {
+    const original = compat.cwd().readFileAlloc(allocator, sshd_config, 1024 * 1024) catch |err| switch (err) {
         error.FileNotFound => return error.SshUnavailable,
         else => return err,
     };
@@ -95,9 +96,9 @@ pub fn apply(
         },
     );
 
-    const previous_drop_in = std.fs.cwd().readFileAlloc(allocator, drop_in_path, 1024 * 1024) catch null;
+    const previous_drop_in = compat.cwd().readFileAlloc(allocator, drop_in_path, 1024 * 1024) catch null;
 
-    std.fs.cwd().makePath(drop_in_dir) catch |err| return err;
+    compat.cwd().makePath(drop_in_dir) catch |err| return err;
     if (main_changed) {
         const backup = try std.fmt.allocPrint(allocator, "{s}.hampanel.bak", .{sshd_config});
         try writeFile(allocator, backup, original, 0o600);
@@ -133,13 +134,13 @@ pub fn apply(
 
 pub fn listKeys(allocator: std.mem.Allocator, username: []const u8) ![]Key {
     const user = try findUser(allocator, username);
-    const path = try std.fs.path.join(allocator, &.{ user.home, ".ssh", "authorized_keys" });
-    const content = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch |err| switch (err) {
+    const path = try compat.path.join(allocator, &.{ user.home, ".ssh", "authorized_keys" });
+    const content = compat.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch |err| switch (err) {
         error.FileNotFound => return &.{},
         else => return err,
     };
 
-    var keys = std.ArrayList(Key).init(allocator);
+    var keys = std.array_list.Managed(Key).init(allocator);
     var lines = std.mem.splitScalar(u8, content, '\n');
     var index: usize = 0;
     while (lines.next()) |raw| {
@@ -166,8 +167,8 @@ pub fn addKey(allocator: std.mem.Allocator, username: []const u8, raw_key: []con
     const user = try findUser(allocator, username);
     const normalized = try normalizeKey(allocator, raw_key, comment);
 
-    const path = try std.fs.path.join(allocator, &.{ user.home, ".ssh", "authorized_keys" });
-    const existing = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch |err| switch (err) {
+    const path = try compat.path.join(allocator, &.{ user.home, ".ssh", "authorized_keys" });
+    const existing = compat.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch |err| switch (err) {
         error.FileNotFound => "",
         else => return err,
     };
@@ -187,7 +188,7 @@ pub fn addKey(allocator: std.mem.Allocator, username: []const u8, raw_key: []con
         }
     }
 
-    var content = std.ArrayList(u8).init(allocator);
+    var content = std.array_list.Managed(u8).init(allocator);
     try content.appendSlice(existing);
     if (existing.len > 0 and existing[existing.len - 1] != '\n') try content.append('\n');
     try content.appendSlice(normalized);
@@ -200,13 +201,13 @@ pub fn addKey(allocator: std.mem.Allocator, username: []const u8, raw_key: []con
 
 pub fn removeKey(allocator: std.mem.Allocator, username: []const u8, target_index: usize) !Outcome {
     const user = try findUser(allocator, username);
-    const path = try std.fs.path.join(allocator, &.{ user.home, ".ssh", "authorized_keys" });
-    const existing = std.fs.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch |err| switch (err) {
+    const path = try compat.path.join(allocator, &.{ user.home, ".ssh", "authorized_keys" });
+    const existing = compat.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch |err| switch (err) {
         error.FileNotFound => return error.KeyNotFound,
         else => return err,
     };
 
-    var rebuilt = std.ArrayList(u8).init(allocator);
+    var rebuilt = std.array_list.Managed(u8).init(allocator);
     var lines = std.mem.splitScalar(u8, existing, '\n');
     var index: usize = 0;
     var removed = false;
@@ -241,14 +242,14 @@ pub fn removeKey(allocator: std.mem.Allocator, username: []const u8, target_inde
 }
 
 fn ensureSshDir(allocator: std.mem.Allocator, user: UserInfo) !void {
-    var home = std.fs.openDirAbsolute(user.home, .{}) catch return error.UserNotFound;
+    var home = compat.openDirAbsolute(user.home, .{}) catch return error.UserNotFound;
     home.close();
-    const dir_path = try std.fs.path.join(allocator, &.{ user.home, ".ssh" });
-    try std.fs.cwd().makePath(dir_path);
-    var dir = try std.fs.openDirAbsolute(dir_path, .{});
+    const dir_path = try compat.path.join(allocator, &.{ user.home, ".ssh" });
+    try compat.cwd().makePath(dir_path);
+    var dir = try compat.openDirAbsolute(dir_path, .{});
     defer dir.close();
-    std.posix.fchmod(dir.fd, 0o700) catch {};
-    std.posix.fchown(dir.fd, user.uid, user.gid) catch {};
+    dir.chmod(0o700) catch {};
+    dir.chown(user.uid, user.gid) catch {};
 }
 
 fn normalizeKey(allocator: std.mem.Allocator, raw_key: []const u8, comment: []const u8) ![]const u8 {
@@ -303,7 +304,7 @@ fn validRootLogin(value: []const u8) bool {
 }
 
 fn includePresent(allocator: std.mem.Allocator) bool {
-    const content = std.fs.cwd().readFileAlloc(allocator, sshd_config, 1024 * 1024) catch return false;
+    const content = compat.cwd().readFileAlloc(allocator, sshd_config, 1024 * 1024) catch return false;
     return includePresentContent(content);
 }
 
@@ -347,7 +348,7 @@ fn runSshd(allocator: std.mem.Allocator, args: []const []const u8) !exec.Result 
     const candidates = [_][]const u8{ "sshd", "/usr/sbin/sshd", "/sbin/sshd" };
     var last_error: anyerror = error.SshUnavailable;
     for (candidates) |binary| {
-        var argv = std.ArrayList([]const u8).init(allocator);
+        var argv = std.array_list.Managed([]const u8).init(allocator);
         try argv.append(binary);
         try argv.appendSlice(args);
         const result = exec.run(allocator, argv.items, 1024 * 1024) catch |err| {
@@ -378,16 +379,16 @@ fn isActive(allocator: std.mem.Allocator, service: []const u8) bool {
     return result.ok() and std.mem.indexOf(u8, result.stdout, "active") != null;
 }
 
-fn writeFile(allocator: std.mem.Allocator, path: []const u8, content: []const u8, mode: std.fs.File.Mode) !void {
+fn writeFile(allocator: std.mem.Allocator, path: []const u8, content: []const u8, mode: compat.File.Mode) !void {
     const temp = try std.fmt.allocPrint(allocator, "{s}.hampanel.tmp", .{path});
     {
-        var file = try std.fs.createFileAbsolute(temp, .{ .truncate = true, .mode = mode });
+        var file = try compat.createFileAbsolute(temp, .{ .truncate = true, .mode = mode });
         defer file.close();
         try file.writeAll(content);
         file.chmod(mode) catch {};
     }
-    std.fs.renameAbsolute(temp, path) catch |err| {
-        std.fs.deleteFileAbsolute(temp) catch {};
+    compat.renameAbsolute(temp, path) catch |err| {
+        compat.deleteFileAbsolute(temp) catch {};
         return err;
     };
 }
@@ -396,20 +397,20 @@ fn writeFileOwned(
     allocator: std.mem.Allocator,
     path: []const u8,
     content: []const u8,
-    mode: std.fs.File.Mode,
+    mode: compat.File.Mode,
     uid: u32,
     gid: u32,
 ) !void {
     const temp = try std.fmt.allocPrint(allocator, "{s}.hampanel.tmp", .{path});
     {
-        var file = try std.fs.createFileAbsolute(temp, .{ .truncate = true, .mode = mode });
+        var file = try compat.createFileAbsolute(temp, .{ .truncate = true, .mode = mode });
         defer file.close();
         try file.writeAll(content);
         file.chmod(mode) catch {};
-        std.posix.fchown(file.handle, uid, gid) catch {};
+        file.chown(uid, gid) catch {};
     }
-    std.fs.renameAbsolute(temp, path) catch |err| {
-        std.fs.deleteFileAbsolute(temp) catch {};
+    compat.renameAbsolute(temp, path) catch |err| {
+        compat.deleteFileAbsolute(temp) catch {};
         return err;
     };
 }
@@ -426,7 +427,7 @@ fn restore(
     if (previous_drop_in) |content| {
         writeFile(allocator, drop_in_path, content, 0o644) catch {};
     } else {
-        std.fs.deleteFileAbsolute(drop_in_path) catch {};
+        compat.deleteFileAbsolute(drop_in_path) catch {};
     }
 }
 
@@ -484,13 +485,13 @@ fn enableFileLogging(allocator: std.mem.Allocator) !Outcome {
     const rsyslog_service = detectRsyslogService(allocator);
     if (rsyslog_service.len == 0 or !pathExists("/etc/rsyslog.d")) return error.RsyslogUnavailable;
 
-    const previous = std.fs.cwd().readFileAlloc(allocator, rsyslog_managed_path, 1024 * 1024) catch null;
+    const previous = compat.cwd().readFileAlloc(allocator, rsyslog_managed_path, 1024 * 1024) catch null;
     const content =
         "# Managed by Hampanel. Syslog pipeline is preserved for fail2ban compatibility.\n" ++
         ":programname, isequal, \"sshd\" /var/log/hampanel-sshd.log\n" ++
         ":programname, isequal, \"sshd-session\" /var/log/hampanel-sshd.log\n";
 
-    std.fs.cwd().makePath("/etc/rsyslog.d") catch |err| return err;
+    compat.cwd().makePath("/etc/rsyslog.d") catch |err| return err;
     writeConfig(allocator, rsyslog_managed_path, content) catch |err| {
         restoreManaged(allocator, previous);
         return err;
@@ -520,8 +521,8 @@ fn enableFileLogging(allocator: std.mem.Allocator) !Outcome {
 }
 
 fn disableFileLogging(allocator: std.mem.Allocator) !Outcome {
-    const previous = std.fs.cwd().readFileAlloc(allocator, rsyslog_managed_path, 1024 * 1024) catch null;
-    std.fs.deleteFileAbsolute(rsyslog_managed_path) catch {};
+    const previous = compat.cwd().readFileAlloc(allocator, rsyslog_managed_path, 1024 * 1024) catch null;
+    compat.deleteFileAbsolute(rsyslog_managed_path) catch {};
 
     const rsyslog_service = detectRsyslogService(allocator);
     if (rsyslog_service.len > 0) {
@@ -645,20 +646,20 @@ fn restoreManaged(allocator: std.mem.Allocator, previous: ?[]const u8) void {
     if (previous) |content| {
         writeConfig(allocator, rsyslog_managed_path, content) catch {};
     } else {
-        std.fs.deleteFileAbsolute(rsyslog_managed_path) catch {};
+        compat.deleteFileAbsolute(rsyslog_managed_path) catch {};
     }
 }
 
 fn writeConfig(allocator: std.mem.Allocator, path: []const u8, content: []const u8) !void {
     _ = allocator;
-    var file = try std.fs.createFileAbsolute(path, .{ .truncate = true, .mode = 0o644 });
+    var file = try compat.createFileAbsolute(path, .{ .truncate = true, .mode = 0o644 });
     defer file.close();
     try file.writeAll(content);
     file.chmod(0o644) catch {};
 }
 
 fn pathExists(path: []const u8) bool {
-    std.fs.cwd().access(path, .{}) catch return false;
+    compat.cwd().access(path, .{}) catch return false;
     return true;
 }
 
@@ -668,7 +669,7 @@ const TailResult = struct {
 };
 
 fn tailFile(allocator: std.mem.Allocator, path: []const u8, lines: usize) !TailResult {
-    var file = try std.fs.openFileAbsolute(path, .{});
+    var file = try compat.openFileAbsolute(path, .{});
     defer file.close();
 
     const size = (try file.stat()).size;
@@ -676,11 +677,10 @@ fn tailFile(allocator: std.mem.Allocator, path: []const u8, lines: usize) !TailR
     const window: u64 = @min(size, max_window);
     if (window == 0) return .{ .content = "", .truncated = size > 0 };
 
-    try file.seekFromEnd(-@as(i64, @intCast(window)));
     const buffer = try allocator.alloc(u8, @intCast(window));
-    const read = try file.readAll(buffer);
+    const read = try file.readPositionalAll(buffer, size - window);
 
-    var items = std.ArrayList([]const u8).init(allocator);
+    var items = std.array_list.Managed([]const u8).init(allocator);
     var iterator = std.mem.splitScalar(u8, buffer[0..read], '\n');
     while (iterator.next()) |line| {
         if (line.len == 0) continue;
@@ -699,7 +699,7 @@ fn textOf(result: exec.Result, fallback: []const u8) []const u8 {
 }
 
 fn findUser(allocator: std.mem.Allocator, name: []const u8) !UserInfo {
-    const passwd = try std.fs.cwd().readFileAlloc(allocator, "/etc/passwd", 1024 * 1024);
+    const passwd = try compat.cwd().readFileAlloc(allocator, "/etc/passwd", 1024 * 1024);
     var lines = std.mem.splitScalar(u8, passwd, '\n');
     while (lines.next()) |line| {
         const user = parsePasswdLine(line) orelse continue;
@@ -709,7 +709,7 @@ fn findUser(allocator: std.mem.Allocator, name: []const u8) !UserInfo {
 }
 
 fn findUserByUid(allocator: std.mem.Allocator, uid: u32) !UserInfo {
-    const passwd = try std.fs.cwd().readFileAlloc(allocator, "/etc/passwd", 1024 * 1024);
+    const passwd = try compat.cwd().readFileAlloc(allocator, "/etc/passwd", 1024 * 1024);
     var lines = std.mem.splitScalar(u8, passwd, '\n');
     while (lines.next()) |line| {
         const user = parsePasswdLine(line) orelse continue;

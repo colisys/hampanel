@@ -1,11 +1,7 @@
 const std = @import("std");
 const exec = @import("shared").exec;
 
-pub const c = @cImport({
-    @cInclude("windows.h");
-    @cInclude("winbase.h");
-    @cInclude("sysinfoapi.h");
-});
+pub const c = @import("windows_c");
 
 pub const PROCESS_QUERY_LIMITED_INFORMATION: c.DWORD = 0x1000;
 

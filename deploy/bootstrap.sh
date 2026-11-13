@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 set -euo pipefail
 
-ZIG_VERSION="${ZIG_VERSION:-0.14.1}"
+ZIG_VERSION="${ZIG_VERSION:-0.17.1}"
 SOURCE_DIR=""
 PREFIX="/usr/local"
 CONFIG_DIR="/etc/hampanel"
@@ -121,21 +121,16 @@ find_zig() {
 }
 
 install_zig() {
-  local arch libc base url tmp
+  local arch base url tmp
   arch="$(detect_zig_arch)"
-  libc="$(detect_libc)"
   if [[ "$ROOT" == "1" ]]; then
     base="/opt/hampanel/toolchain"
   else
     base="${HOME}/.local/share/hampanel/toolchain"
   fi
   mkdir -p "$base"
-  if [[ "$libc" == "musl" ]]; then
-    url="https://ziglang.org/download/${ZIG_VERSION}/zig-linux-${arch}-musl-${ZIG_VERSION}.tar.xz"
-  else
-    url="https://ziglang.org/download/${ZIG_VERSION}/zig-linux-${arch}-${ZIG_VERSION}.tar.xz"
-  fi
-  log "downloading Zig ${ZIG_VERSION} (${arch}-${libc})"
+  url="https://ziglang.org/download/${ZIG_VERSION}/zig-${arch}-linux-${ZIG_VERSION}.tar.xz"
+  log "downloading Zig ${ZIG_VERSION} (${arch}-linux)"
   tmp="$(mktemp -d)"
   curl -fL --retry 3 --connect-timeout 15 "$url" -o "$tmp/zig.tar.xz" ||
     fail "failed to download $url"

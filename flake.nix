@@ -10,7 +10,7 @@
     in {
       packages = forAll (pkgs:
         let
-          zig = pkgs.zig_0_14 or pkgs.zig;
+          zig = pkgs.zig_0_17 or pkgs.zig;
         in {
           default = pkgs.stdenv.mkDerivation {
             pname = "hampaneld";
@@ -37,7 +37,7 @@
       devShells = forAll (pkgs: {
         default = pkgs.mkShell {
           packages = [
-            (pkgs.zig_0_14 or pkgs.zig)
+            (pkgs.zig_0_17 or pkgs.zig)
             pkgs.openssl
             pkgs.pkg-config
             pkgs.git

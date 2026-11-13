@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 
 pub const Level = enum(u8) {
     debug = 0,
@@ -7,7 +8,7 @@ pub const Level = enum(u8) {
     err = 3,
 };
 
-var current_level: std.atomic.Value(u8) = std.atomic.Value(u8).init(@intFromEnum(Level.info));
+var current_level: std.atomic.Value(u8) = std.atomic.Value(u8).init(@backingInt(Level.info));
 
 pub fn setLevelName(name: []const u8) void {
     const parsed: Level = if (std.mem.eql(u8, name, "debug"))
@@ -18,11 +19,11 @@ pub fn setLevelName(name: []const u8) void {
         .err
     else
         .info;
-    current_level.store(@intFromEnum(parsed), .release);
+    current_level.store(@backingInt(parsed), .release);
 }
 
 pub fn enabled(level: Level) bool {
-    return @intFromEnum(level) >= current_level.load(.acquire);
+    return @backingInt(level) >= current_level.load(.acquire);
 }
 
 fn label(level: Level) []const u8 {
@@ -35,7 +36,7 @@ fn label(level: Level) []const u8 {
 }
 
 fn timestamp(buf: []u8) []const u8 {
-    const secs: u64 = @intCast(std.time.timestamp());
+    const secs: u64 = @intCast(compat.timestamp());
     const epoch = std.time.epoch.EpochSeconds{ .secs = secs };
     const day = epoch.getEpochDay();
     const year_day = day.calculateYearDay();
