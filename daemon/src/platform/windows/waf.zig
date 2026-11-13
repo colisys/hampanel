@@ -5,6 +5,14 @@ pub const GeoRule = struct {
     action: []const u8 = "deny",
 };
 
+pub const Route = struct {
+    name: []const u8,
+    hosts: []const []const u8,
+    upstream_host: []const u8,
+    upstream_port: u16,
+    mode: []const u8 = "inherit",
+};
+
 pub const Config = struct {
     mode: []const u8 = "off",
     listen_host: []const u8 = "127.0.0.1",
@@ -21,6 +29,10 @@ pub const Config = struct {
     typesafe_fail_open: bool = true,
     geoip_rules: []const GeoRule = &.{},
     geosite_rules: []const GeoRule = &.{},
+    routes: []const Route = &.{},
+    tls_enabled: bool = false,
+    tls_mode: []const u8 = "internal",
+    tls_email: []const u8 = "",
 };
 
 pub const Status = struct {
