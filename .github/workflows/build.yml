@@ -3,6 +3,7 @@ name: Build
 on:
   push:
     branches: [main, nightly]
+    tags: ["v*"]
   pull_request:
     branches: [main, nightly]
   workflow_dispatch:
@@ -21,6 +22,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compute commit
+        id: commit
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Install Zig 0.14.1
         run: |
           curl -fsSL https://ziglang.org/download/0.14.1/zig-x86_64-linux-0.14.1.tar.xz -o /tmp/zig.tar.xz
@@ -35,7 +40,7 @@ jobs:
 
       - name: Build daemon
         working-directory: daemon
-        run: zig build
+        run: zig build -Doptimize=ReleaseSafe -Dcommit=${{ steps.commit.outputs.short }}
 
       - name: Test daemon
         working-directory: daemon
@@ -52,13 +57,15 @@ jobs:
 
       - name: Build risk gateway
         working-directory: daemon/src/platform/linux/risk_gateway
-        run: go build -o /tmp/hampanel-risk main.go
+        run: go build -o "$GITHUB_WORKSPACE/daemon/zig-out/bin/hampanel-risk" main.go
 
       - name: Upload daemon
         uses: actions/upload-artifact@v4
         with:
-          name: hampaneld-${{ github.ref_name }}
-          path: daemon/zig-out/bin/hampaneld
+          name: hampaneld-linux-x86_64
+          path: |
+            daemon/zig-out/bin/hampaneld
+            daemon/zig-out/bin/hampanel-risk
           if-no-files-found: error
 
   flutter-linux:
@@ -66,6 +73,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Compute commit
+        id: commit
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - uses: subosito/flutter-action@v2
         with:
@@ -95,12 +106,12 @@ jobs:
         run: >
           flutter build linux --release
           --dart-define=HAMPANEL_VERSION=0.1.0
-          --dart-define=HAMPANEL_COMMIT=${{ github.sha }}
+          --dart-define=HAMPANEL_COMMIT=${{ steps.commit.outputs.short }}
 
       - name: Upload Linux client
         uses: actions/upload-artifact@v4
         with:
-          name: hampanel-linux-${{ github.ref_name }}
+          name: hampanel-client-linux-x86_64
           path: app/build/linux/x64/release/bundle
           if-no-files-found: error
 
@@ -109,6 +120,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Compute commit
+        id: commit
+        shell: bash
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
       - uses: subosito/flutter-action@v2
         with:
@@ -132,11 +148,111 @@ jobs:
         run: >
           flutter build windows --release
           --dart-define=HAMPANEL_VERSION=0.1.0
-          --dart-define=HAMPANEL_COMMIT=${{ github.sha }}
+          --dart-define=HAMPANEL_COMMIT=${{ steps.commit.outputs.short }}
 
       - name: Upload Windows client
         uses: actions/upload-artifact@v4
         with:
-          name: hampanel-windows-${{ github.ref_name }}
+          name: hampanel-client-windows-x86_64
           path: app/build/windows/x64/runner/Release
           if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [daemon, flutter-linux, flutter-windows]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Resolve release metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          short=$(git rev-parse --short HEAD)
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="$GITHUB_REF_NAME"
+            title="Hampanel $GITHUB_REF_NAME"
+            prerelease=false
+          else
+            tag="$GITHUB_REF_NAME"
+            title="Hampanel $GITHUB_REF_NAME (${short})"
+            prerelease=true
+          fi
+          {
+            echo "short=$short"
+            echo "tag=$tag"
+            echo "title=$title"
+            echo "prerelease=$prerelease"
+            echo "archive_base=hampanel-${tag#v}-${short}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Package artifacts
+        env:
+          BASE: ${{ steps.meta.outputs.archive_base }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist daemon-pkg client-linux
+
+          cp artifacts/hampaneld-linux-x86_64/hampaneld daemon-pkg/
+          cp artifacts/hampaneld-linux-x86_64/hampanel-risk daemon-pkg/
+          cp deploy/bootstrap.sh LICENSE daemon-pkg/
+          chmod +x daemon-pkg/hampaneld daemon-pkg/hampanel-risk daemon-pkg/bootstrap.sh
+          tar -C daemon-pkg -czf "dist/${BASE}-daemon-linux-x86_64.tar.gz" .
+
+          cp -r artifacts/hampanel-client-linux-x86_64/. client-linux/
+          cp LICENSE client-linux/LICENSE
+          tar -C client-linux -czf "dist/${BASE}-client-linux-x86_64.tar.gz" .
+
+          cp -r artifacts/hampanel-client-windows-x86_64 client-windows
+          cp LICENSE client-windows/LICENSE.txt
+          (cd client-windows && zip -qr "../dist/${BASE}-client-windows-x86_64.zip" .)
+
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+          ls -lh dist
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          TITLE: ${{ steps.meta.outputs.title }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+          BASE: ${{ steps.meta.outputs.archive_base }}
+        run: |
+          set -euo pipefail
+
+          notes=$(cat <<EOF
+          Automated build from \`${GITHUB_REF_NAME}\` at \`${GITHUB_SHA}\`.
+
+          - \`${BASE}-daemon-linux-x86_64.tar.gz\` — hampaneld + risk gateway + bootstrap.sh
+          - \`${BASE}-client-linux-x86_64.tar.gz\` — Flutter Linux client
+          - \`${BASE}-client-windows-x86_64.zip\` — Flutter Windows client
+          - \`SHA256SUMS.txt\` — checksums
+          EOF
+          )
+
+          files=(dist/*)
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes "$notes"
+          else
+            create_flags=()
+            if [[ "$PRERELEASE" == "true" ]]; then
+              create_flags+=(--prerelease --latest=false)
+            else
+              create_flags+=(--latest)
+            fi
+            if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+              create_flags+=(--target "$GITHUB_REF_NAME")
+            fi
+            gh release create "$TAG" "${files[@]}" \
+              --title "$TITLE" --notes "$notes" "${create_flags[@]}"
+          fi
