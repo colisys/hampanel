@@ -201,8 +201,8 @@ class _FirewallPageState extends State<FirewallPage> {
                             text: status.active ? '已启用' : '未启用',
                             good: status.active,
                           ),
-                          const SizedBox(width: 10),
-                          const Text(
+                          SizedBox(width: 10),
+                          Text(
                             '规则由系统防火墙直接管理',
                             style: TextStyle(
                               fontSize: 11.5,
@@ -214,7 +214,7 @@ class _FirewallPageState extends State<FirewallPage> {
                     ),
                     Expanded(
                       child: status.rules.isEmpty
-                          ? const EmptyState(
+                          ? EmptyState(
                               icon: Icons.rule_outlined,
                               title: '没有规则',
                               message: '点击“添加规则”放行或拒绝端口。',
@@ -249,7 +249,7 @@ class _FirewallPageState extends State<FirewallPage> {
                                         Expanded(
                                           child: Text(
                                             '来源 ${rule.from}',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 11.5,
                                               color: hampanelMuted,
                                             ),

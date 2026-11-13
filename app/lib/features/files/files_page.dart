@@ -101,7 +101,7 @@ class _FilesPageState extends State<FilesPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   '保存前会把当前内容保存为历史版本（存储在面板数据目录，不会写入文件所在目录）。',
                   style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                 ),
@@ -476,10 +476,10 @@ class _FilesPageState extends State<FilesPage> {
           child: _loading
               ? const LoadingView()
               : Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                  padding: EdgeInsets.fromLTRB(24, 0, 24, 24),
                   child: Card(
                     child: _entries.isEmpty
-                        ? const EmptyState(
+                        ? EmptyState(
                             icon: Icons.folder_off_outlined,
                             title: '目录为空',
                             message: '使用上方按钮创建文件或上传内容。',
@@ -487,12 +487,12 @@ class _FilesPageState extends State<FilesPage> {
                         : Column(
                             children: [
                               _headerRow(),
-                              const Divider(),
+                              Divider(),
                               Expanded(
                                 child: ListView.separated(
                                   itemCount: _entries.length,
                                   separatorBuilder: (_, _) =>
-                                      const Divider(indent: 16, endIndent: 16),
+                                      Divider(indent: 16, endIndent: 16),
                                   itemBuilder: (context, index) =>
                                       _fileRow(_entries[index]),
                                 ),
@@ -507,11 +507,11 @@ class _FilesPageState extends State<FilesPage> {
   }
 
   Widget _headerRow() {
-    const style = TextStyle(fontSize: 11, color: hampanelMuted);
+    final style = TextStyle(fontSize: 11, color: hampanelMuted);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
-        children: const [
+        children: [
           SizedBox(width: 28),
           SizedBox(width: 10),
           Expanded(flex: 5, child: Text('名称', style: style)),
@@ -552,7 +552,7 @@ class _FilesPageState extends State<FilesPage> {
               flex: 2,
               child: Text(
                 entry.isDir ? '-' : formatBytes(entry.size),
-                style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               ),
             ),
             Expanded(
@@ -563,7 +563,7 @@ class _FilesPageState extends State<FilesPage> {
               flex: 3,
               child: Text(
                 formatDateTime(entry.modifiedMs),
-                style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               ),
             ),
             PopupMenuButton<String>(

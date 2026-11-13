@@ -10,6 +10,7 @@ REPO="${HAMPANEL_REPO:-colisys/hampanel}"
 CHANNEL="${HAMPANEL_CHANNEL:-stable}"
 RELEASE_BASE="${HAMPANEL_RELEASE_BASE:-}"
 SOURCE_BASE="${HAMPANEL_SOURCE_BASE:-}"
+GITHUB_MIRROR="${HAMPANEL_GITHUB_MIRROR:-}"
 MODE="binary"
 CHANNEL_SET=0
 REF=""
@@ -43,6 +44,7 @@ Usage:
   --channel stable|nightly   release channel; source builds require this or --ref
   --ref <branch|tag>     source ref for --mode source (stable channel resolves to the latest tag)
   --repo <owner/repo>    GitHub repository (default: colisys/hampanel)
+  --github-mirror <url>  GitHub mirror base; the full URL is appended after it
   --endpoint <host>      public endpoint host (port optional)
   --port <port>          daemon port (default: random free port)
   --entry-prefix <path>  secret entry prefix (default: random /token)
@@ -65,6 +67,7 @@ while [[ $# -gt 0 ]]; do
     --channel) CHANNEL="${2:?}"; CHANNEL_SET=1; shift 2 ;;
     --ref) REF="${2:?}"; REF_SET=1; shift 2 ;;
     --repo) REPO="${2:?}"; shift 2 ;;
+    --github-mirror) GITHUB_MIRROR="${2:?}"; shift 2 ;;
     --endpoint) ENDPOINT="${2:?}"; shift 2 ;;
     --port) PORT="${2:?}"; shift 2 ;;
     --entry-prefix) ENTRY_PREFIX="${2:-}"; ENTRY_PREFIX_SET=1; shift 2 ;;
@@ -107,23 +110,34 @@ if [[ "$NO_START" == "1" ]]; then BOOTSTRAP_ARGS+=(--no-start); fi
 if [[ "$SERVICE_NAME" != "hampanel" ]]; then BOOTSTRAP_ARGS+=(--service-name "$SERVICE_NAME"); fi
 if [[ -n "$MIRROR" ]]; then BOOTSTRAP_ARGS+=(--mirror "$MIRROR"); fi
 
+mirror_url() {
+  local url="$1" mirror="${GITHUB_MIRROR:-}"
+  [[ -n "$mirror" ]] || { printf '%s' "$url"; return; }
+  mirror="${mirror%/}"
+  printf '%s/%s' "$mirror" "$url"
+}
+
 release_base() {
   if [[ -n "$RELEASE_BASE" ]]; then
     echo "$RELEASE_BASE"
     return
   fi
   if [[ "$1" == "stable" || "$1" == "latest" ]]; then
-    echo "https://github.com/${REPO}/releases/latest/download"
+    mirror_url "https://github.com/${REPO}/releases/latest/download"
   else
-    echo "https://github.com/${REPO}/releases/download/$1"
+    mirror_url "https://github.com/${REPO}/releases/download/$1"
   fi
 }
 
 latest_stable_tag() {
+  local api="https://api.github.com/repos/${REPO}/releases/latest"
+  if [[ -n "$GITHUB_MIRROR" && "$GITHUB_MIRROR" != *github.com* ]]; then
+    api="${GITHUB_MIRROR%/}/$api"
+  fi
   curl -fsSL --retry 2 --connect-timeout 15 \
     -H 'Accept: application/vnd.github+json' \
     -H 'User-Agent: hampanel-install' \
-    "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null |
+    "$api" 2>/dev/null |
     sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
     head -n1 || true
 }
@@ -184,6 +198,7 @@ else
   else
     src_url="https://github.com/${REPO}/archive/refs/heads/${REF}.tar.gz"
   fi
+  src_url="$(mirror_url "$src_url")"
   log "downloading source ${src_url}"
   curl -fsSL --retry 3 --connect-timeout 15 -o "$TMP/src.tar.gz" "$src_url" ||
     fail "failed to download source archive"

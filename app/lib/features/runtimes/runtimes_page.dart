@@ -242,13 +242,13 @@ class _RuntimesPageState extends State<RuntimesPage> {
         ),
         Expanded(
           child: _loading
-              ? const LoadingView()
+              ? LoadingView()
               : _error != null
               ? SingleChildScrollView(
                   child: ErrorBanner(message: _error!, onRetry: _load),
                 )
               : _environments.isEmpty
-              ? const EmptyState(
+              ? EmptyState(
                   icon: Icons.hub_outlined,
                   title: '还没有运行环境',
                   message: '创建一个 Node、Python、PHP 或自定义镜像环境，由面板管理其生命周期。',
@@ -324,20 +324,20 @@ class _EnvironmentCard extends StatelessWidget {
               if (env.port != null)
                 Text(
                   '端口 ${env.port}',
-                  style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+                  style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                 ),
               if (env.cpu != null) ...[
                 const SizedBox(width: 12),
                 Text(
                   'CPU ${env.cpu}',
-                  style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+                  style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                 ),
               ],
               if (env.memoryMb != null) ...[
                 const SizedBox(width: 12),
                 Text(
                   '内存 ${env.memoryMb} MB',
-                  style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+                  style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                 ),
               ],
             ],
@@ -345,7 +345,7 @@ class _EnvironmentCard extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             '配置版本 ${env.configVersion} · 扩展 ${env.extensions.isEmpty ? '无' : env.extensions.join(', ')}',
-            style: const TextStyle(fontSize: 11, color: hampanelMuted),
+            style: TextStyle(fontSize: 11, color: hampanelMuted),
           ),
           const SizedBox(height: 10),
           Wrap(

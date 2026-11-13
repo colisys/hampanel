@@ -109,7 +109,7 @@ class _TerminalPageState extends State<TerminalPage> {
           padding: const EdgeInsets.fromLTRB(24, 18, 24, 12),
           child: Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

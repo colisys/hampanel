@@ -14,7 +14,7 @@ class StorePage extends StatelessWidget {
       length: 3,
       child: Column(
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(24, 20, 24, 8),
             child: Row(
               children: [

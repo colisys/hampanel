@@ -55,7 +55,7 @@ class _LoginPageState extends State<LoginPage> {
     return Scaffold(
       body: Stack(
         children: [
-          const Positioned.fill(child: Halftone(opacity: 0.10, spacing: 16)),
+          Positioned.fill(child: Halftone(opacity: 0.10, spacing: 16)),
           Positioned(
             right: -170,
             top: -190,
@@ -104,7 +104,7 @@ class _LoginPageState extends State<LoginPage> {
                                 width: 60,
                                 height: 60,
                                 color: hampanelInk,
-                                child: const Icon(
+                                child: Icon(
                                   Icons.dns_outlined,
                                   color: hampanelSurface,
                                   size: 32,
@@ -115,7 +115,7 @@ class _LoginPageState extends State<LoginPage> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text(
+                                    Text(
                                       'HAMPANEL',
                                       style: TextStyle(
                                         fontSize: 38,
@@ -183,7 +183,7 @@ class _LoginPageState extends State<LoginPage> {
                             ],
                           ),
                           const SizedBox(height: 8),
-                          const Text(
+                          Text(
                             '将 `hampaneld init` 或 hampanelctl 生成的 enrollment JSON 粘贴到下方。'
                             '凭据包含 CA、客户端证书与私钥，仅保存在本机。',
                             style: TextStyle(
@@ -203,7 +203,10 @@ class _LoginPageState extends State<LoginPage> {
                             minLines: 8,
                             maxLines: 16,
                             style: monospace,
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
+                              hintStyle: monospace.copyWith(
+                                color: hampanelMuted,
+                              ),
                               hintText:
                                   '{ "endpoint": "203.0.113.10:8443", "ca_pem": "...", ... }',
                               alignLabelWithHint: true,
@@ -214,7 +217,7 @@ class _LoginPageState extends State<LoginPage> {
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Icon(
+                                Icon(
                                   Icons.error_outline,
                                   size: 16,
                                   color: hampanelDanger,
@@ -223,7 +226,7 @@ class _LoginPageState extends State<LoginPage> {
                                 Expanded(
                                   child: Text(
                                     _error!,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       color: hampanelDanger,
                                       fontSize: 12.5,
                                       fontWeight: FontWeight.w600,
@@ -266,7 +269,7 @@ class _LoginPageState extends State<LoginPage> {
                           const SizedBox(height: 18),
                           Row(
                             children: [
-                              const Expanded(
+                              Expanded(
                                 child: Text(
                                   '还没有可管理的主机？可以直接通过 SSH 安装 hampaneld，'
                                   '选择发布二进制或从头构建。',

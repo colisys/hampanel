@@ -151,7 +151,7 @@ class _DockerPageState extends State<DockerPage> {
                   length: 2,
                   child: Column(
                     children: [
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.symmetric(horizontal: 24),
                         child: Align(
                           alignment: Alignment.centerLeft,
@@ -180,7 +180,7 @@ class _DockerPageState extends State<DockerPage> {
 
   Widget _containersTab() {
     if (_containers.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.widgets_outlined,
         title: '没有容器',
         message: 'Docker 中还没有容器。',
@@ -219,7 +219,7 @@ class _DockerPageState extends State<DockerPage> {
                       const SizedBox(height: 4),
                       Text(
                         container.image,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           color: hampanelMuted,
                         ),
@@ -231,7 +231,7 @@ class _DockerPageState extends State<DockerPage> {
                   flex: 3,
                   child: Text(
                     container.status,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11.5,
                       color: hampanelMuted,
                     ),
@@ -265,7 +265,7 @@ class _DockerPageState extends State<DockerPage> {
                     if (!running)
                       const PopupMenuItem(value: 'unpause', child: Text('恢复')),
                     const PopupMenuItem(value: 'restart', child: Text('重启')),
-                    const PopupMenuItem(value: 'rm', child: Text('删除')),
+                    PopupMenuItem(value: 'rm', child: Text('删除')),
                   ],
                 ),
               ],
@@ -278,7 +278,7 @@ class _DockerPageState extends State<DockerPage> {
 
   Widget _imagesTab() {
     if (_images.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.layers_outlined,
         title: '没有镜像',
         message: 'Docker 中还没有镜像。',
@@ -295,7 +295,7 @@ class _DockerPageState extends State<DockerPage> {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.layers_outlined,
                   size: 20,
                   color: hampanelMuted,
@@ -322,7 +322,7 @@ class _DockerPageState extends State<DockerPage> {
                   width: 90,
                   child: Text(
                     image.size,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11.5,
                       color: hampanelMuted,
                     ),
@@ -332,7 +332,7 @@ class _DockerPageState extends State<DockerPage> {
                   width: 110,
                   child: Text(
                     image.createdAt,
-                    style: const TextStyle(fontSize: 11, color: hampanelMuted),
+                    style: TextStyle(fontSize: 11, color: hampanelMuted),
                   ),
                 ),
               ],

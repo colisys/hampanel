@@ -178,14 +178,14 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const LoadingView();
+    if (_loading) return LoadingView();
     if (_error != null) {
       return SingleChildScrollView(
         child: ErrorBanner(message: _error!, onRetry: _load),
       );
     }
     if (_apps.isEmpty) {
-      return const EmptyState(
+      return EmptyState(
         icon: Icons.storefront_outlined,
         title: '应用目录为空',
         message: '在 daemon/src/store/catalog 中添加应用后重新构建。',
@@ -243,7 +243,7 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
                                 ),
                                 Text(
                                   app.category,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 10.5,
                                     color: hampanelMuted,
                                   ),
@@ -263,7 +263,7 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
                           app.description,
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11.5,
                             color: hampanelMuted,
                             height: 1.5,

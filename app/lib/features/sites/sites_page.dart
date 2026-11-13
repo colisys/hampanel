@@ -272,7 +272,7 @@ class _SitesPageState extends State<SitesPage> {
                                   const SizedBox(height: 4),
                                   Text(
                                     site.domains.join(', '),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 11.5,
                                       color: hampanelMuted,
                                     ),

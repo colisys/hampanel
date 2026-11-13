@@ -659,7 +659,7 @@ class _WafPageState extends State<WafPage> {
               const SizedBox(height: 8),
               Text(
                 status.message,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11.5,
                   color: hampanelMuted,
                   height: 1.5,
@@ -717,7 +717,7 @@ class _WafPageState extends State<WafPage> {
             ),
             if (!status.installed && !status.goAvailable) ...[
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 '服务器没有 Go 工具链。请先安装 Go，或把带 Coraza 的 caddy 二进制放到上述路径。',
                 style: TextStyle(fontSize: 11, color: hampanelDanger),
               ),
@@ -823,7 +823,7 @@ class _WafPageState extends State<WafPage> {
               ],
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               '上游应指向 Nginx / OpenResty / Caddy 的回环监听端口。'
               '当前边缘为 HTTP；TLS/域名接入和按站点策略将在后续补齐。'
               '切换 enforce 前请先观察 detect 日志，避免误拦截。',
@@ -897,7 +897,7 @@ class _WafPageState extends State<WafPage> {
                   child: Text(
                     '按 Host 匹配站点策略；每个策略独立设置 WAF 模式与上游。'
                     '未匹配域名使用上方全局模式与上游。',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       color: hampanelMuted,
                       height: 1.5,
@@ -913,7 +913,7 @@ class _WafPageState extends State<WafPage> {
               ],
             ),
             if (_routes.isEmpty)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text(
                   '尚未配置站点策略',
@@ -1035,7 +1035,7 @@ class _WafPageState extends State<WafPage> {
               ],
             ),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               '密钥通过 systemd-creds 加密保存，risk gateway 启动时解密到内存；'
               '面板 API 不返回明文。',
               style: TextStyle(fontSize: 11, color: hampanelMuted, height: 1.5),
@@ -1061,7 +1061,7 @@ class _WafPageState extends State<WafPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               '数据来自 Geo-Aggregator：GeoIP 使用 source2 国家 CIDR，'
               'GeoSite 使用 source1 域名分类。保存配置时会下载所选列表并重启 WAF。',
               style: TextStyle(fontSize: 11, color: hampanelMuted, height: 1.5),
@@ -1136,7 +1136,7 @@ class _WafPageState extends State<WafPage> {
           '否则攻击者可以绕过 WAF。\n\n'
           '日志路径：${status.logPath}\n'
           '配置文件：${status.configPath}',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12,
             color: hampanelMuted,
             height: 1.6,
@@ -1156,7 +1156,7 @@ class _WafPageState extends State<WafPage> {
             width: 90,
             child: Text(
               key,
-              style: const TextStyle(fontSize: 12, color: hampanelMuted),
+              style: TextStyle(fontSize: 12, color: hampanelMuted),
             ),
           ),
           Expanded(

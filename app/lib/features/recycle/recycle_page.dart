@@ -138,13 +138,13 @@ class _RecyclePageState extends State<RecyclePage> {
         ),
         Expanded(
           child: _loading
-              ? const LoadingView()
+              ? LoadingView()
               : _error != null
               ? SingleChildScrollView(
                   child: ErrorBanner(message: _error!, onRetry: _load),
                 )
               : _entries.isEmpty
-              ? const EmptyState(
+              ? EmptyState(
                   icon: Icons.delete_outline,
                   title: '回收站为空',
                   message: '从「文件」页面删除的内容会出现在这里，可恢复或永久删除。',
@@ -191,7 +191,7 @@ class _RecyclePageState extends State<RecyclePage> {
                       const SizedBox(width: 8),
                       Text(
                         isDir ? '-' : formatBytes(entry.size),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11.5,
                           color: hampanelMuted,
                         ),
@@ -209,7 +209,7 @@ class _RecyclePageState extends State<RecyclePage> {
                   const SizedBox(height: 2),
                   Text(
                     '删除于 ${formatDateTime(entry.deletedAt)}',
-                    style: const TextStyle(fontSize: 11, color: hampanelMuted),
+                    style: TextStyle(fontSize: 11, color: hampanelMuted),
                   ),
                 ],
               ),
@@ -223,7 +223,7 @@ class _RecyclePageState extends State<RecyclePage> {
             IconButton(
               tooltip: '永久删除',
               onPressed: () => _purge(entry),
-              icon: const Icon(
+              icon: Icon(
                 Icons.delete_forever_outlined,
                 size: 19,
                 color: hampanelDanger,

@@ -20,6 +20,7 @@ param(
     [string]$Ref = "",
     [string]$ReleaseBase = "",
     [string]$SourceBase = "",
+    [string]$GithubMirror = "",
     [string]$Binary = "",
     [switch]$InstallDriver,
     [switch]$SkipBuild,
@@ -27,6 +28,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+function Mirror-Url([string]$Url) {
+    if (-not $GithubMirror) { return $Url }
+    $base = $GithubMirror.Trim().TrimEnd("/")
+    return "$base/$Url"
+}
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -63,6 +70,7 @@ if ($Mode -eq "binary") {
             $ReleaseBase = "https://github.com/$Repo/releases/download/$Channel"
         }
     }
+    if (-not $explicitReleaseBase) { $ReleaseBase = Mirror-Url $ReleaseBase }
     $asset = "hampanel-daemon-windows-x86_64.zip"
     $tmp = Join-Path $env:TEMP "hampanel-release"
     $null = New-Item -ItemType Directory -Force -Path $tmp
@@ -113,6 +121,7 @@ if ($Mode -eq "binary") {
         } else {
             $srcUrl = "https://github.com/$Repo/archive/refs/heads/$ref.tar.gz"
         }
+        if (-not $SourceBase) { $srcUrl = Mirror-Url $srcUrl }
         $srcTmp = Join-Path $env:TEMP "hampanel-src"
         Remove-Item -Recurse -Force $srcTmp -ErrorAction SilentlyContinue
         $null = New-Item -ItemType Directory -Force -Path $srcTmp

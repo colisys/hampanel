@@ -15,14 +15,28 @@ class HampanelApp extends StatefulWidget {
   State<HampanelApp> createState() => _HampanelAppState();
 }
 
-class _HampanelAppState extends State<HampanelApp> {
+class _HampanelAppState extends State<HampanelApp>
+    with WidgetsBindingObserver {
   PanelSession? _session;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _syncBrightness();
     final initial = widget.initial;
     if (initial != null) _session = PanelSession(initial);
+  }
+
+  void _syncBrightness() {
+    setHampanelBrightness(
+      WidgetsBinding.instance.platformDispatcher.platformBrightness,
+    );
+  }
+
+  @override
+  void didChangePlatformBrightness() {
+    setState(_syncBrightness);
   }
 
   Future<void> _onEnrolled(Enrollment enrollment) async {
@@ -39,6 +53,7 @@ class _HampanelAppState extends State<HampanelApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _session?.dispose();
     super.dispose();
   }
@@ -46,7 +61,9 @@ class _HampanelAppState extends State<HampanelApp> {
   @override
   Widget build(BuildContext context) {
     final session = _session;
+    _syncBrightness();
     return MaterialApp(
+      key: ValueKey(hampanelBrightness),
       title: 'Hampanel',
       debugShowCheckedModeBanner: false,
       theme: buildHampanelTheme(),

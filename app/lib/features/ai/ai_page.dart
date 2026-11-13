@@ -100,7 +100,7 @@ class _AiPageState extends State<AiPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   '配置保存在管理端；API 密钥只写入操作系统钥匙串，不写入配置文件。',
                   style: TextStyle(
                     fontSize: 11.5,
@@ -152,7 +152,7 @@ class _AiPageState extends State<AiPage> {
                   const SizedBox(height: 8),
                   Text(
                     _keychainError!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11.5,
                       color: hampanelDanger,
                     ),
@@ -160,7 +160,7 @@ class _AiPageState extends State<AiPage> {
                 ],
                 if (_keyPresent) ...[
                   const SizedBox(height: 6),
-                  const Text(
+                  Text(
                     '密钥已在系统钥匙串中。',
                     style: TextStyle(fontSize: 11, color: hampanelMuted),
                   ),
@@ -436,7 +436,7 @@ class _AiPageState extends State<AiPage> {
                 ),
               ),
               const SizedBox(height: 10),
-              const Text(
+              Text(
                 '所有修改类操作与敏感读取都需要人工审核。删除只会移动到回收站，不存在 shell 工具。',
                 style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               ),
@@ -516,7 +516,7 @@ class _AiPageState extends State<AiPage> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.key_off_outlined,
                       size: 18,
                       color: hampanelWarning,
@@ -561,7 +561,7 @@ class _AiPageState extends State<AiPage> {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Text(
                 _error!,
-                style: const TextStyle(fontSize: 11.5, color: hampanelDanger),
+                style: TextStyle(fontSize: 11.5, color: hampanelDanger),
               ),
             ),
           Container(
@@ -606,7 +606,7 @@ class _AiPageState extends State<AiPage> {
         padding: const EdgeInsets.only(bottom: 6),
         child: Row(
           children: [
-            const Icon(Icons.build_outlined, size: 13, color: hampanelMuted),
+            Icon(Icons.build_outlined, size: 13, color: hampanelMuted),
             const SizedBox(width: 6),
             Expanded(
               child: Text(

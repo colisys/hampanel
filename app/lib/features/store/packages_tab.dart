@@ -130,7 +130,7 @@ class _PackagesTabState extends State<PackagesTab> {
               const SizedBox(width: 10),
               Text(
                 '${status.tools.length} 个精选工具',
-                style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               ),
               const Spacer(),
               OutlinedButton.icon(
@@ -174,7 +174,7 @@ class _PackagesTabState extends State<PackagesTab> {
                             const SizedBox(height: 2),
                             Text(
                               tool.description,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11.5,
                                 color: hampanelMuted,
                               ),

@@ -190,7 +190,7 @@ class _ServicesPageState extends State<ServicesPage> {
                                     DataCell(
                                       Text(
                                         service.sub,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 11.5,
                                           color: hampanelMuted,
                                         ),

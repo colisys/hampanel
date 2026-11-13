@@ -81,7 +81,7 @@ class _CronPageState extends State<CronPage> {
                 ),
               ),
               const SizedBox(height: 10),
-              const Align(
+              Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
                   'Linux 写入面板托管的 root crontab 区块；Windows 映射为任务计划程序。',

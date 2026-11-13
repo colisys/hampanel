@@ -144,12 +144,12 @@ class _LogsPageState extends State<LogsPage> {
           child: _loading
               ? const LoadingView()
               : Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                  padding: EdgeInsets.fromLTRB(24, 4, 24, 24),
                   child: Card(
                     child: Stack(
                       children: [
                         if (_content.trim().isEmpty)
-                          const EmptyState(
+                          EmptyState(
                             icon: Icons.receipt_long_outlined,
                             title: '暂无日志内容',
                             message: '该日志源为空或尚未生成。',

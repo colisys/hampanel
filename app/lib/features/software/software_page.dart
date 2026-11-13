@@ -162,7 +162,7 @@ class _SoftwarePageState extends State<SoftwarePage> {
                 _bullet('写入 Hampanel 托管配置，不覆盖系统原始配置文件'),
                 _bullet('启动服务并设置开机自启；校验失败时自动回滚'),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   '如果服务由其他面板或手工配置管理，初始化后请使用 Hampanel 进行后续修改。',
                   style: TextStyle(
                     fontSize: 11.5,
@@ -207,7 +207,7 @@ class _SoftwarePageState extends State<SoftwarePage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 5),
             child: Icon(Icons.circle, size: 5, color: hampanelAccent),
           ),
@@ -392,7 +392,7 @@ class _SoftwarePageState extends State<SoftwarePage> {
         children: [
           Text(
             item.description,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               color: hampanelMuted,
               height: 1.5,
@@ -414,11 +414,11 @@ class _SoftwarePageState extends State<SoftwarePage> {
               Expanded(
                 child: Text(
                   item.manageHint,
-                  style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+                  style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                 ),
               ),
               if (!item.installed)
-                const Text(
+                Text(
                   '请先在「应用商店 → 系统工具」安装',
                   style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                 )
@@ -447,7 +447,7 @@ class _SoftwarePageState extends State<SoftwarePage> {
       children: [
         Text(
           '$label: ',
-          style: const TextStyle(fontSize: 11, color: hampanelMuted),
+          style: TextStyle(fontSize: 11, color: hampanelMuted),
         ),
         SelectableText(value, style: monospace.copyWith(fontSize: 11)),
       ],
@@ -488,11 +488,11 @@ class _SoftwarePageState extends State<SoftwarePage> {
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(
                 status.message,
-                style: const TextStyle(fontSize: 11.5, color: hampanelDanger),
+                style: TextStyle(fontSize: 11.5, color: hampanelDanger),
               ),
             ),
           if (status.jails.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
               child: Text(
                 '当前没有启用的 jail。',
@@ -564,7 +564,7 @@ class _SoftwarePageState extends State<SoftwarePage> {
         children: [
           Row(
             children: [
-              const Icon(Icons.gavel_outlined, size: 17, color: hampanelAccent),
+              Icon(Icons.gavel_outlined, size: 17, color: hampanelAccent),
               const SizedBox(width: 8),
               Text(
                 jail.name,
@@ -576,7 +576,7 @@ class _SoftwarePageState extends State<SoftwarePage> {
               const Spacer(),
               Text(
                 '当前封禁 ${jail.currentlyBanned} / 累计 ${jail.totalBanned}',
-                style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               ),
               const SizedBox(width: 10),
               OutlinedButton.icon(

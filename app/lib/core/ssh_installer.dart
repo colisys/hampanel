@@ -22,6 +22,7 @@ class SshInstallRequest {
     this.sourceRef = 'nightly',
     this.panelPort,
     this.mirror,
+    this.githubMirror,
     this.extraSans = const [],
   });
 
@@ -37,6 +38,7 @@ class SshInstallRequest {
   final String sourceRef;
   final int? panelPort;
   final String? mirror;
+  final String? githubMirror;
   final List<String> extraSans;
 
   String get effectiveEndpoint {
@@ -161,6 +163,11 @@ class SshInstaller {
         '--mirror',
         request.mirror!,
       ],
+      if (request.githubMirror != null &&
+          request.githubMirror!.trim().isNotEmpty) ...[
+        '--github-mirror',
+        request.githubMirror!.trim(),
+      ],
       for (final san in request.extraSans) ...['--san', san],
     ];
     final override = _releaseOverride;
@@ -191,6 +198,11 @@ class SshInstaller {
       if (_releaseOverride != null) ...['-ReleaseBase', _releaseOverride!],
       if (request.mode == 'source') ...['-Ref', request.sourceRef],
       if (request.panelPort != null) ...['-Port', '${request.panelPort}'],
+      if (request.githubMirror != null &&
+          request.githubMirror!.trim().isNotEmpty) ...[
+        '-GithubMirror',
+        request.githubMirror!.trim(),
+      ],
       for (final san in request.extraSans) ...['-San', san],
     ];
     final script =
@@ -248,10 +260,10 @@ Invoke-WebRequest -UseBasicParsing -Uri '${_psQuote(url)}' -OutFile "\$dir\\inst
   String _releaseBase(SshInstallRequest request) {
     final override = _releaseOverride;
     if (override != null) return override;
-    if (request.channel == 'stable' || request.channel == 'latest') {
-      return 'https://github.com/$_repo/releases/latest/download';
-    }
-    return 'https://github.com/$_repo/releases/download/${request.channel}';
+    final base = request.channel == 'stable' || request.channel == 'latest'
+        ? 'https://github.com/$_repo/releases/latest/download'
+        : 'https://github.com/$_repo/releases/download/${request.channel}';
+    return _mirrorUrl(base, request.githubMirror);
   }
 
   String? get _releaseOverride {
@@ -290,6 +302,14 @@ class _LineBuffer {
 
 String _hex(Uint8List bytes) =>
     bytes.map((value) => value.toRadixString(16).padLeft(2, '0')).join();
+
+String _mirrorUrl(String url, String? mirror) {
+  final value = mirror?.trim() ?? '';
+  if (value.isEmpty) return url;
+  final base = value.replaceFirst(RegExp(r'/+$'), '');
+  if (base.isEmpty) return url;
+  return '$base/$url';
+}
 
 String _shellQuote(String value) => "'${value.replaceAll("'", "'\\''")}'";
 

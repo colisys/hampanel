@@ -28,6 +28,7 @@ class _InstallPageState extends State<InstallPage> {
   final _panelPort = TextEditingController();
   final _sourceRef = TextEditingController(text: 'nightly');
   final _mirrorCustom = TextEditingController();
+  final _githubMirror = TextEditingController();
   final _logScroll = ScrollController();
 
   String _auth = 'password';
@@ -51,6 +52,7 @@ class _InstallPageState extends State<InstallPage> {
       _panelPort,
       _sourceRef,
       _mirrorCustom,
+      _githubMirror,
     ]) {
       controller.dispose();
     }
@@ -134,6 +136,7 @@ class _InstallPageState extends State<InstallPage> {
               : _sourceRef.text.trim(),
           panelPort: panelPort,
           mirror: mirror,
+          githubMirror: _githubMirror.text.trim(),
         ),
         onLog: _append,
       );
@@ -166,7 +169,7 @@ class _InstallPageState extends State<InstallPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   '在没有可用面板时，可以通过 SSH 在远程 Linux 或 Windows 主机上安装 hampaneld。'
                   '选择发布二进制会自动启用每日更新检查；源码构建不会启用。',
                   style: TextStyle(
@@ -176,7 +179,7 @@ class _InstallPageState extends State<InstallPage> {
                   ),
                 ),
                 const SizedBox(height: 18),
-                _section('SSH 连接', [
+                _section('01', 'SSH 连接', [
                   _row([
                     Expanded(
                       flex: 3,
@@ -248,13 +251,13 @@ class _InstallPageState extends State<InstallPage> {
                     ),
                   ],
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     '非 root 用户需要配置免密 sudo。私钥仅在本机读取，不会上传。',
                     style: TextStyle(fontSize: 11, color: hampanelMuted),
                   ),
                 ]),
                 const SizedBox(height: 14),
-                _section('安装方式', [
+                _section('02', '安装方式', [
                   DropdownButtonFormField<String>(
                     initialValue: _mode,
                     decoration: const InputDecoration(labelText: '安装类型'),
@@ -336,8 +339,21 @@ class _InstallPageState extends State<InstallPage> {
                     ),
                   ],
                   const SizedBox(height: 6),
-                  const Text(
+                  Text(
                     '镜像仅用于 Linux 目标机安装依赖包（apt/apk）；Windows 目标忽略此项。',
+                    style: TextStyle(fontSize: 11, color: hampanelMuted),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _githubMirror,
+                    decoration: const InputDecoration(
+                      labelText: 'GitHub 镜像（可选）',
+                      hintText: 'https://ghfast.top 或 https://gitclone.com/github.com',
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '用于下载 release 与源码归档。直接在完整 GitHub 地址前拼接镜像前缀。',
                     style: TextStyle(fontSize: 11, color: hampanelMuted),
                   ),
                   const SizedBox(height: 10),
@@ -364,7 +380,7 @@ class _InstallPageState extends State<InstallPage> {
                     ),
                   ]),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     '面板地址用于证书 SAN。通过 NAT 或域名访问时请填写公网地址；端口留空会自动选择。',
                     style: TextStyle(fontSize: 11, color: hampanelMuted),
                   ),
@@ -373,7 +389,7 @@ class _InstallPageState extends State<InstallPage> {
                   const SizedBox(height: 12),
                   Text(
                     _error!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: hampanelDanger,
                       fontSize: 12.5,
                     ),
@@ -395,7 +411,7 @@ class _InstallPageState extends State<InstallPage> {
                     ),
                     const SizedBox(width: 12),
                     if (_busy)
-                      const Text(
+                      Text(
                         '源码构建可能需要几分钟，请保持页面打开',
                         style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                       ),
@@ -437,18 +453,41 @@ class _InstallPageState extends State<InstallPage> {
     );
   }
 
-  Widget _section(String title, List<Widget> children) {
-    return Card(
-      child: Padding(
+  Widget _section(String index, String title, List<Widget> children) {
+    return Container(
+      decoration: BoxDecoration(boxShadow: mangaShadow),
+      child: Container(
+        decoration: BoxDecoration(
+          color: hampanelSurface,
+          border: Border.all(color: hampanelInk, width: 2),
+        ),
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            Row(
+              children: [
+                Text(
+                  index,
+                  style: mangaKicker.copyWith(
+                    color: hampanelAccent,
+                    fontSize: 11,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(width: 5, height: 16, color: hampanelAccent),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             ...children,
           ],
         ),

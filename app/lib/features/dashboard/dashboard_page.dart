@@ -167,7 +167,7 @@ class _DashboardPageState extends State<DashboardPage> {
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 10.5, color: hampanelMuted),
+          style: TextStyle(fontSize: 10.5, color: hampanelMuted),
         ),
         const SizedBox(height: 3),
         Text(
@@ -231,7 +231,7 @@ class _DashboardPageState extends State<DashboardPage> {
             ],
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             '速率每 3 秒采样一次，仅统计非回环接口',
             style: TextStyle(fontSize: 10.5, color: hampanelMuted),
           ),
@@ -243,7 +243,7 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget _diskCard() {
     final disks = _metrics?.disks ?? const <DiskMetrics>[];
     if (disks.isEmpty) {
-      return const PanelCard(
+      return PanelCard(
         title: '磁盘',
         child: Text(
           '未发现可用的块设备',
@@ -273,7 +273,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       const SizedBox(width: 8),
                       Text(
                         disk.filesystem,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10.5,
                           color: hampanelMuted,
                         ),
@@ -281,7 +281,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       const Spacer(),
                       Text(
                         '${formatBytes(disk.usedBytes)} / ${formatBytes(disk.totalBytes)} · ${formatPercent(disk.percent)}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           color: hampanelMuted,
                         ),
@@ -311,7 +311,7 @@ class _DashboardPageState extends State<DashboardPage> {
             width: 62,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+              style: TextStyle(fontSize: 11.5, color: hampanelMuted),
             ),
           ),
           Expanded(
@@ -320,7 +320,7 @@ class _DashboardPageState extends State<DashboardPage> {
               maxLines: maxLines,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.right,
-              style: const TextStyle(fontSize: 11.5, color: hampanelInkSoft),
+              style: TextStyle(fontSize: 11.5, color: hampanelInkSoft),
             ),
           ),
         ],

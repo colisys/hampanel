@@ -22,7 +22,7 @@ Future<Map<String, String>?> showDeployDialog(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               '容器通过 Docker Compose 启动。端口冲突或镜像拉取失败会在结果中显示。',
               style: TextStyle(
                 fontSize: 11.5,
@@ -100,7 +100,7 @@ Future<void> showDeployedDialog(
               width: 110,
               child: Text(
                 key,
-                style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               ),
             ),
             Expanded(

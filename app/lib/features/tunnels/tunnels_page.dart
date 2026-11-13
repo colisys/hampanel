@@ -155,7 +155,7 @@ class _TunnelsPageState extends State<TunnelsPage> {
                   const SizedBox(height: 8),
                   Text(
                     _modeHelp(mode),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11.5,
                       color: hampanelMuted,
                       height: 1.5,
@@ -288,7 +288,7 @@ class _TunnelsPageState extends State<TunnelsPage> {
                     ),
                   ],
                   const SizedBox(height: 10),
-                  const Text(
+                  Text(
                     '所有监听默认只绑定 127.0.0.1；SSH 使用 BatchMode、仅支持密钥/agent，'
                     '不支持密码。-R 的远端端口也绑定在远端回环地址。',
                     style: TextStyle(
@@ -525,14 +525,14 @@ class _TunnelsPageState extends State<TunnelsPage> {
                       '管理端 ${Platform.operatingSystem} · 远端 ${_serverPlatform ?? '未知'}'
                       '${_sshVersion.isNotEmpty ? ' · ${_sshVersion.split('\n').first}' : ''}'
                       '${_socatVersion.isNotEmpty ? ' · ${_socatVersion.split('\n').first}' : ''}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11.5,
                         color: hampanelMuted,
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    SizedBox(height: 12),
                     if (_profiles.isEmpty)
-                      const EmptyState(
+                      EmptyState(
                         icon: Icons.swap_horiz,
                         title: '还没有端口穿透配置',
                         message:
@@ -599,21 +599,21 @@ class _TunnelsPageState extends State<TunnelsPage> {
               'ssh ${profile.sshUser}@${profile.sshHost}:${profile.sshPort}'
               '${profile.jumpHost.isNotEmpty ? '  -J ${profile.jumpHost}' : ''}'
               '${profile.keyPath.isNotEmpty ? '  -i ${profile.keyPath}' : ''}',
-              style: const TextStyle(fontSize: 11, color: hampanelMuted),
+              style: TextStyle(fontSize: 11, color: hampanelMuted),
             ),
           ],
           if (runtime?.error != null) ...[
             const SizedBox(height: 6),
             Text(
               runtime!.error!,
-              style: const TextStyle(fontSize: 11.5, color: hampanelDanger),
+              style: TextStyle(fontSize: 11.5, color: hampanelDanger),
             ),
           ],
           if (runtime?.exitCode != null && !running) ...[
             const SizedBox(height: 4),
             Text(
               '进程已退出，退出码 ${runtime!.exitCode}',
-              style: const TextStyle(fontSize: 11, color: hampanelDanger),
+              style: TextStyle(fontSize: 11, color: hampanelDanger),
             ),
           ],
           const SizedBox(height: 10),
@@ -639,7 +639,7 @@ class _TunnelsPageState extends State<TunnelsPage> {
               ),
               const Spacer(),
               if (blocked)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(right: 8),
                   child: Text(
                     '当前环境不可用',

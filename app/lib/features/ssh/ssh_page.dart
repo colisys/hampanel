@@ -396,7 +396,7 @@ class _SshPageState extends State<SshPage> {
                     ),
                   ),
                 if (!logging.rsyslogAvailable)
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.only(top: 8),
                     child: Text(
                       '未检测到 rsyslog，文件模式不可用；可在「应用商店 → 系统工具」安装 rsyslog。',
@@ -408,7 +408,7 @@ class _SshPageState extends State<SshPage> {
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       logging.message,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11.5,
                         color: hampanelMuted,
                       ),
@@ -513,7 +513,7 @@ class _SshPageState extends State<SshPage> {
                 ? SingleChildScrollView(
                     child: Text(
                       _logsError!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         color: hampanelDanger,
                       ),
@@ -612,7 +612,7 @@ class _SshPageState extends State<SshPage> {
                 const SizedBox(height: 8),
                 Text(
                   status.message,
-                  style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+                  style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                 ),
               ],
             ],
@@ -741,10 +741,10 @@ class _SshPageState extends State<SshPage> {
               else if (_keysError != null)
                 Text(
                   _keysError!,
-                  style: const TextStyle(fontSize: 12, color: hampanelDanger),
+                  style: TextStyle(fontSize: 12, color: hampanelDanger),
                 )
               else if (_keys.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
                   child: Text(
                     '该用户尚未配置公钥。',
@@ -766,7 +766,7 @@ class _SshPageState extends State<SshPage> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.key, size: 17, color: hampanelAccent),
+                        Icon(Icons.key, size: 17, color: hampanelAccent),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
@@ -816,7 +816,7 @@ class _SshPageState extends State<SshPage> {
             width: 96,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+              style: TextStyle(fontSize: 11.5, color: hampanelMuted),
             ),
           ),
           Expanded(

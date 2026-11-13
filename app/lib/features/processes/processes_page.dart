@@ -150,7 +150,7 @@ class _ProcessesPageState extends State<ProcessesPage> {
                                         child: Text(
                                           process.command,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 11.5,
                                             color: hampanelMuted,
                                           ),

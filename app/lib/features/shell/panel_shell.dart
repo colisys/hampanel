@@ -81,7 +81,7 @@ class _PanelShellState extends State<PanelShell> {
         children: [
           Container(
             width: 230,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: hampanelSurface,
               border: Border(right: BorderSide(color: hampanelInk, width: 2)),
             ),
@@ -95,7 +95,7 @@ class _PanelShellState extends State<PanelShell> {
                         width: 32,
                         height: 32,
                         color: hampanelInk,
-                        child: const Icon(
+                        child: Icon(
                           Icons.dns_outlined,
                           color: hampanelSurface,
                           size: 19,
@@ -122,7 +122,7 @@ class _PanelShellState extends State<PanelShell> {
                         ),
                         child: Text(
                           'v$fullClientVersion',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: 'monospace',
                             fontSize: 9.5,
                             color: hampanelMuted,
@@ -199,7 +199,7 @@ class _PanelShellState extends State<PanelShell> {
                 ),
                 const Divider(),
                 Container(
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     border: Border(top: BorderSide(color: hampanelInk, width: 2)),
                   ),
                   padding: const EdgeInsets.all(12),
@@ -208,7 +208,7 @@ class _PanelShellState extends State<PanelShell> {
                     children: [
                       Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.lock,
                             size: 13,
                             color: hampanelAccent,
@@ -218,7 +218,7 @@ class _PanelShellState extends State<PanelShell> {
                             child: Text(
                               session.enrollment.endpoint,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontFamily: 'monospace',
                                 fontSize: 10.5,
                                 color: hampanelMuted,
@@ -250,7 +250,7 @@ class _PanelShellState extends State<PanelShell> {
               children: [
                 Container(
                   height: 56,
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: hampanelBackground,
                     border: Border(
                       bottom: BorderSide(color: hampanelInk, width: 2),
@@ -276,7 +276,7 @@ class _PanelShellState extends State<PanelShell> {
                         decoration: BoxDecoration(
                           border: Border.all(color: hampanelInk, width: 1.5),
                         ),
-                        child: const Row(
+                        child: Row(
                           children: [
                             Icon(
                               Icons.verified_user_outlined,

@@ -49,7 +49,7 @@ class PageHeader extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     subtitle!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12.5,
                       color: hampanelMuted,
                     ),
@@ -82,7 +82,7 @@ class PanelCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(boxShadow: mangaShadowSmall),
+      decoration: BoxDecoration(boxShadow: mangaShadowSmall),
       child: Card(
         child: Padding(
           padding: padding,
@@ -145,7 +145,7 @@ class StatTile extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11,
             color: hampanelMuted,
             fontWeight: FontWeight.w700,
@@ -166,7 +166,7 @@ class StatTile extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             detail!,
-            style: const TextStyle(fontSize: 11, color: hampanelMuted),
+            style: TextStyle(fontSize: 11, color: hampanelMuted),
           ),
         ],
       ],
@@ -209,7 +209,7 @@ class ErrorBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      decoration: const BoxDecoration(boxShadow: mangaShadowSmall),
+      decoration: BoxDecoration(boxShadow: mangaShadowSmall),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -219,12 +219,12 @@ class ErrorBanner extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.error_outline, color: hampanelDanger, size: 18),
+            Icon(Icons.error_outline, color: hampanelDanger, size: 18),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 message,
-                style: const TextStyle(
+                style: TextStyle(
                   color: hampanelInk,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
@@ -245,7 +245,7 @@ class LoadingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: SizedBox(
         width: 22,
         height: 22,
@@ -273,7 +273,7 @@ class EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -286,24 +286,24 @@ class EmptyState extends StatelessWidget {
               ),
               child: Icon(icon, size: 28, color: hampanelInk),
             ),
-            const SizedBox(height: 14),
+            SizedBox(height: 14),
             Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.2,
               ),
             ),
             if (message != null) ...[
-              const SizedBox(height: 6),
+              SizedBox(height: 6),
               Text(
                 message!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12, color: hampanelMuted),
+                style: TextStyle(fontSize: 12, color: hampanelMuted),
               ),
             ],
-            if (action != null) ...[const SizedBox(height: 16), action!],
+            if (action != null) ...[SizedBox(height: 16), action!],
           ],
         ),
       ),
@@ -321,7 +321,7 @@ class StatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = good ? hampanelInk : hampanelDanger;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      padding: EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: good ? hampanelSurfaceAlt : hampanelDanger.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(2),
@@ -356,7 +356,7 @@ Future<bool> confirmDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, false),
-          child: const Text('取消'),
+          child: Text('取消'),
         ),
         FilledButton(
           style: danger
@@ -397,7 +397,7 @@ Future<String?> textInputDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text('取消'),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, controller.text),
@@ -415,14 +415,14 @@ Future<String?> textInputDialog(
 class Halftone extends StatelessWidget {
   const Halftone({
     super.key,
-    this.color = hampanelInk,
+    this.color,
     this.spacing = 15,
     this.dotRadius = 1.1,
     this.opacity = 0.09,
     this.child,
   });
 
-  final Color color;
+  final Color? color;
   final double spacing;
   final double dotRadius;
   final double opacity;
@@ -432,7 +432,7 @@ class Halftone extends StatelessWidget {
   Widget build(BuildContext context) {
     return CustomPaint(
       painter: _HalftonePainter(
-        color: color.withValues(alpha: opacity),
+        color: (color ?? hampanelInk).withValues(alpha: opacity),
         spacing: spacing,
         dotRadius: dotRadius,
       ),

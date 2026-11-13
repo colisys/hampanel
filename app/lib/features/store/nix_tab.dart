@@ -106,7 +106,7 @@ class _NixTabState extends State<NixTab> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const LoadingView();
+    if (_loading) return LoadingView();
     if (_error != null) {
       return SingleChildScrollView(
         child: ErrorBanner(message: _error!, onRetry: _load),
@@ -114,7 +114,7 @@ class _NixTabState extends State<NixTab> {
     }
     final status = _status;
     if (status == null) {
-      return const EmptyState(icon: Icons.ac_unit, title: 'Nix 状态未知');
+      return EmptyState(icon: Icons.ac_unit, title: 'Nix 状态未知');
     }
 
     return ListView(
@@ -136,10 +136,10 @@ class _NixTabState extends State<NixTab> {
                   status.flakes
                       ? 'Flake 与 nix-command 已启用，可执行 nix build / nix run。'
                       : '已检测到 Nix，但 flakes 实验特性可能未启用。',
-                  style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+                  style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                 ),
               ] else
-                const Text(
+                Text(
                   '未检测到 nix。可直接在应用商店安装，或使用服务器发行版的包管理器。'
                   '命令仅允许执行内置的精选属性，避免任意表达式执行。',
                   style: TextStyle(
@@ -180,7 +180,7 @@ class _NixTabState extends State<NixTab> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.ac_unit, size: 18, color: hampanelMuted),
+                    Icon(Icons.ac_unit, size: 18, color: hampanelMuted),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
@@ -196,7 +196,7 @@ class _NixTabState extends State<NixTab> {
                           const SizedBox(height: 2),
                           Text(
                             target.description,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11.5,
                               color: hampanelMuted,
                             ),

@@ -291,7 +291,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             alignment: Alignment.centerLeft,
                             child: Text(
                               _health!,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11.5,
                                 color: hampanelMuted,
                               ),
@@ -378,7 +378,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                 const SizedBox(height: 6),
                                 Text(
                                   updateError,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 11.5,
                                     color: hampanelDanger,
                                   ),
@@ -389,7 +389,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                 updatable
                                     ? '发布二进制安装会通过 GitHub Release 检查新版本；更新会替换二进制并重启服务。'
                                     : '源码安装不启用自动更新检查。需要更新时请用同一方式重新构建部署。',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 11.5,
                                   color: hampanelMuted,
                                   height: 1.5,
@@ -447,7 +447,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         _row('CA SHA-256', enrollment.caSha256),
                         _row('服务端 SHA-256', enrollment.serverSha256),
                         const SizedBox(height: 8),
-                        const Align(
+                        Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
                             '客户端只信任该 CA，并强制要求服务端提供匹配证书；没有有效客户端证书的连接会在 TLS 层被拒绝。',
@@ -478,7 +478,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
+                              Text(
                                 '勾选允许 AI 助手调用的工具。修改类工具每次执行仍需人工批准；'
                                 '计划任务工具默认关闭，勾选后创建任务也同样需要批准。',
                                 style: TextStyle(
@@ -552,7 +552,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         : Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
+                              Text(
                                 'AI 读取这些路径或其子路径时必须人工批准；其他文件读取自动执行。'
                                 '修改类操作始终需要批准。',
                                 style: TextStyle(
@@ -563,7 +563,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               ),
                               const SizedBox(height: 10),
                               if (_sensitivePaths.isEmpty)
-                                const Text(
+                                Text(
                                   '未配置敏感路径',
                                   style: TextStyle(
                                     fontSize: 11.5,
@@ -651,7 +651,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         _row('协议', 'GPL-3.0-or-later'),
                         _row('传输', 'HTTP/1.1 + WebSocket over mutual TLS'),
                         const SizedBox(height: 6),
-                        const Align(
+                        Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
                             '本项目为独立 CleanRoom 实现，未复制任何参考面板的代码或算法。',
@@ -682,7 +682,7 @@ class _SettingsPageState extends State<SettingsPage> {
           padding: const EdgeInsets.only(top: 6, bottom: 2),
           child: Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w600,
               color: hampanelMuted,
@@ -713,7 +713,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             subtitle: Text(
               tool.description,
-              style: const TextStyle(fontSize: 11, color: hampanelMuted),
+              style: TextStyle(fontSize: 11, color: hampanelMuted),
             ),
           ),
       ],
@@ -730,7 +730,7 @@ class _SettingsPageState extends State<SettingsPage> {
             width: 150,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+              style: TextStyle(fontSize: 11.5, color: hampanelMuted),
             ),
           ),
           Expanded(
