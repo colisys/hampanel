@@ -10,9 +10,10 @@ const tls = @import("tls.zig");
 const audit = @import("audit.zig");
 const log = @import("log.zig");
 const version = @import("version.zig");
+const update = @import("update.zig");
 const validate = @import("shared").validate;
 
-const Command = enum { run, init, enroll, version, help };
+const Command = enum { run, init, enroll, version, update, help };
 
 const Options = struct {
     command: Command = .help,
@@ -29,6 +30,15 @@ const Options = struct {
     force: bool = false,
     json: bool = false,
     service: bool = false,
+    check: bool = false,
+    apply: bool = false,
+    auto: bool = false,
+    install_schedule: bool = false,
+    remove_schedule: bool = false,
+    install_mode: ?[]const u8 = null,
+    update_channel: ?[]const u8 = null,
+    update_repo: ?[]const u8 = null,
+    service_name: ?[]const u8 = null,
 };
 
 pub fn run(allocator: std.mem.Allocator) !u8 {
@@ -81,6 +91,24 @@ pub fn run(allocator: std.mem.Allocator) !u8 {
             opts.json = true;
         } else if (std.mem.eql(u8, arg, "--service")) {
             opts.service = true;
+        } else if (std.mem.eql(u8, arg, "--service-name")) {
+            opts.service_name = takeValue(args, &index, arg) orelse return 2;
+        } else if (std.mem.eql(u8, arg, "--install-mode")) {
+            opts.install_mode = takeValue(args, &index, arg) orelse return 2;
+        } else if (std.mem.eql(u8, arg, "--update-channel")) {
+            opts.update_channel = takeValue(args, &index, arg) orelse return 2;
+        } else if (std.mem.eql(u8, arg, "--update-repo")) {
+            opts.update_repo = takeValue(args, &index, arg) orelse return 2;
+        } else if (std.mem.eql(u8, arg, "--check")) {
+            opts.check = true;
+        } else if (std.mem.eql(u8, arg, "--apply")) {
+            opts.apply = true;
+        } else if (std.mem.eql(u8, arg, "--auto")) {
+            opts.auto = true;
+        } else if (std.mem.eql(u8, arg, "--install-schedule")) {
+            opts.install_schedule = true;
+        } else if (std.mem.eql(u8, arg, "--remove-schedule")) {
+            opts.remove_schedule = true;
         } else if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
             printUsage();
             return 0;
@@ -109,6 +137,7 @@ pub fn run(allocator: std.mem.Allocator) !u8 {
         .init => cmdInit(allocator, &opts),
         .enroll => cmdEnroll(allocator, &opts),
         .run => cmdRun(allocator, &opts),
+        .update => cmdUpdate(allocator, &opts),
     };
 }
 
@@ -116,6 +145,7 @@ fn parseCommand(raw: []const u8) ?Command {
     if (std.mem.eql(u8, raw, "run")) return .run;
     if (std.mem.eql(u8, raw, "init")) return .init;
     if (std.mem.eql(u8, raw, "enroll")) return .enroll;
+    if (std.mem.eql(u8, raw, "update")) return .update;
     if (std.mem.eql(u8, raw, "version")) return .version;
     if (std.mem.eql(u8, raw, "help")) return .help;
     return null;
@@ -189,6 +219,35 @@ fn cmdInit(allocator: std.mem.Allocator, opts: *Options) !u8 {
 
     const endpoint = try formatEndpoint(a, parts.host, final_port);
 
+    if (opts.install_mode) |mode| {
+        if (!std.mem.eql(u8, mode, "binary") and !std.mem.eql(u8, mode, "source")) {
+            std.debug.print("invalid --install-mode: use binary or source\n", .{});
+            return 2;
+        }
+        cfg.install_mode = mode;
+    }
+    if (opts.update_channel) |channel| {
+        if (channel.len == 0 or channel.len > 64) {
+            std.debug.print("invalid --update-channel\n", .{});
+            return 2;
+        }
+        cfg.update_channel = channel;
+    }
+    if (opts.update_repo) |repo| {
+        if (std.mem.indexOfScalar(u8, repo, '/') == null or repo.len > 128) {
+            std.debug.print("invalid --update-repo: expected owner/repo\n", .{});
+            return 2;
+        }
+        cfg.update_repo = repo;
+    }
+    if (opts.service_name) |service_name| {
+        if (!validate.isUnitName(service_name)) {
+            std.debug.print("invalid --service-name\n", .{});
+            return 2;
+        }
+        cfg.service_name = service_name;
+    }
+
     {
         var present = false;
         for (opts.sans.items) |existing| {
@@ -257,6 +316,91 @@ fn cmdEnroll(allocator: std.mem.Allocator, opts: *Options) !u8 {
     return 0;
 }
 
+fn cmdUpdate(allocator: std.mem.Allocator, opts: *Options) !u8 {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    var cfg = try config.Config.load(a, opts.config_path);
+    applyOverrides(&cfg, opts.*);
+    log.setLevelName(cfg.log_level);
+
+    if (opts.install_schedule) {
+        const self_exe = try std.fs.selfExePathAlloc(a);
+        const outcome = update.installSchedule(a, cfg, self_exe, opts.config_path) catch |err| switch (err) {
+            error.UpdateDisabled => {
+                std.debug.print("update checks are disabled for source installs\n", .{});
+                return 1;
+            },
+            else => {
+                std.debug.print("could not install update check: {s}\n", .{@errorName(err)});
+                return 1;
+            },
+        };
+        std.debug.print("{s}\n", .{outcome.message});
+        return if (outcome.installed) 0 else 1;
+    }
+
+    if (opts.remove_schedule) {
+        const outcome = update.removeSchedule(a) catch |err| {
+            std.debug.print("could not remove update check: {s}\n", .{@errorName(err)});
+            return 1;
+        };
+        std.debug.print("{s}\n", .{outcome.message});
+        return 0;
+    }
+
+    if (opts.apply) {
+        const outcome = update.apply(a, cfg) catch |err| switch (err) {
+            error.UpdateDisabled => {
+                std.debug.print("update checks are disabled for source installs\n", .{});
+                return 1;
+            },
+            error.NothingToDo => {
+                std.debug.print("already up to date ({s})\n", .{version.version});
+                return 0;
+            },
+            else => {
+                std.debug.print("update failed: {s}\n", .{@errorName(err)});
+                return 1;
+            },
+        };
+        std.debug.print("{s}\n", .{outcome.message});
+        return 0;
+    }
+
+    const state = update.check(a, cfg);
+
+    if (opts.auto) {
+        if (state.update_available and cfg.update_auto) {
+            _ = update.apply(a, cfg) catch |err| {
+                std.debug.print("automatic update failed: {s}\n", .{@errorName(err)});
+                return 0;
+            };
+        }
+        return 0;
+    }
+
+    if (opts.json) {
+        const body = try std.json.stringifyAlloc(a, state, .{});
+        const stdout = std.io.getStdOut().writer();
+        try stdout.print("{s}\n", .{body});
+    } else {
+        const stdout = std.io.getStdOut().writer();
+        try stdout.print("current:     {s}\n", .{state.current_version});
+        try stdout.print("channel:     {s} ({s})\n", .{ state.channel, state.install_mode });
+        try stdout.print("latest:      {s}\n", .{if (state.latest_version.len > 0) state.latest_version else "unknown"});
+        try stdout.print("available:   {s}\n", .{if (state.update_available) "yes" else "no"});
+        try stdout.print("scheduled:   {s}\n", .{if (update.scheduleInstalled(a)) "yes" else "no"});
+        if (state.error_message.len > 0) {
+            try stdout.print("error:       {s}\n", .{state.error_message});
+        }
+    }
+
+    if (state.error_message.len > 0) return 1;
+    return 0;
+}
+
 fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -283,6 +427,7 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     var app = app_mod.App{
         .allocator = allocator,
         .config = cfg,
+        .config_path = opts.config_path,
         .started_at = std.time.timestamp(),
         .tls = tls_context,
         .pki = paths,
@@ -385,7 +530,14 @@ fn printUsage() void {
         \\  hampaneld run      [--config PATH] [--listen ADDR] [--port N] [--data-dir DIR] [--tls-dir DIR] [--enroll-file PATH] [--service]
         \\  hampaneld init     [--endpoint HOST[:PORT]] [--san HOST]... [--entry-prefix /TOKEN] [--config PATH] [--force]
         \\  hampaneld enroll   [--config PATH] [--endpoint HOST:PORT] [--out PATH] [--json]
+        \\  hampaneld update   [--check|--apply|--auto] [--json] [--config PATH]
+        \\  hampaneld update   [--install-schedule|--remove-schedule] [--config PATH]
         \\  hampaneld version
+        \\
+        \\Update options:
+        \\  --install-mode binary|source   recorded at init; source installs cannot update or schedule checks
+        \\  --update-channel stable|nightly
+        \\  --update-repo owner/repo
         \\
         \\Defaults:
         \\  config    /etc/hampanel/config.json

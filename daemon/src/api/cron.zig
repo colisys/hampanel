@@ -2,6 +2,7 @@ const std = @import("std");
 const context = @import("context.zig");
 const platform = @import("../platform/mod.zig");
 const errutil = @import("../util/errors.zig");
+const update = @import("../update.zig");
 
 pub fn index(ctx: *context.Context) anyerror!void {
     const entries = platform.cron.list(ctx.arena) catch |err| {
@@ -27,6 +28,10 @@ pub fn add(ctx: *context.Context) anyerror!void {
     }
     if (body.command.len == 0 or body.command.len > 512 or hasControlChars(body.command)) {
         ctx.fail(400, "bad_command", "command is empty, too long, or contains control characters");
+        return;
+    }
+    if (std.mem.eql(u8, ctx.app.config.install_mode, "source") and update.isUpdateCommand(body.command)) {
+        ctx.fail(400, "update_disabled", "source installs cannot schedule update checks");
         return;
     }
 

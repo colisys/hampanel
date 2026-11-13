@@ -10,7 +10,7 @@ class KeychainException implements Exception {
 /// Stores the AI API key in the operating system keychain.
 /// The key is never written to the panel's JSON configuration.
 class AiKeychain {
-  static const _service = 'hampanel.ai';
+  static const _service = 'work.dawncall.hampanel';
   static const _account = 'default';
 
   static Future<String?> readKey() async {
@@ -136,7 +136,7 @@ class AiKeychain {
 [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime] > \$null
 \$vault = New-Object Windows.Security.Credentials.PasswordVault
 try {
-  \$cred = \$vault.Retrieve('hampanel.ai', 'default')
+  \$cred = \$vault.Retrieve('work.dawncall.hampanel', 'default')
   \$cred.RetrievePassword()
   Write-Output \$cred.Password
 } catch { exit 1 }
@@ -145,14 +145,14 @@ try {
   static const _windowsWriteScript = '''
 [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime] > \$null
 \$vault = New-Object Windows.Security.Credentials.PasswordVault
-try { \$old = \$vault.Retrieve('hampanel.ai', 'default'); \$vault.Remove(\$old) } catch {}
-\$cred = New-Object Windows.Security.Credentials.PasswordCredential('hampanel.ai', 'default', \$env:HAMPANEL_AI_KEY)
+try { \$old = \$vault.Retrieve('work.dawncall.hampanel', 'default'); \$vault.Remove(\$old) } catch {}
+\$cred = New-Object Windows.Security.Credentials.PasswordCredential('work.dawncall.hampanel', 'default', \$env:HAMPANEL_AI_KEY)
 \$vault.Add(\$cred)
 ''';
 
   static const _windowsDeleteScript = '''
 [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime] > \$null
 \$vault = New-Object Windows.Security.Credentials.PasswordVault
-try { \$old = \$vault.Retrieve('hampanel.ai', 'default'); \$vault.Remove(\$old) } catch {}
+try { \$old = \$vault.Retrieve('work.dawncall.hampanel', 'default'); \$vault.Remove(\$old) } catch {}
 ''';
 }

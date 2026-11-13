@@ -1,3 +1,6 @@
+const String productId = 'work.dawncall.hampanel';
+const String officialSite = 'https://hampanel.dawncall.work';
+
 const String buildVersion = String.fromEnvironment(
   'HAMPANEL_VERSION',
   defaultValue: '0.1.0',

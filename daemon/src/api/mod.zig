@@ -20,9 +20,16 @@ const software = @import("software.zig");
 const recycle = @import("recycle.zig");
 const versions = @import("versions.zig");
 const waf = @import("waf.zig");
+const update = @import("update.zig");
 
 pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/health", .handler = health.index },
+
+    .{ .method = .GET, .pattern = "/api/v1/update", .handler = update.index },
+    .{ .method = .POST, .pattern = "/api/v1/update/check", .handler = update.check },
+    .{ .method = .POST, .pattern = "/api/v1/update/apply", .handler = update.apply },
+    .{ .method = .POST, .pattern = "/api/v1/update/schedule", .handler = update.schedule },
+    .{ .method = .DELETE, .pattern = "/api/v1/update/schedule", .handler = update.unschedule },
 
     .{ .method = .GET, .pattern = "/api/v1/system", .handler = system.index },
     .{ .method = .GET, .pattern = "/api/v1/metrics", .handler = metrics.index },

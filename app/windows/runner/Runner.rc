@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "dev.hampanel" "\0"
-            VALUE "FileDescription", "hampanel" "\0"
+            VALUE "CompanyName", "Dawncall" "\0"
+            VALUE "FileDescription", "Hampanel" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "hampanel" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 dev.hampanel. All rights reserved." "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Dawncall. GPL-3.0-or-later." "\0"
             VALUE "OriginalFilename", "hampanel.exe" "\0"
-            VALUE "ProductName", "hampanel" "\0"
+            VALUE "ProductName", "Hampanel" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

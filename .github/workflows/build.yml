@@ -68,6 +68,61 @@ jobs:
             daemon/zig-out/bin/hampanel-risk
           if-no-files-found: error
 
+  daemon-windows:
+    name: Daemon Windows (${{ github.ref_name }})
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute commit
+        id: commit
+        shell: bash
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Zig 0.14.1
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\zig"
+          Invoke-WebRequest -Uri "https://ziglang.org/download/0.14.1/zig-x86_64-windows-0.14.1.zip" -OutFile "$env:RUNNER_TEMP\zig.zip"
+          Expand-Archive "$env:RUNNER_TEMP\zig.zip" -DestinationPath $dir -Force
+          "$dir\zig-x86_64-windows-0.14.1" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Cache OpenSSL
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed\x64-windows
+          key: vcpkg-openssl-x64-windows-1
+
+      - name: Install OpenSSL
+        shell: pwsh
+        run: |
+          vcpkg install openssl:x64-windows
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build daemon
+        working-directory: daemon
+        shell: pwsh
+        run: |
+          $vcpkgRoot = if ($env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_INSTALLATION_ROOT } else { Split-Path (Get-Command vcpkg).Source }
+          zig build -Doptimize=ReleaseSafe "-Dcommit=${{ steps.commit.outputs.short }}" `
+            "-Dopenssl-dir=$vcpkgRoot\installed\x64-windows"
+
+      - name: Stage package
+        shell: pwsh
+        run: |
+          $vcpkgRoot = if ($env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_INSTALLATION_ROOT } else { Split-Path (Get-Command vcpkg).Source }
+          $dst = "app/build/packaging/windows-daemon"
+          New-Item -ItemType Directory -Force -Path $dst | Out-Null
+          Copy-Item "daemon/zig-out/bin/hampaneld.exe" $dst -Force
+          Copy-Item "$vcpkgRoot\installed\x64-windows\bin\*.dll" $dst -Force
+
+      - name: Upload Windows daemon
+        uses: actions/upload-artifact@v4
+        with:
+          name: hampaneld-windows-x86_64
+          path: app/build/packaging/windows-daemon
+          if-no-files-found: error
+
   flutter-linux:
     name: Flutter Linux (${{ github.ref_name }})
     runs-on: ubuntu-latest
@@ -87,7 +142,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config \
-            libgtk-3-dev liblzma-dev libstdc++-12-dev
+            libgtk-3-dev liblzma-dev libstdc++-12-dev imagemagick
 
       - name: Get packages
         working-directory: app
@@ -108,11 +163,21 @@ jobs:
           --dart-define=HAMPANEL_VERSION=0.1.0
           --dart-define=HAMPANEL_COMMIT=${{ steps.commit.outputs.short }}
 
+      - name: Package AppImage
+        run: bash tool/package/appimage.sh --version 0.1.0
+
       - name: Upload Linux client
         uses: actions/upload-artifact@v4
         with:
           name: hampanel-client-linux-x86_64
           path: app/build/linux/x64/release/bundle
+          if-no-files-found: error
+
+      - name: Upload Linux AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: hampanel-appimage-linux-x86_64
+          path: app/build/packaging/*.AppImage
           if-no-files-found: error
 
   flutter-windows:
@@ -150,6 +215,19 @@ jobs:
           --dart-define=HAMPANEL_VERSION=0.1.0
           --dart-define=HAMPANEL_COMMIT=${{ steps.commit.outputs.short }}
 
+      - name: Ensure 7-Zip
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "$env:ProgramFiles\7-Zip\7z.exe")) {
+            choco install 7zip.install --no-progress -y
+          }
+
+      - name: Package single-file executable
+        run: >
+          dart tool/package/windows_portable.dart
+          --bundle app/build/windows/x64/runner/Release
+          --output app/build/packaging/hampanel-0.1.0-windows-x86_64.exe
+
       - name: Upload Windows client
         uses: actions/upload-artifact@v4
         with:
@@ -157,9 +235,67 @@ jobs:
           path: app/build/windows/x64/runner/Release
           if-no-files-found: error
 
+      - name: Upload Windows portable executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: hampanel-portable-windows-x86_64
+          path: app/build/packaging/*.exe
+          if-no-files-found: error
+
+  flutter-macos:
+    name: Flutter macOS (${{ github.ref_name }})
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute commit
+        id: commit
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get packages
+        working-directory: app
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: app
+        run: flutter analyze
+
+      - name: Test
+        working-directory: app
+        run: flutter test
+
+      - name: Build macOS client
+        working-directory: app
+        run: >
+          flutter build macos --release
+          --dart-define=HAMPANEL_VERSION=0.1.0
+          --dart-define=HAMPANEL_COMMIT=${{ steps.commit.outputs.short }}
+
+      - name: Package DMG
+        run: |
+          set -euo pipefail
+          app_path="app/build/macos/Build/Products/Release/hampanel.app"
+          codesign --force --deep --sign - "$app_path"
+          mkdir -p app/build/packaging
+          arch="$(uname -m)"
+          hdiutil create -volname Hampanel -srcfolder "$app_path" -ov -format UDZO \
+            "app/build/packaging/hampanel-client-macos-${arch}.dmg"
+
+      - name: Upload macOS client
+        uses: actions/upload-artifact@v4
+        with:
+          name: hampanel-client-macos
+          path: app/build/packaging/*.dmg
+          if-no-files-found: error
+
   release:
     name: Publish release
-    needs: [daemon, flutter-linux, flutter-windows]
+    needs: [daemon, daemon-windows, flutter-linux, flutter-windows, flutter-macos]
     if: >-
       github.event_name != 'pull_request' &&
       (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/nightly')
@@ -193,29 +329,38 @@ jobs:
             echo "tag=$tag"
             echo "title=$title"
             echo "prerelease=$prerelease"
-            echo "archive_base=hampanel-${tag#v}-${short}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Package artifacts
         env:
-          BASE: ${{ steps.meta.outputs.archive_base }}
+          SHORT: ${{ steps.meta.outputs.short }}
         run: |
           set -euo pipefail
-          mkdir -p dist daemon-pkg client-linux
+          mkdir -p dist daemon-linux daemon-windows
 
-          cp artifacts/hampaneld-linux-x86_64/hampaneld daemon-pkg/
-          cp artifacts/hampaneld-linux-x86_64/hampanel-risk daemon-pkg/
-          cp deploy/bootstrap.sh LICENSE daemon-pkg/
-          chmod +x daemon-pkg/hampaneld daemon-pkg/hampanel-risk daemon-pkg/bootstrap.sh
-          tar -C daemon-pkg -czf "dist/${BASE}-daemon-linux-x86_64.tar.gz" .
+          cp artifacts/hampaneld-linux-x86_64/hampaneld daemon-linux/
+          cp artifacts/hampaneld-linux-x86_64/hampanel-risk daemon-linux/
+          cp deploy/bootstrap.sh deploy/install.sh LICENSE daemon-linux/
+          chmod +x daemon-linux/hampaneld daemon-linux/hampanel-risk \
+            daemon-linux/bootstrap.sh daemon-linux/install.sh
+          tar -C daemon-linux -czf dist/hampanel-daemon-linux-x86_64.tar.gz .
 
-          cp -r artifacts/hampanel-client-linux-x86_64/. client-linux/
-          cp LICENSE client-linux/LICENSE
-          tar -C client-linux -czf "dist/${BASE}-client-linux-x86_64.tar.gz" .
+          cp -r artifacts/hampaneld-windows-x86_64/. daemon-windows/
+          cp deploy/windows/install.ps1 daemon-windows/
+          cp LICENSE daemon-windows/LICENSE.txt
+          (cd daemon-windows && zip -qr ../dist/hampanel-daemon-windows-x86_64.zip .)
 
-          cp -r artifacts/hampanel-client-windows-x86_64 client-windows
-          cp LICENSE client-windows/LICENSE.txt
-          (cd client-windows && zip -qr "../dist/${BASE}-client-windows-x86_64.zip" .)
+          cp artifacts/hampanel-appimage-linux-x86_64/*.AppImage \
+            dist/hampanel-client-linux-x86_64.AppImage
+          cp artifacts/hampanel-portable-windows-x86_64/*.exe \
+            dist/hampanel-client-windows-x86_64.exe
+          cp artifacts/hampanel-client-macos/*.dmg dist/
+
+          cp deploy/install.sh dist/hampanel-install-linux.sh
+          cp deploy/windows/install.ps1 dist/hampanel-install-windows.ps1
+          chmod +x dist/hampanel-install-linux.sh
+          echo "0.1.0+${SHORT}" > dist/version.txt
+          cp LICENSE dist/LICENSE.txt
 
           (cd dist && sha256sum * > SHA256SUMS.txt)
           ls -lh dist
@@ -226,17 +371,26 @@ jobs:
           TAG: ${{ steps.meta.outputs.tag }}
           TITLE: ${{ steps.meta.outputs.title }}
           PRERELEASE: ${{ steps.meta.outputs.prerelease }}
-          BASE: ${{ steps.meta.outputs.archive_base }}
         run: |
           set -euo pipefail
 
           notes=$(cat <<EOF
           Automated build from \`${GITHUB_REF_NAME}\` at \`${GITHUB_SHA}\`.
 
-          - \`${BASE}-daemon-linux-x86_64.tar.gz\` — hampaneld + risk gateway + bootstrap.sh
-          - \`${BASE}-client-linux-x86_64.tar.gz\` — Flutter Linux client
-          - \`${BASE}-client-windows-x86_64.zip\` — Flutter Windows client
-          - \`SHA256SUMS.txt\` — checksums
+          **Clients**
+          - \`hampanel-client-linux-x86_64.AppImage\` — single-file Linux client (\`chmod +x\` then run)
+          - \`hampanel-client-windows-x86_64.exe\` — single-file portable Windows client
+          - \`hampanel-client-macos-*.dmg\` — macOS client (controls Linux and Windows daemons)
+
+          **Daemons**
+          - \`hampanel-daemon-linux-x86_64.tar.gz\` — hampaneld + risk gateway + installers
+          - \`hampanel-daemon-windows-x86_64.zip\` — hampaneld.exe + OpenSSL DLLs + installer
+
+          **Installers**
+          - \`hampanel-install-linux.sh\` / \`hampanel-install-windows.ps1\` — release binary (default) or source build
+
+          Binary installs enable the built-in update check; source installs disable it.
+          \`SHA256SUMS.txt\`, \`version.txt\` and \`LICENSE.txt\` are included.
           EOF
           )
 

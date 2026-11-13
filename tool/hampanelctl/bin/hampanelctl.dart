@@ -41,6 +41,9 @@ class _Options {
   bool noSystemd = false;
   bool noStart = false;
   String os = 'linux';
+  String mode = 'binary';
+  String channel = 'stable';
+  String repo = 'colisys/hampanel';
   String? prefix;
   String? configDir;
   String? dataDir;
@@ -89,6 +92,12 @@ class _Options {
             options.remoteDir = value(arg);
           case '--os':
             options.os = value(arg);
+          case '--mode':
+            options.mode = value(arg);
+          case '--channel':
+            options.channel = value(arg);
+          case '--repo':
+            options.repo = value(arg);
           case '--prefix':
             options.prefix = value(arg);
           case '--config-dir':
@@ -135,6 +144,10 @@ class _Options {
           ? '${options.host}:${options.panelPort}'
           : options.host;
     }
+    if (options.mode != 'binary' && options.mode != 'source') {
+      stderr.writeln('[hampanelctl] --mode must be binary or source');
+      return null;
+    }
     if (options.out == null) {
       options.out = 'hampanel-${options.local ? 'local' : options.host}.json';
     }
@@ -144,7 +157,8 @@ class _Options {
 
 Future<void> _deploy(_Options options) async {
   final source = Directory(options.source);
-  if (!Directory('${source.path}/daemon').existsSync()) {
+  final needsSource = options.local || options.mode == 'source';
+  if (needsSource && !Directory('${source.path}/daemon').existsSync()) {
     throw '--source must point at the Hampanel repository root';
   }
 
@@ -161,13 +175,21 @@ Future<void> _deploy(_Options options) async {
 }
 
 Future<void> _deployLocal(_Options options, Directory source) async {
+  final script = options.mode == 'binary'
+      ? '${source.path}/deploy/install.sh'
+      : '${source.path}/deploy/bootstrap.sh';
   final arguments = <String>[
-    '${source.path}/deploy/bootstrap.sh',
-    '--source',
-    source.path,
+    script,
+    '--mode',
+    options.mode,
     '--endpoint',
     options.endpoint,
   ];
+  if (options.mode == 'binary') {
+    arguments.addAll(['--channel', options.channel, '--repo', options.repo]);
+  } else {
+    arguments.addAll(['--source', source.path, '--install-mode', 'source']);
+  }
   if (options.panelPort != null)
     arguments.addAll(['--port', '${options.panelPort}']);
   if (options.entryPrefix != null)
@@ -188,12 +210,12 @@ Future<void> _deployLocal(_Options options, Directory source) async {
     arguments.addAll(['--san', san]);
   }
 
-  _step('running local bootstrap');
+  _step('running local ${options.mode} install');
   final result = await Process.run('bash', arguments);
   stdout.write(result.stdout);
   stderr.write(result.stderr);
   if (result.exitCode != 0) {
-    throw 'bootstrap failed with exit code ${result.exitCode}';
+    throw 'install failed with exit code ${result.exitCode}';
   }
 
   final match = RegExp(r'\[hampanel\] enrollment: (.+)')
@@ -203,6 +225,11 @@ Future<void> _deployLocal(_Options options, Directory source) async {
 }
 
 Future<void> _deployLinux(_Options options, Directory source) async {
+  if (options.mode == 'binary') {
+    await _installLinuxFromRelease(options);
+    return;
+  }
+
   final archive =
       '${Directory.systemTemp.path}/hampanel-src-${DateTime.now().microsecondsSinceEpoch}.tgz';
   _step('packing source');
@@ -228,7 +255,7 @@ Future<void> _deployLinux(_Options options, Directory source) async {
     '-o',
     'StrictHostKeyChecking=accept-new',
     archive,
-    '$target:/tmp/hampanel-src.tgz'
+    '$target:/tmp/hampanel-src.tgz',
   ]);
   await _run('scp', scpArgs);
 
@@ -244,20 +271,14 @@ Future<void> _deployLinux(_Options options, Directory source) async {
     '${options.remoteDir}/deploy/bootstrap.sh',
     '--source',
     options.remoteDir,
+    '--mode',
+    'source',
+    '--install-mode',
+    'source',
     '--endpoint',
     options.endpoint,
   ];
-  if (options.panelPort != null)
-    bootstrapArgs.addAll(['--port', '${options.panelPort}']);
-  if (options.entryPrefix != null)
-    bootstrapArgs.addAll(['--entry-prefix', options.entryPrefix!]);
-  if (options.tlsDir != null)
-    bootstrapArgs.addAll(['--tls-dir', options.tlsDir!]);
-  if (options.enrollFile != null)
-    bootstrapArgs.addAll(['--enroll-file', options.enrollFile!]);
-  for (final san in options.sans) {
-    bootstrapArgs.addAll(['--san', san]);
-  }
+  _appendInstallArgs(bootstrapArgs, options);
   if (options.noStart) bootstrapArgs.add('--no-start');
 
   final command = <String>[
@@ -265,11 +286,56 @@ Future<void> _deployLinux(_Options options, Directory source) async {
     ...bootstrapArgs,
   ].join(' ');
 
-  _step('building and installing on remote host (this may take a few minutes)');
+  _step('building and installing from source (this may take a few minutes)');
   await _ssh(options, [command]);
+  await _fetchEnrollmentLinux(options);
+}
 
+Future<void> _installLinuxFromRelease(_Options options) async {
+  final url = '${_releaseBase(options)}/hampanel-install-linux.sh';
+  final args = <String>[
+    '--mode',
+    'binary',
+    '--channel',
+    options.channel,
+    '--repo',
+    options.repo,
+    '--endpoint',
+    options.endpoint,
+  ];
+  _appendInstallArgs(args, options);
+  if (options.noStart) args.add('--no-start');
+
+  final runAs = options.sudo || options.user != 'root' ? 'sudo ' : '';
+  final command =
+      'curl -fsSL ${_quote(url)} | ${runAs}bash -s -- ${args.map(_quote).join(' ')}';
+
+  _step('installing release binary on ${options.host}');
+  await _ssh(options, [command]);
+  await _fetchEnrollmentLinux(options);
+}
+
+void _appendInstallArgs(List<String> args, _Options options) {
+  if (options.panelPort != null)
+    args.addAll(['--port', '${options.panelPort}']);
+  if (options.entryPrefix != null)
+    args.addAll(['--entry-prefix', options.entryPrefix!]);
+  if (options.prefix != null) args.addAll(['--prefix', options.prefix!]);
+  if (options.configDir != null)
+    args.addAll(['--config-dir', options.configDir!]);
+  if (options.dataDir != null) args.addAll(['--data-dir', options.dataDir!]);
+  if (options.tlsDir != null) args.addAll(['--tls-dir', options.tlsDir!]);
+  if (options.enrollFile != null)
+    args.addAll(['--enroll-file', options.enrollFile!]);
+  for (final san in options.sans) {
+    args.addAll(['--san', san]);
+  }
+}
+
+Future<void> _fetchEnrollmentLinux(_Options options) async {
   _step('fetching enrollment bundle');
-  final remoteEnroll = options.enrollFile ??
+  final remoteEnroll =
+      options.enrollFile ??
       (options.configDir != null
           ? '${options.configDir}/enroll.json'
           : '/etc/hampanel/enroll.json');
@@ -280,6 +346,11 @@ Future<void> _deployLinux(_Options options, Directory source) async {
 }
 
 Future<void> _deployWindows(_Options options, Directory source) async {
+  if (options.mode == 'binary') {
+    await _installWindowsFromRelease(options);
+    return;
+  }
+
   final archive =
       '${Directory.systemTemp.path}/hampanel-src-${DateTime.now().microsecondsSinceEpoch}.tgz';
   _step('packing source');
@@ -303,7 +374,7 @@ Future<void> _deployWindows(_Options options, Directory source) async {
     '-o',
     'StrictHostKeyChecking=accept-new',
     archive,
-    '$target:C:/ProgramData/hampanel/src.tgz'
+    '$target:C:/ProgramData/hampanel/src.tgz',
   ]);
   _step('uploading archive to $target');
   await _run('scp', scpArgs);
@@ -319,45 +390,90 @@ Future<void> _deployWindows(_Options options, Directory source) async {
     r'C:\ProgramData\hampanel\src',
     '-Endpoint',
     options.endpoint,
+    '-Mode',
+    'source',
   ];
-  if (options.panelPort != null)
-    installArgs.addAll(['-Port', '${options.panelPort}']);
-  if (options.entryPrefix != null)
-    installArgs.addAll(['-EntryPrefix', options.entryPrefix!]);
-  for (final san in options.sans) {
-    installArgs.addAll(['-San', san]);
-  }
-  if (options.openSslDir != null)
-    installArgs.addAll(['-OpenSslDir', options.openSslDir!]);
-  if (options.installDriver) installArgs.add('-InstallDriver');
+  _appendWindowsArgs(installArgs, options);
 
-  final escaped = installArgs
-      .map((value) => value.contains(' ') ? "'$value'" : value)
-      .join(' ');
-  _step('building and installing Windows service');
+  final escaped = installArgs.map(_windowsArg).join(' ');
+  _step('building and installing Windows service from source');
   await _ssh(options, [
     'powershell -NoProfile -ExecutionPolicy Bypass -File '
             r'C:\ProgramData\hampanel\src\deploy\windows\install.ps1 ' +
         escaped,
   ]);
+  await _fetchEnrollmentWindows(options);
+}
 
+Future<void> _installWindowsFromRelease(_Options options) async {
+  final url = '${_releaseBase(options)}/hampanel-install-windows.ps1';
+  final args = <String>[
+    '-Mode',
+    'binary',
+    '-Channel',
+    options.channel,
+    '-Repo',
+    options.repo,
+    '-Endpoint',
+    options.endpoint,
+  ];
+  _appendWindowsArgs(args, options);
+  final escaped = args.map(_windowsArg).join(' ');
+
+  _step('installing release binary on ${options.host}');
+  await _ssh(options, [
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "'
+        "New-Item -ItemType Directory -Force -Path 'C:\\ProgramData\\hampanel' | Out-Null; "
+        "Invoke-WebRequest -UseBasicParsing -Uri '${url}' -OutFile 'C:\\ProgramData\\hampanel\\install.ps1'; "
+        "& 'C:\\ProgramData\\hampanel\\install.ps1' $escaped\"",
+  ]);
+  await _fetchEnrollmentWindows(options);
+}
+
+void _appendWindowsArgs(List<String> args, _Options options) {
+  if (options.panelPort != null) args.addAll(['-Port', '${options.panelPort}']);
+  if (options.entryPrefix != null)
+    args.addAll(['-EntryPrefix', options.entryPrefix!]);
+  if (options.prefix != null) args.addAll(['-InstallDir', options.prefix!]);
+  if (options.dataDir != null) args.addAll(['-DataDir', options.dataDir!]);
+  for (final san in options.sans) {
+    args.addAll(['-San', san]);
+  }
+  if (options.openSslDir != null)
+    args.addAll(['-OpenSslDir', options.openSslDir!]);
+  if (options.installDriver) args.add('-InstallDriver');
+}
+
+Future<void> _fetchEnrollmentWindows(_Options options) async {
   _step('fetching enrollment bundle');
-  final enrollment = await _ssh(
-      options,
-      [
-        r'powershell -NoProfile -Command "Get-Content C:\ProgramData\hampanel\enroll.json -Raw"',
-      ],
-      capture: true);
+  final enrollment = await _ssh(options, [
+    r'powershell -NoProfile -Command "Get-Content C:\ProgramData\hampanel\enroll.json -Raw"',
+  ], capture: true);
   await _writeEnrollment(enrollment, options.out!);
 }
 
-Future<String> _ssh(_Options options, List<String> commands,
-    {bool capture = false}) async {
+String _releaseBase(_Options options) =>
+    (options.channel == 'stable' || options.channel == 'latest')
+    ? 'https://github.com/${options.repo}/releases/latest/download'
+    : 'https://github.com/${options.repo}/releases/download/${options.channel}';
+
+String _quote(String value) => "'${value.replaceAll("'", "'\\''")}'";
+
+String _windowsArg(String value) {
+  if (!value.contains(' ') && !value.contains("'")) return value;
+  return "'${value.replaceAll("'", "''")}'";
+}
+
+Future<String> _ssh(
+  _Options options,
+  List<String> commands, {
+  bool capture = false,
+}) async {
   final args = [
     '-p',
     '${options.sshPort}',
     '-o',
-    'StrictHostKeyChecking=accept-new'
+    'StrictHostKeyChecking=accept-new',
   ];
   if (options.identity != null) args.addAll(['-i', options.identity!]);
   args.add('${options.user}@${options.host}');
@@ -414,6 +530,9 @@ Options:
   --ssh-port <port>        SSH port (default: 22)
   --identity <path>        SSH private key
   --source <path>          repository root (default: current directory)
+  --mode <binary|source>   install a published release binary (default) or build from source
+  --channel <stable|nightly> release channel for binary installs (default: stable)
+  --repo <owner/repo>      GitHub repository for releases (default: colisys/hampanel)
   --san <host|ip>          extra certificate SAN (repeatable)
   --endpoint may omit the port; the daemon then picks a free port.
   --panel-port <port>      daemon port (default: random free port)
@@ -433,6 +552,10 @@ Options:
 Examples:
   dart run tool/hampanelctl/bin/hampanelctl.dart deploy --host 203.0.113.10 \\
       --san 203.0.113.10 --out hampanel-prod.json
+
+  # build and install from the local working tree instead of a release
+  dart run tool/hampanelctl/bin/hampanelctl.dart deploy --mode source \\
+      --host 203.0.113.10 --san 203.0.113.10
 
   dart run tool/hampanelctl/bin/hampanelctl.dart deploy --local --no-systemd \\
       --endpoint 127.0.0.1:8443 --san 127.0.0.1

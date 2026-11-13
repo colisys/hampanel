@@ -24,6 +24,8 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _health;
   String? _serverVersion;
   bool _checking = false;
+  Map<String, dynamic>? _update;
+  bool _updateBusy = false;
 
   final _aiTools = buildAiTools();
   final _sensitivePathController = TextEditingController();
@@ -37,6 +39,7 @@ class _SettingsPageState extends State<SettingsPage> {
   void initState() {
     super.initState();
     _check();
+    _loadUpdate();
     _loadAiSettings();
   }
 
@@ -133,6 +136,85 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _loadUpdate() async {
+    try {
+      final json = await _api.getJson('/api/v1/update');
+      if (!mounted) return;
+      setState(() => _update = json as Map<String, dynamic>?);
+    } catch (_) {
+      // update status is optional
+    }
+  }
+
+  Future<void> _checkUpdate() async {
+    setState(() => _updateBusy = true);
+    try {
+      await _api.postJson('/api/v1/update/check', null);
+      await _loadUpdate();
+      _toast('更新检查完成');
+    } catch (error) {
+      _toast('检查失败：${describeError(error)}');
+    } finally {
+      if (mounted) setState(() => _updateBusy = false);
+    }
+  }
+
+  Future<void> _applyUpdate() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('立即更新'),
+        content: const Text('将下载最新版本、替换 hampaneld 并重启服务，期间面板会短暂断开。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('更新'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _updateBusy = true);
+    try {
+      final result = await _api.postJson(
+        '/api/v1/update/apply',
+        null,
+        timeout: const Duration(minutes: 5),
+      );
+      final message = result is Map
+          ? result['message'] as String? ?? '更新完成'
+          : '更新完成';
+      _toast(message);
+    } catch (error) {
+      _toast('更新失败：${describeError(error)}');
+    } finally {
+      if (mounted) setState(() => _updateBusy = false);
+    }
+  }
+
+  Future<void> _toggleUpdateSchedule() async {
+    final scheduled = _update?['scheduled'] == true;
+    setState(() => _updateBusy = true);
+    try {
+      if (scheduled) {
+        await _api.deleteJson('/api/v1/update/schedule');
+        _toast('已关闭每日更新检查');
+      } else {
+        await _api.postJson('/api/v1/update/schedule', null);
+        _toast('已启用每日更新检查');
+      }
+      await _loadUpdate();
+    } catch (error) {
+      _toast('操作失败：${describeError(error)}');
+    } finally {
+      if (mounted) setState(() => _updateBusy = false);
+    }
+  }
+
   Future<void> _copyEnrollment() async {
     final enrollment = PanelScope.of(context).enrollment;
     await Clipboard.setData(
@@ -164,6 +246,13 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final enrollment = PanelScope.of(context).enrollment;
+    final updatable = _update?['updatable'] == true;
+    final updateAvailable = _update?['update_available'] == true;
+    final scheduled = _update?['scheduled'] == true;
+    final installMode = _update?['install_mode'] as String? ?? 'source';
+    final latestVersion = (_update?['latest_version'] as String?) ?? '';
+    final updateError = (_update?['error_message'] as String?) ?? '';
+    final checkedAt = (_update?['checked_at'] as num?)?.toInt() ?? 0;
     return Column(
       children: [
         const PageHeader(title: '设置', subtitle: '连接、凭据与客户端信息'),
@@ -239,6 +328,113 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       ],
                     ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: 720,
+                  child: PanelCard(
+                    title: '更新',
+                    trailing: _update == null
+                        ? null
+                        : StatusPill(
+                            text: updatable
+                                ? (updateAvailable ? '可更新' : '已是最新')
+                                : '源码安装',
+                            good: !updateAvailable,
+                          ),
+                    child: _update == null
+                        ? const LoadingView()
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _row(
+                                '安装方式',
+                                installMode == 'binary' ? '发布二进制' : '源码构建',
+                              ),
+                              _row(
+                                '更新通道',
+                                (_update?['channel'] as String?) ?? '-',
+                              ),
+                              _row(
+                                '当前版本',
+                                (_update?['current_version'] as String?) ?? '-',
+                              ),
+                              _row(
+                                '最新版本',
+                                latestVersion.isEmpty ? '未检查' : latestVersion,
+                              ),
+                              _row(
+                                '上次检查',
+                                checkedAt > 0
+                                    ? DateTime.fromMillisecondsSinceEpoch(
+                                        checkedAt * 1000,
+                                      ).toLocal().toString()
+                                    : '从未',
+                              ),
+                              if (updatable)
+                                _row('每日检查', scheduled ? '已启用（04:17）' : '未启用'),
+                              if (updateError.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  updateError,
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    color: hampanelDanger,
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(height: 8),
+                              Text(
+                                updatable
+                                    ? '发布二进制安装会通过 GitHub Release 检查新版本；更新会替换二进制并重启服务。'
+                                    : '源码安装不启用自动更新检查。需要更新时请用同一方式重新构建部署。',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  color: hampanelMuted,
+                                  height: 1.5,
+                                ),
+                              ),
+                              if (updatable) ...[
+                                const SizedBox(height: 12),
+                                Wrap(
+                                  spacing: 10,
+                                  runSpacing: 8,
+                                  children: [
+                                    OutlinedButton.icon(
+                                      onPressed: _updateBusy
+                                          ? null
+                                          : _checkUpdate,
+                                      icon: const Icon(Icons.refresh, size: 16),
+                                      label: const Text('检查更新'),
+                                    ),
+                                    FilledButton.icon(
+                                      onPressed: _updateBusy || !updateAvailable
+                                          ? null
+                                          : _applyUpdate,
+                                      icon: const Icon(
+                                        Icons.system_update_alt,
+                                        size: 16,
+                                      ),
+                                      label: const Text('立即更新'),
+                                    ),
+                                    OutlinedButton.icon(
+                                      onPressed: _updateBusy
+                                          ? null
+                                          : _toggleUpdateSchedule,
+                                      icon: const Icon(
+                                        Icons.schedule,
+                                        size: 16,
+                                      ),
+                                      label: Text(
+                                        scheduled ? '关闭每日检查' : '启用每日检查',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
+                          ),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -450,6 +646,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     child: Column(
                       children: [
                         _row('产品', 'Hampanel $fullClientVersion'),
+                        _row('产品标识', productId),
+                        _row('官网', officialSite),
                         _row('协议', 'GPL-3.0-or-later'),
                         _row('传输', 'HTTP/1.1 + WebSocket over mutual TLS'),
                         const SizedBox(height: 6),

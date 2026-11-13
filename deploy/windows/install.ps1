@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 [CmdletBinding()]
 param(
-    [string]$Source = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
+    [string]$Source = "",
     [string]$InstallDir = "$env:ProgramFiles\Hampanel",
     [string]$DataDir = "$env:ProgramData\hampanel",
     [int]$Port = 0,
@@ -13,6 +13,13 @@ param(
     [string]$OpenSslDir = "",
     [string]$ZigVersion = "0.14.1",
     [string]$ServiceName = "hampanel",
+    [ValidateSet("binary", "source")]
+    [string]$Mode = "binary",
+    [string]$Channel = "stable",
+    [string]$Repo = "colisys/hampanel",
+    [string]$Ref = "nightly",
+    [string]$ReleaseBase = "",
+    [string]$Binary = "",
     [switch]$InstallDriver,
     [switch]$SkipBuild,
     [switch]$NoStart
@@ -44,56 +51,119 @@ $tlsDir = Join-Path $DataDir "tls"
 $enrollPath = Join-Path $DataDir "enroll.json"
 $exePath = Join-Path $InstallDir "hampaneld.exe"
 
-# ------------------------------------------------------------------ toolchain
-$zig = (Get-Command zig -ErrorAction SilentlyContinue).Source
-if (-not $zig) {
-    $toolchain = Join-Path $env:ProgramData "hampanel\toolchain"
-    $zigExe = Join-Path $toolchain "zig.exe"
-    if (-not (Test-Path $zigExe)) {
-        Write-Step "Downloading Zig $ZigVersion"
-        $null = New-Item -ItemType Directory -Force -Path $toolchain
-        $zip = Join-Path $env:TEMP "zig-windows.zip"
-        Invoke-WebRequest -Uri "https://ziglang.org/download/$ZigVersion/zig-x86_64-windows-$ZigVersion.zip" -OutFile $zip
-        Expand-Archive -Path $zip -DestinationPath $toolchain -Force
-        $nested = Get-ChildItem -Path $toolchain -Recurse -Filter zig.exe | Select-Object -First 1
-        if (-not $nested) { throw "Zig extraction failed" }
-        $zig = $nested.FullName
-    } else {
-        $zig = $zigExe
+# ------------------------------------------------------------------- install
+$builtExe = ""
+if ($Mode -eq "binary") {
+    if (-not $ReleaseBase) {
+        if ($Channel -eq "stable" -or $Channel -eq "latest") {
+            $ReleaseBase = "https://github.com/$Repo/releases/latest/download"
+        } else {
+            $ReleaseBase = "https://github.com/$Repo/releases/download/$Channel"
+        }
     }
-}
-Write-Step "Using Zig: $zig"
-
-# -------------------------------------------------------------------- openssl
-if (-not $OpenSslDir) {
-    if ($env:OPENSSL_DIR) { $OpenSslDir = $env:OPENSSL_DIR }
-    elseif (Test-Path "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows") {
-        $OpenSslDir = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows"
-    } else {
-        throw "OpenSSL is required. Install it with: vcpkg install openssl:x64-windows, then pass -OpenSslDir <prefix>."
+    $asset = "hampanel-daemon-windows-x86_64.zip"
+    $tmp = Join-Path $env:TEMP "hampanel-release"
+    $null = New-Item -ItemType Directory -Force -Path $tmp
+    $zipPath = Join-Path $tmp $asset
+    $sumsPath = Join-Path $tmp "SHA256SUMS.txt"
+    Write-Step "Downloading $ReleaseBase/$asset"
+    Invoke-WebRequest -Uri "$ReleaseBase/$asset" -OutFile $zipPath
+    Invoke-WebRequest -Uri "$ReleaseBase/SHA256SUMS.txt" -OutFile $sumsPath
+    $line = Get-Content $sumsPath | Where-Object {
+        (($_ -split '\s+')[1] -replace '^\*', '') -eq $asset
+    } | Select-Object -First 1
+    if (-not $line) { throw "checksum for $asset is not published" }
+    $expected = ($line -split '\s+')[0]
+    $actual = (Get-FileHash -Algorithm SHA256 -Path $zipPath).Hash.ToLower()
+    if ($actual -ne $expected.ToLower()) { throw "checksum mismatch for $asset" }
+    Expand-Archive -LiteralPath $zipPath -DestinationPath $tmp -Force
+    $builtExe = if ($Binary) { $Binary } else { Join-Path $tmp "hampaneld.exe" }
+    if (-not (Test-Path $builtExe)) { throw "downloaded binary not found: $builtExe" }
+    Get-ChildItem -Path $tmp -Filter "*.dll" -ErrorAction SilentlyContinue |
+        Copy-Item -Destination $InstallDir -Force
+} else {
+    if (-not $Source) {
+        $ref = if ($Ref) { $Ref } else { "nightly" }
+        if ($ref -match '^v?\d+\.\d+\.\d+') {
+            $srcUrl = "https://github.com/$Repo/archive/refs/tags/$ref.tar.gz"
+        } else {
+            $srcUrl = "https://github.com/$Repo/archive/refs/heads/$ref.tar.gz"
+        }
+        $srcTmp = Join-Path $env:TEMP "hampanel-src"
+        Remove-Item -Recurse -Force $srcTmp -ErrorAction SilentlyContinue
+        $null = New-Item -ItemType Directory -Force -Path $srcTmp
+        $tgz = Join-Path $env:TEMP "hampanel-src.tar.gz"
+        Write-Step "Downloading source $srcUrl"
+        Invoke-WebRequest -UseBasicParsing -Uri $srcUrl -OutFile $tgz
+        tar -xzf $tgz -C $srcTmp --strip-components=1
+        if ($LASTEXITCODE -ne 0) { throw "source extraction failed" }
+        $Source = $srcTmp
     }
-}
-if (-not (Test-Path (Join-Path $OpenSslDir "lib\libssl.lib"))) {
-    throw "OpenSSL libraries not found under $OpenSslDir\lib. Expected libssl.lib and libcrypto.lib."
-}
 
-# ---------------------------------------------------------------------- build
-if (-not $SkipBuild) {
-    Write-Step "Compiling daemon (ReleaseSafe)"
-    Push-Location (Join-Path $Source "daemon")
-    try {
-        & $zig build -Doptimize=ReleaseSafe "-Dopenssl-dir=$OpenSslDir"
-        if ($LASTEXITCODE -ne 0) { throw "zig build failed" }
-    } finally {
-        Pop-Location
+    # ---------------------------------------------------------------- toolchain
+    $zig = (Get-Command zig -ErrorAction SilentlyContinue).Source
+    if (-not $zig) {
+        $toolchain = Join-Path $env:ProgramData "hampanel\toolchain"
+        $zigExe = Join-Path $toolchain "zig.exe"
+        if (-not (Test-Path $zigExe)) {
+            Write-Step "Downloading Zig $ZigVersion"
+            $null = New-Item -ItemType Directory -Force -Path $toolchain
+            $zip = Join-Path $env:TEMP "zig-windows.zip"
+            Invoke-WebRequest -Uri "https://ziglang.org/download/$ZigVersion/zig-x86_64-windows-$ZigVersion.zip" -OutFile $zip
+            Expand-Archive -Path $zip -DestinationPath $toolchain -Force
+            $nested = Get-ChildItem -Path $toolchain -Recurse -Filter zig.exe | Select-Object -First 1
+            if (-not $nested) { throw "Zig extraction failed" }
+            $zig = $nested.FullName
+        } else {
+            $zig = $zigExe
+        }
     }
+    Write-Step "Using Zig: $zig"
+
+    # ------------------------------------------------------------------ openssl
+    if (-not $OpenSslDir) {
+        if ($env:OPENSSL_DIR) {
+            $OpenSslDir = $env:OPENSSL_DIR
+        } else {
+            $vcpkg = Get-Command vcpkg -ErrorAction SilentlyContinue
+            $vcpkgRoot = if ($env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_INSTALLATION_ROOT } elseif ($vcpkg) { Split-Path $vcpkg.Source } else { "" }
+            if ($vcpkgRoot) {
+                if (-not (Test-Path "$vcpkgRoot\installed\x64-windows\lib\libssl.lib")) {
+                    if (-not $vcpkg) { throw "OpenSSL is missing and vcpkg is not installed. Install vcpkg or pass -OpenSslDir <prefix>." }
+                    Write-Step "Installing OpenSSL with vcpkg"
+                    & vcpkg install openssl:x64-windows
+                    if ($LASTEXITCODE -ne 0) { throw "vcpkg install openssl:x64-windows failed" }
+                }
+                $OpenSslDir = "$vcpkgRoot\installed\x64-windows"
+            }
+        }
+        if (-not $OpenSslDir) {
+            throw "OpenSSL is required for source builds. Install vcpkg (https://vcpkg.io) or pass -OpenSslDir <prefix>."
+        }
+    }
+    if (-not (Test-Path (Join-Path $OpenSslDir "lib\libssl.lib"))) {
+        throw "OpenSSL libraries not found under $OpenSslDir\lib. Expected libssl.lib and libcrypto.lib."
+    }
+
+    # -------------------------------------------------------------------- build
+    if (-not $SkipBuild) {
+        Write-Step "Compiling daemon (ReleaseSafe)"
+        Push-Location (Join-Path $Source "daemon")
+        try {
+            & $zig build -Doptimize=ReleaseSafe "-Dopenssl-dir=$OpenSslDir"
+            if ($LASTEXITCODE -ne 0) { throw "zig build failed" }
+        } finally {
+            Pop-Location
+        }
+    }
+
+    $builtExe = Join-Path $Source "daemon\zig-out\bin\hampaneld.exe"
+    if (-not (Test-Path $builtExe)) { throw "Built binary not found: $builtExe" }
+    Get-ChildItem -Path (Join-Path $OpenSslDir "bin") -Filter "*.dll" -ErrorAction SilentlyContinue |
+        Copy-Item -Destination $InstallDir -Force
 }
 
-$builtExe = Join-Path $Source "daemon\zig-out\bin\hampaneld.exe"
-if (-not (Test-Path $builtExe)) { throw "Built binary not found: $builtExe" }
 Copy-Item $builtExe $exePath -Force
-Get-ChildItem -Path (Join-Path $OpenSslDir "bin") -Filter "*.dll" -ErrorAction SilentlyContinue |
-    Copy-Item -Destination $InstallDir -Force
 
 # --------------------------------------------------------------------- PKI
 if (-not (Test-Path (Join-Path $tlsDir "ca.crt.pem"))) {
@@ -104,7 +174,11 @@ if (-not (Test-Path (Join-Path $tlsDir "ca.crt.pem"))) {
         "--tls-dir", $tlsDir,
         "--data-dir", (Join-Path $DataDir "data"),
         "--enroll-file", $enrollPath,
-        "--endpoint", $Endpoint
+        "--endpoint", $Endpoint,
+        "--install-mode", $Mode,
+        "--update-channel", $Channel,
+        "--update-repo", $Repo,
+        "--service-name", $ServiceName
     )
     if ($Port -gt 0) { $arguments += @("--port", "$Port") }
     if ($EntryPrefix) { $arguments += @("--entry-prefix", $EntryPrefix) }
@@ -113,7 +187,9 @@ if (-not (Test-Path (Join-Path $tlsDir "ca.crt.pem"))) {
     if ($LASTEXITCODE -ne 0) { throw "hampaneld init failed" }
 } else {
     Write-Step "Reusing existing PKI in $tlsDir"
-    & $exePath enroll --config $configPath --out $enrollPath | Out-Null
+    & $exePath init --config $configPath --tls-dir $tlsDir --data-dir (Join-Path $DataDir "data") `
+        --enroll-file $enrollPath --endpoint $Endpoint --install-mode $Mode `
+        --update-channel $Channel --update-repo $Repo --service-name $ServiceName | Out-Null
 }
 
 # ------------------------------------------------------------------- service
@@ -136,6 +212,15 @@ if (-not $NoStart) {
     if ($service.Status -ne "Running") {
         throw "Service is not running. Run `hampaneld.exe run --config $configPath` in a console to see startup errors."
     }
+}
+
+# --------------------------------------------------------------- update check
+if ($Mode -eq "binary") {
+    Write-Step "Enabling daily update check"
+    & $exePath update --install-schedule --config $configPath | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Warning "Could not install the update check." }
+} else {
+    & $exePath update --remove-schedule --config $configPath | Out-Null
 }
 
 # ------------------------------------------------------------------- firewall

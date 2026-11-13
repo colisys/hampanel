@@ -3,12 +3,14 @@
 [![Build (main)](https://github.com/colisys/hampanel/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/colisys/hampanel/actions/workflows/build.yml)
 [![Build (nightly)](https://github.com/colisys/hampanel/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/colisys/hampanel/actions/workflows/build.yml)
 
+官网：<https://hampanel.dawncall.work> · 产品标识：`work.dawncall.hampanel`
+
 Hampanel 是一个 **CleanRoom 实现**、以 **GPL-3.0-or-later** 授权的开源服务器运维面板。
 
 - **后端**：Zig（单二进制 daemon，直接调用操作系统能力）
 - **界面**：Flutter（桌面 / 移动端原生客户端）
 - **传输**：双向 TLS（mTLS），客户端证书由服务端 CA 签发
-- **部署**：`hampanelctl` 通过 SSH 将源码送到远端，在远端用 Zig 工具链即时编译，随后初始化 PKI、安装 systemd 服务并输出注册凭据
+- **部署**：`hampanelctl` 默认通过 SSH 安装 GitHub Release 发布的二进制（可切换为源码构建），随后初始化 PKI、安装服务并输出注册凭据
 
 > 本项目与 AcePanel、宝塔 / aaPanel、1Panel 均无任何隶属关系，未复制其任何代码或算法。
 > 参考的仅是公开的产品功能描述。详见 [CLEANROOM.md](CLEANROOM.md)。
@@ -70,6 +72,7 @@ deploy/bootstrap.sh     远端 Linux 构建 / 安装脚本（在目标机执行�
 deploy/windows/         Windows 安装脚本（服务 + 可选驱动）
 windows/driver/         WDM 内核伴随驱动（C + INF）
 tool/hampanelctl        SSH 编排 CLI
+tool/package/           Linux AppImage / Windows 单文件 exe 打包脚本
 flake.nix               Nix：构建 daemon、开发环境
 docs/                   架构与接口文档（含 docs/store.md）
 ```
@@ -84,16 +87,47 @@ AI 助手见 [docs/ai.md](docs/ai.md)。
 | --- | --- | --- | --- |
 | Linux（glibc/musl） | 原生 | ✅ | systemd、/proc、ufw、crontab、PTY |
 | Windows 10/11 Server | 原生 Win32 + PowerShell | ✅ | Windows 服务；防火墙、任务计划、进程、磁盘、网络均走系统 API |
-| 其他（macOS 等） | — | 客户端可运行 | 服务端暂未实现 |
+| macOS | — | ✅ | 客户端仅用于控制 Linux / Windows 上的 daemon |
 
 Windows 上 `hampaneld` 以 **Windows 服务**运行；`windows/driver/` 提供可选的
 **内核伴随驱动**（`hampanel.sys`），通过控制设备暴露存活与版本信息。
 HTTP/TLS/文件/进程等管理 API 保持在用户态，这是 Windows 网络与安全模型的
 正确边界；驱动不承担 TLS 终止。详见 `windows/driver/README.md`。
 
+## 发布产物
+
+CI 在 `v*` tag 上发布正式版，在 `nightly` 分支上维护滚动预发布。每次发布包含：
+
+| 产物 | 说明 |
+| --- | --- |
+| `hampanel-client-linux-x86_64.AppImage` | Linux 客户端，单文件；`chmod +x` 后直接运行 |
+| `hampanel-client-windows-x86_64.exe` | Windows 客户端，单文件绿色版；双击运行 |
+| `hampanel-client-macos-<arch>.dmg` | macOS 客户端（仅控制 Linux / Windows） |
+| `hampanel-daemon-linux-x86_64.tar.gz` | `hampaneld`、风险网关、`bootstrap.sh`、`install.sh` |
+| `hampanel-daemon-windows-x86_64.zip` | `hampaneld.exe`、OpenSSL DLL、`install.ps1` |
+| `hampanel-install-linux.sh` / `hampanel-install-windows.ps1` | 一键安装器；默认装发布二进制，也可源码构建 |
+| `version.txt` / `SHA256SUMS.txt` / `LICENSE.txt` | 版本、校验和与许可证 |
+
+AppImage 依赖系统自带的 GTK3 运行库（主流桌面发行版均已提供）；若系统缺少
+FUSE（`libfuse2`），可用 `./hampanel-*.AppImage --appimage-extract-and-run` 运行。
+Windows 绿色版首次运行时会解压到用户临时目录并启动客户端，凭据与配置仍保存在
+`%APPDATA%\Hampanel`，不写入安装目录。macOS 客户端未签名，首次打开需右键「打开」。
+
+### 安装方式与更新
+
+- **发布二进制**（默认）：安装器校验 `SHA256SUMS.txt` 后安装 release 产物；
+  daemon 记录 `install_mode=binary`，安装时自动加入每日更新检查（Linux
+  `/etc/cron.d/hampanel-update`，Windows 计划任务 `\Hampanel\update`），并在
+  面板「设置 → 更新」中提供检查/立即更新与开关。
+- **源码构建**：使用 `--mode source`（Linux）或 `-Mode source`（Windows），
+  从 GitHub 源码构建；daemon 记录 `install_mode=source`，**不会**启用更新检查，
+  面板 API 也会拒绝再添加检查更新的计划任务。
+
 ## 快速开始
 
-### 1. 远端部署（编译 + 初始化 + 安装）
+### 1. 远端部署
+
+`hampanelctl` 默认安装 GitHub Release 发布的二进制；加 `--mode source` 则上传并构建本地源码。
 
 ```bash
 # 需要本地已配置好免密 SSH；远端需要 Linux + root/sudo
@@ -101,41 +135,51 @@ dart run tool/hampanelctl/bin/hampanelctl.dart deploy \
   --host 203.0.113.10 --user root \
   --san 203.0.113.10 \
   --out hampanel-203.0.113.10.json
+
+# 从源码构建（不启用更新检查）
+dart run tool/hampanelctl/bin/hampanelctl.dart deploy --mode source \
+  --host 203.0.113.10 --user root \
+  --san 203.0.113.10
 ```
 
-脚本会自动：
+安装器会自动：
 
-1. 检测远端架构，必要时下载对应 Zig 工具链到 `/opt/hampanel/toolchain`
-2. 检查 OpenSSL 开发头文件（缺失时用 apt/dnf/apk 安装）
-3. 上传 `daemon/` 源码并在远端执行 `zig build -Doptimize=ReleaseSafe`
-4. 安装 `/usr/local/bin/hampaneld` 与 systemd 单元
-5. 自动选择空闲端口并生成随机安全入口前缀（如 `/a1b2c3d4e5f6`），随后生成 CA、服务端证书、客户端证书并启动服务
-6. 将注册凭据（CA + 客户端证书 + 私钥 + endpoint + 入口前缀）保存为本地 JSON
+1. 下载并校验对应平台的 release 产物（或下载源码并编译）
+2. 安装 `/usr/local/bin/hampaneld`（源码模式还包含风险网关）与 systemd 单元
+3. 自动选择空闲端口并生成随机安全入口前缀（如 `/a1b2c3d4e5f6`），随后生成 CA、服务端证书、客户端证书并启动服务
+4. 二进制模式自动加入每日更新检查；源码模式不启用
+5. 将注册凭据（CA + 客户端证书 + 私钥 + endpoint + 入口前缀）保存为本地 JSON
+
+也可以直接在目标机执行安装器：
+
+```bash
+curl -fsSL https://github.com/colisys/hampanel/releases/latest/download/hampanel-install-linux.sh \
+  | sudo bash -s -- --endpoint 203.0.113.10
+echo $?   # nightly: 把 latest 换成 /releases/download/nightly
+```
 
 ### Windows 部署
 
-在目标 Windows 机器（管理员 PowerShell）执行：
+在目标 Windows 机器（管理员 PowerShell）执行发布二进制安装器：
 
 ```powershell
-# 需要 Zig 0.14+ 与 OpenSSL（vcpkg install openssl:x64-windows）
-.\deploy\windows\install.ps1 `
-  -Source . `
-  -Endpoint 203.0.113.10 `
-  -San 203.0.113.10 `
-  -OpenSslDir C:\vcpkg\installed\x64-windows `
-  -InstallDriver        # 可选：安装内核伴随驱动（需测试签名）
+Invoke-WebRequest -UseBasicParsing `
+  https://github.com/colisys/hampanel/releases/latest/download/hampanel-install-windows.ps1 `
+  -OutFile install.ps1
+.\install.ps1 -Endpoint 203.0.113.10 -San 203.0.113.10
+# 源码构建：.\install.ps1 -Mode source -Endpoint ... -San ...
+# 可选：-InstallDriver 安装内核伴随驱动（需测试签名）
 ```
 
-脚本会编译 daemon、安装为 `hampanel` 服务、生成 PKI、放行防火墙端口，并
-输出 `C:\ProgramData\hampanel\enroll.json`。
+安装器会安装为 `hampanel` 服务、生成 PKI、放行防火墙端口，并输出
+`C:\ProgramData\hampanel\enroll.json`。
 
 通过 SSH 编排 Windows 目标：
 
 ```bash
 dart run tool/hampanelctl/bin/hampanelctl.dart deploy --os windows \
   --host 203.0.113.10 --user Administrator \
-  --endpoint 203.0.113.10 --san 203.0.113.10 \
-  --openssl-dir 'C:\vcpkg\installed\x64-windows'
+  --endpoint 203.0.113.10 --san 203.0.113.10
 ```
 
 ### 2. 客户端
@@ -143,11 +187,16 @@ dart run tool/hampanelctl/bin/hampanelctl.dart deploy --os windows \
 ```bash
 cd app
 flutter pub get
-flutter run -d linux        # Windows: flutter run -d windows
+flutter run -d linux        # Windows: -d windows，macOS: -d macos
 ```
 
 首次启动粘贴上一步生成的注册凭据 JSON。客户端会自动使用其中的 endpoint、
 客户端证书和安全入口前缀建立 mTLS 连接，无需手动填写端口或路径。
+
+如果还没有可管理的主机，登录页提供 **「通过 SSH 安装」**：填写主机、端口、
+用户与密码或私钥，选择「发布二进制」或「从头构建」，客户端会调用对应平台的
+安装器并自动导入生成的注册凭据。发布二进制安装会启用每日更新检查；源码构建
+不会启用，面板 API 也会拒绝添加更新检查任务。
 
 ### 应用商店
 

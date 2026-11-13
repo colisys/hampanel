@@ -8,6 +8,7 @@ const platform = @import("platform/mod.zig");
 pub const App = struct {
     allocator: std.mem.Allocator,
     config: config.Config,
+    config_path: []const u8 = config.default_path,
     started_at: i64,
     tls: tls.Context,
     pki: pki.Paths,

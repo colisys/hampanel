@@ -19,6 +19,15 @@ pub const Config = struct {
     audit_limit: usize = 500,
     max_body_bytes: usize = 256 * 1024 * 1024,
     max_connections: usize = 256,
+    install_mode: []const u8 = "source",
+    update_channel: []const u8 = "stable",
+    update_repo: []const u8 = "colisys/hampanel",
+    update_auto: bool = false,
+    service_name: []const u8 = "hampanel",
+
+    pub fn updatesEnabled(self: Config) bool {
+        return std.mem.eql(u8, self.install_mode, "binary");
+    }
 
     pub fn load(allocator: std.mem.Allocator, path: []const u8) !Config {
         const file = std.fs.cwd().openFile(path, .{}) catch |e| switch (e) {

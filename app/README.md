@@ -26,7 +26,7 @@ Flutter 桌面客户端，支持 Linux 与 Windows。
 
 ```bash
 flutter pub get
-flutter run -d linux      # 或 -d windows
+flutter run -d linux      # 或 -d windows / -d macos
 ```
 
 首次启动需要粘贴服务端生成的 enrollment JSON（`hampaneld init` 或
@@ -35,6 +35,10 @@ flutter run -d linux      # 或 -d windows
 
 - Linux/macOS: `~/.config/hampanel/enrollment.json`
 - Windows: `%APPDATA%\Hampanel\enrollment.json`
+
+如果还没有可管理的主机，登录页可以「通过 SSH 安装」：填写主机、端口、用户
+与密码或私钥，选择发布二进制或源码构建，客户端会调用官方安装器并自动导入
+注册凭据。macOS 客户端只用于控制 Linux / Windows 上的 daemon。
 
 ## 构建
 
@@ -46,7 +50,27 @@ flutter build linux --release \
 flutter build windows --release \
   --dart-define=HAMPANEL_VERSION=0.1.0 \
   --dart-define=HAMPANEL_COMMIT=$(git rev-parse --short HEAD)
+flutter build macos --release \
+  --dart-define=HAMPANEL_VERSION=0.1.0 \
+  --dart-define=HAMPANEL_COMMIT=$(git rev-parse --short HEAD)
 ```
+
+### 打包成单文件
+
+```bash
+# Linux：AppImage（脚本自动下载并缓存 appimagetool，图标取自 Windows 应用图标）
+bash ../tool/package/appimage.sh
+# 产物：build/packaging/hampanel-<版本>-x86_64.AppImage
+
+# Windows：单文件绿色 exe（需要 7-Zip；脚本自动下载并缓存 7zSD.sfx）
+dart ../tool/package/windows_portable.dart \
+  --bundle build/windows/x64/runner/Release \
+  --output build/packaging/hampanel-<版本>-windows-x86_64.exe
+```
+
+Windows 单文件 exe 内嵌压缩后的客户端，运行时解压到临时目录并启动
+`hampanel.exe`；配置仍保存在 `%APPDATA%\Hampanel`，退出后临时文件自动清理。
+AppImage 为单文件，`chmod +x` 后可直接运行，依赖系统 GTK3 运行库。
 
 客户端通过 `SecurityContext` 加载 CA、客户端证书与私钥，强制校验证书链与
 主机名；不会使用「忽略证书错误」的回调。因此服务端证书 SAN 必须包含你

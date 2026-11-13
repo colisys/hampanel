@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/enrollment.dart';
 import '../../ui/theme.dart';
+import 'install_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.onEnrolled});
@@ -161,6 +162,38 @@ class _LoginPageState extends State<LoginPage> {
                                 )
                               : const Icon(Icons.lock_open, size: 17),
                           label: const Text('建立连接'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    const Divider(height: 1),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '还没有可管理的主机？可以直接通过 SSH 安装 hampaneld，'
+                            '选择发布二进制或从头构建。',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: hampanelMuted,
+                              height: 1.5,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        OutlinedButton.icon(
+                          onPressed: _busy
+                              ? null
+                              : () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => InstallPage(
+                                      onEnrolled: widget.onEnrolled,
+                                    ),
+                                  ),
+                                ),
+                          icon: const Icon(Icons.terminal, size: 16),
+                          label: const Text('通过 SSH 安装'),
                         ),
                       ],
                     ),

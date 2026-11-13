@@ -24,6 +24,11 @@ CONFIG_EXPLICIT=0
 DATA_EXPLICIT=0
 TLS_EXPLICIT=0
 ENROLL_EXPLICIT=0
+MODE="source"
+BINARY_FILE=""
+INSTALL_MODE="source"
+UPDATE_CHANNEL="stable"
+UPDATE_REPO="colisys/hampanel"
 
 log() { printf '[hampanel] %s\n' "$*" >&2; }
 fail() { printf '[hampanel] error: %s\n' "$*" >&2; exit 1; }
@@ -43,6 +48,11 @@ while [[ $# -gt 0 ]]; do
     --no-systemd) NO_SYSTEMD=1; shift ;;
     --no-start) NO_START=1; shift ;;
     --service-name) SERVICE_NAME="${2:?}"; shift 2 ;;
+    --mode) MODE="${2:?}"; shift 2 ;;
+    --binary-file) BINARY_FILE="${2:?}"; shift 2 ;;
+    --install-mode) INSTALL_MODE="${2:?}"; shift 2 ;;
+    --update-channel) UPDATE_CHANNEL="${2:?}"; shift 2 ;;
+    --update-repo) UPDATE_REPO="${2:?}"; shift 2 ;;
     -h|--help)
       sed -n '2,12p' "$0"
       exit 0
@@ -52,7 +62,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$SOURCE_DIR" ]] || fail "--source is required"
-[[ -d "$SOURCE_DIR/daemon" ]] || fail "$SOURCE_DIR does not look like the Hampanel repository"
+[[ "$MODE" == "binary" || "$MODE" == "source" ]] || fail "--mode must be binary or source"
+if [[ "$MODE" == "source" && ! -d "$SOURCE_DIR/daemon" ]]; then
+  fail "$SOURCE_DIR does not look like the Hampanel repository"
+fi
+if [[ "$MODE" == "binary" ]]; then
+  [[ -n "$BINARY_FILE" && -f "$BINARY_FILE" ]] || fail "--binary-file is required in binary mode"
+  INSTALL_MODE="binary"
+fi
 [[ -n "$ENDPOINT" ]] || fail "--endpoint HOST:PORT is required"
 [[ -z "$TLS_DIR" ]] && TLS_DIR="$CONFIG_DIR/tls"
 [[ -z "$ENROLL_FILE" ]] && ENROLL_FILE="$CONFIG_DIR/enroll.json"
@@ -150,31 +167,42 @@ ensure_openssl() {
   fi
 }
 
-ZIG="$(find_zig || true)"
-if [[ -z "$ZIG" ]]; then
-  install_zig
-  ZIG="$(find_zig || true)"
-fi
-[[ -n "$ZIG" ]] || fail "Zig toolchain not available"
-log "using ${ZIG} ($("$ZIG" version))"
-ensure_openssl
-
-# ------------------------------------------------------------------- build
-BUILD_ROOT="/opt/hampanel/build"
-if [[ "$ROOT" == "0" ]]; then BUILD_ROOT="${HOME}/.local/share/hampanel/build"; fi
-mkdir -p "$BUILD_ROOT" "$PREFIX/bin" "$CONFIG_DIR" "$DATA_DIR" "$TLS_DIR"
-BUILD_DIR="$BUILD_ROOT/src"
-rm -rf "$BUILD_DIR"
-mkdir -p "$BUILD_DIR"
-log "staging source into ${BUILD_DIR}"
-(cd "$SOURCE_DIR" && tar --exclude=.git --exclude=.zig-cache --exclude=zig-out --exclude=app -cf - .) |
-  tar -xf - -C "$BUILD_DIR"
-
-log "compiling daemon (ReleaseSafe)"
-(cd "$BUILD_DIR/daemon" && "$ZIG" build -Doptimize=ReleaseSafe)
-
+mkdir -p "$PREFIX/bin" "$CONFIG_DIR" "$DATA_DIR" "$TLS_DIR"
 BIN="$PREFIX/bin/hampaneld"
-install -m 0755 "$BUILD_DIR/daemon/zig-out/bin/hampaneld" "$BIN"
+
+if [[ "$MODE" == "source" ]]; then
+  ZIG="$(find_zig || true)"
+  if [[ -z "$ZIG" ]]; then
+    install_zig
+    ZIG="$(find_zig || true)"
+  fi
+  [[ -n "$ZIG" ]] || fail "Zig toolchain not available"
+  log "using ${ZIG} ($("$ZIG" version))"
+  ensure_openssl
+
+  # ------------------------------------------------------------------ build
+  BUILD_ROOT="/opt/hampanel/build"
+  if [[ "$ROOT" == "0" ]]; then BUILD_ROOT="${HOME}/.local/share/hampanel/build"; fi
+  mkdir -p "$BUILD_ROOT"
+  BUILD_DIR="$BUILD_ROOT/src"
+  rm -rf "$BUILD_DIR"
+  mkdir -p "$BUILD_DIR"
+  log "staging source into ${BUILD_DIR}"
+  (cd "$SOURCE_DIR" && tar --exclude=.git --exclude=.zig-cache --exclude=zig-out --exclude=app -cf - .) |
+    tar -xf - -C "$BUILD_DIR"
+
+  log "compiling daemon (ReleaseSafe)"
+  (cd "$BUILD_DIR/daemon" && "$ZIG" build -Doptimize=ReleaseSafe)
+
+  install -m 0755 "$BUILD_DIR/daemon/zig-out/bin/hampaneld" "$BIN"
+else
+  log "installing prebuilt daemon from ${BINARY_FILE}"
+  install -m 0755 "$BINARY_FILE" "$BIN"
+  RISK_SRC="$(dirname "$BINARY_FILE")/hampanel-risk"
+  if [[ -f "$RISK_SRC" ]]; then
+    install -m 0755 "$RISK_SRC" "$PREFIX/bin/hampanel-risk"
+  fi
+fi
 
 # ---------------------------------------------------------------- initialize
 SAN_ARGS=()
@@ -184,22 +212,25 @@ done
 
 if [[ ! -f "$TLS_DIR/ca.crt.pem" ]]; then
   log "generating PKI, random entry prefix and enrollment bundle"
-  INIT_ARGS=(init
-    --config "$CONFIG_DIR/config.json"
-    --tls-dir "$TLS_DIR"
-    --data-dir "$DATA_DIR"
-    --enroll-file "$ENROLL_FILE"
-    --endpoint "$ENDPOINT")
-  if [[ -n "$PORT" ]]; then INIT_ARGS+=(--port "$PORT"); fi
-  if [[ "$ENTRY_PREFIX_SET" == "1" ]]; then INIT_ARGS+=(--entry-prefix "$ENTRY_PREFIX"); fi
-  if [[ ${#SANS[@]} -gt 0 ]]; then
-    for san in "${SANS[@]}"; do INIT_ARGS+=(--san "$san"); done
-  fi
-  "$BIN" "${INIT_ARGS[@]}"
 else
-  log "existing PKI found, refreshing enrollment bundle"
-  "$BIN" enroll --config "$CONFIG_DIR/config.json" --out "$ENROLL_FILE" >/dev/null 2>&1 || true
+  log "existing PKI found, reusing certificates"
 fi
+INIT_ARGS=(init
+  --config "$CONFIG_DIR/config.json"
+  --tls-dir "$TLS_DIR"
+  --data-dir "$DATA_DIR"
+  --enroll-file "$ENROLL_FILE"
+  --endpoint "$ENDPOINT"
+  --install-mode "$INSTALL_MODE"
+  --update-channel "$UPDATE_CHANNEL"
+  --update-repo "$UPDATE_REPO"
+  --service-name "$SERVICE_NAME")
+if [[ -n "$PORT" ]]; then INIT_ARGS+=(--port "$PORT"); fi
+if [[ "$ENTRY_PREFIX_SET" == "1" ]]; then INIT_ARGS+=(--entry-prefix "$ENTRY_PREFIX"); fi
+if [[ ${#SANS[@]} -gt 0 ]]; then
+  for san in "${SANS[@]}"; do INIT_ARGS+=(--san "$san"); done
+fi
+"$BIN" "${INIT_ARGS[@]}"
 
 ACTUAL_ENDPOINT="$(sed -n 's/.*"endpoint"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ENROLL_FILE" | head -n1)"
 ACTUAL_PREFIX="$(sed -n 's/.*"entry_prefix"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ENROLL_FILE" | head -n1)"
@@ -237,8 +268,18 @@ EOF
   fi
 fi
 
+# --------------------------------------------------------------- update check
+if [[ "$INSTALL_MODE" == "binary" ]]; then
+  log "enabling daily update check"
+  "$BIN" update --install-schedule --config "$CONFIG_DIR/config.json" ||
+    log "warning: could not install the update check"
+else
+  "$BIN" update --remove-schedule --config "$CONFIG_DIR/config.json" >/dev/null 2>&1 || true
+fi
+
 chmod 600 "$ENROLL_FILE" 2>/dev/null || true
 log "binary:      ${BIN}"
+log "install mode: ${INSTALL_MODE}"
 log "config:      ${CONFIG_DIR}/config.json"
 log "endpoint:    ${ACTUAL_ENDPOINT:-unknown}"
 log "entry prefix: ${ACTUAL_PREFIX:-<disabled>}"
