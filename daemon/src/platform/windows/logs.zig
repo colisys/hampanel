@@ -5,12 +5,12 @@ const types = @import("shared").types;
 pub fn sources(allocator: std.mem.Allocator, data_dir: []const u8) ![]types.LogSource {
     var list = std.array_list.Managed(types.LogSource).init(allocator);
 
-    const audit_path = try compat.path.join(allocator, &.{ data_dir, "audit.jsonl" });
+    _ = data_dir;
     try list.append(.{
         .id = "audit",
         .label = "面板审计日志",
-        .path = audit_path,
-        .available = fileExists(audit_path),
+        .path = "sqlite:audit_log",
+        .available = true,
     });
 
     return list.items;

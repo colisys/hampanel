@@ -4,6 +4,7 @@ const std = @import("std");
 const compat = @import("compat");
 const builtin = @import("builtin");
 const config = @import("config.zig");
+const db = @import("db.zig");
 const exec = @import("shared").exec;
 const version = @import("version.zig");
 
@@ -62,7 +63,7 @@ pub fn isUpdateCommand(command: []const u8) bool {
     return false;
 }
 
-pub fn check(allocator: std.mem.Allocator, cfg: config.Config) State {
+pub fn check(allocator: std.mem.Allocator, database: *db.Db, cfg: config.Config) State {
     var state = State{
         .checked_at = compat.timestamp(),
         .current_version = version.version,
@@ -72,33 +73,31 @@ pub fn check(allocator: std.mem.Allocator, cfg: config.Config) State {
 
     if (!cfg.updatesEnabled()) {
         state.error_message = "update channel is disabled for source installs";
-        saveState(allocator, cfg, state) catch {};
+        saveState(allocator, database, state) catch {};
         return state;
     }
 
     const latest = fetchLatestVersion(allocator, cfg) catch |err| {
         state.error_message = @errorName(err);
-        saveState(allocator, cfg, state) catch {};
+        saveState(allocator, database, state) catch {};
         return state;
     };
     state.latest_version = latest;
     state.update_available = updateAvailable(version.version, latest);
-    saveState(allocator, cfg, state) catch {};
+    saveState(allocator, database, state) catch {};
     return state;
 }
 
-pub fn loadState(allocator: std.mem.Allocator, cfg: config.Config) State {
-    const path = statePath(allocator, cfg) catch return .{};
-    defer allocator.free(path);
-    const data = compat.cwd().readFileAlloc(allocator, path, 256 * 1024) catch return .{};
-    defer allocator.free(data);
+pub fn loadState(allocator: std.mem.Allocator, database: *db.Db) State {
+    const maybe_data = database.getSetting(allocator, "update.state") catch return .{};
+    const data = maybe_data orelse return .{};
     return std.json.parseFromSliceLeaky(State, allocator, data, .{
         .ignore_unknown_fields = true,
         .allocate = .alloc_always,
     }) catch .{};
 }
 
-pub fn apply(allocator: std.mem.Allocator, cfg: config.Config) ApplyError!ApplyOutcome {
+pub fn apply(allocator: std.mem.Allocator, database: *db.Db, cfg: config.Config) ApplyError!ApplyOutcome {
     if (!cfg.updatesEnabled()) return error.UpdateDisabled;
     if (builtin.os.tag != .linux and builtin.os.tag != .windows) return error.UnsupportedPlatform;
 
@@ -140,7 +139,7 @@ pub fn apply(allocator: std.mem.Allocator, cfg: config.Config) ApplyError!ApplyO
         .channel = cfg.update_channel,
         .install_mode = cfg.install_mode,
     };
-    saveState(allocator, cfg, state) catch {};
+    saveState(allocator, database, state) catch {};
 
     return .{ .updated = true, .message = "update downloaded and applied" };
 }
@@ -388,24 +387,14 @@ fn replaceWindows(allocator: std.mem.Allocator, workdir: []const u8, cfg: config
     if (!result.ok()) return error.ReplaceFailed;
 }
 
-fn statePath(allocator: std.mem.Allocator, cfg: config.Config) ![]u8 {
-    return compat.path.join(allocator, &.{ cfg.data_dir, "update-state.json" });
-}
-
 fn workDir(allocator: std.mem.Allocator, cfg: config.Config) ![]u8 {
     return compat.path.join(allocator, &.{ cfg.data_dir, "update-work" });
 }
 
-fn saveState(allocator: std.mem.Allocator, cfg: config.Config, state: State) !void {
-    const path = try statePath(allocator, cfg);
-    defer allocator.free(path);
+fn saveState(allocator: std.mem.Allocator, database: *db.Db, state: State) !void {
     const body = try std.json.Stringify.valueAlloc(allocator, state, .{ .whitespace = .indent_2 });
     defer allocator.free(body);
-    if (compat.path.dirname(path)) |dir| try compat.cwd().makePath(dir);
-    var file = try compat.cwd().createFile(path, .{ .truncate = true, .mode = 0o600 });
-    defer file.close();
-    try file.writeAll(body);
-    try file.writeAll("\n");
+    try database.setSetting("update.state", body);
 }
 
 fn isRoot() bool {
@@ -503,16 +492,18 @@ test "user crontab rewrite adds and removes managed block" {
     try std.testing.expect(std.mem.indexOf(u8, removed, "/usr/bin/foo") != null);
 }
 
-test "state json round-trip" {
+test "state stored in sqlite" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
     const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
     defer allocator.free(dir);
 
-    var cfg = config.Config{};
-    cfg.data_dir = dir;
-    cfg.install_mode = "binary";
+    const db_path = try db.pathFor(allocator, dir);
+    defer allocator.free(db_path);
+    var database = try db.Db.open(db_path);
+    defer database.close();
+    try @import("migrations.zig").migrate(&database);
 
     const state = State{
         .checked_at = 123,
@@ -522,10 +513,10 @@ test "state json round-trip" {
         .channel = "stable",
         .install_mode = "binary",
     };
-    try saveState(allocator, cfg, state);
+    try saveState(allocator, &database, state);
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
-    const loaded = loadState(arena.allocator(), cfg);
+    const loaded = loadState(arena.allocator(), &database);
     try std.testing.expect(loaded.update_available);
     try std.testing.expectEqualStrings("0.1.1+bbbb", loaded.latest_version);
 }

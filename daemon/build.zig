@@ -78,6 +78,24 @@ pub fn build(b: *std.Build) void {
     });
     const libc_c = libc_headers.createModule();
 
+    const sqlite_headers = b.addTranslateC(.{
+        .root_source_file = b.path("src/sqlite_headers.h"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    sqlite_headers.addIncludePath(b.path("vendor/sqlite"));
+    const sqlite_c = sqlite_headers.createModule();
+
+    const sqlite_flags = &.{
+        "-DSQLITE_THREADSAFE=1",
+        "-DSQLITE_DQS=0",
+        "-DSQLITE_OMIT_LOAD_EXTENSION",
+        "-DSQLITE_DEFAULT_FOREIGN_KEYS=1",
+    };
+    const sqlite_source = b.path("vendor/sqlite/sqlite3.c");
+    const sqlite_include = b.path("vendor/sqlite");
+
     const compat = b.createModule(.{
         .root_source_file = b.path("src/compat.zig"),
     });
@@ -97,6 +115,7 @@ pub fn build(b: *std.Build) void {
     backend.addImport("shared", shared);
     backend.addImport("compat", compat);
 
+    var windows_c: ?*std.Build.Module = null;
     if (target.result.os.tag == .linux) {
         const terminal_headers = b.addTranslateC(.{
             .root_source_file = b.path("src/terminal_headers.h"),
@@ -112,7 +131,8 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .link_libc = true,
         });
-        backend.addImport("windows_c", windows_headers.createModule());
+        windows_c = windows_headers.createModule();
+        backend.addImport("windows_c", windows_c.?);
     }
 
     const service_module = b.createModule(.{
@@ -123,6 +143,7 @@ pub fn build(b: *std.Build) void {
     });
     service_module.addImport("platform_backend", backend);
     service_module.addImport("shared", shared);
+    if (windows_c) |module| service_module.addImport("windows_c", module);
 
     const exe_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -135,6 +156,9 @@ pub fn build(b: *std.Build) void {
     exe_module.addImport("windows_service", service_module);
     exe_module.addImport("openssl_c", openssl_c);
     exe_module.addImport("compat", compat);
+    exe_module.addImport("sqlite_c", sqlite_c);
+    exe_module.addIncludePath(sqlite_include);
+    exe_module.addCSourceFile(.{ .file = sqlite_source, .flags = sqlite_flags });
     exe_module.addOptions("build_info", build_info);
     if (openssl_include) |dir| exe_module.addIncludePath(.{ .cwd_relative = dir });
     if (openssl_lib_dir) |dir| exe_module.addLibraryPath(.{ .cwd_relative = dir });
@@ -180,6 +204,9 @@ pub fn build(b: *std.Build) void {
     tests_module.addImport("windows_service", service_module);
     tests_module.addImport("openssl_c", openssl_c);
     tests_module.addImport("compat", compat);
+    tests_module.addImport("sqlite_c", sqlite_c);
+    tests_module.addIncludePath(sqlite_include);
+    tests_module.addCSourceFile(.{ .file = sqlite_source, .flags = sqlite_flags });
     tests_module.addOptions("build_info", build_info);
     if (openssl_include) |dir| tests_module.addIncludePath(.{ .cwd_relative = dir });
     if (openssl_lib_dir) |dir| tests_module.addLibraryPath(.{ .cwd_relative = dir });
@@ -210,9 +237,18 @@ pub fn build(b: *std.Build) void {
         .optimize = .Debug,
         .link_libc = true,
     });
+    const windows_check_c = windows_check_headers.createModule();
+    const windows_check_service = b.createModule(.{
+        .root_source_file = b.path("src/platform/windows/service.zig"),
+        .target = windows_target,
+        .optimize = .Debug,
+        .link_libc = true,
+    });
+    windows_check_service.addImport("windows_c", windows_check_c);
     windows_check_module.addImport("shared", shared);
     windows_check_module.addImport("compat", compat);
-    windows_check_module.addImport("windows_c", windows_check_headers.createModule());
+    windows_check_module.addImport("windows_c", windows_check_c);
+    windows_check_module.addImport("windows_service", windows_check_service);
     const windows_check = b.addObject(.{
         .name = "hampanel-windows-check",
         .root_module = windows_check_module,

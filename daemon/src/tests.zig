@@ -3,6 +3,12 @@ const std = @import("std");
 test {
     _ = @import("config.zig");
     _ = @import("compat");
+    _ = @import("db.zig");
+    _ = @import("migrations.zig");
+    _ = @import("runtime/images.zig");
+    _ = @import("runtime/environments.zig");
+    _ = @import("runtime/docker_settings.zig");
+    _ = @import("api/runtimes.zig");
     _ = @import("log.zig");
     _ = @import("openssl.zig");
     _ = @import("tls.zig");

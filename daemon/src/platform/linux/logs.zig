@@ -5,8 +5,9 @@ const types = @import("shared").types;
 pub fn sources(allocator: std.mem.Allocator, data_dir: []const u8) ![]types.LogSource {
     var list = std.array_list.Managed(types.LogSource).init(allocator);
 
-    const audit_path = try compat.path.join(allocator, &.{ data_dir, "audit.jsonl" });
-    try add(&list, "audit", "面板审计日志", audit_path);
+    _ = data_dir;
+    try add(&list, "audit", "面板审计日志", "sqlite:audit_log");
+    list.items[list.items.len - 1].available = true;
 
     try add(&list, "nginx_access", "Nginx 访问日志", "/var/log/nginx/access.log");
     try add(&list, "nginx_error", "Nginx 错误日志", "/var/log/nginx/error.log");

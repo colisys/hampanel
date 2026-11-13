@@ -3,6 +3,8 @@ const compat = @import("compat");
 const builtin = @import("builtin");
 const service = @import("windows_service");
 const config = @import("config.zig");
+const db = @import("db.zig");
+const migrations = @import("migrations.zig");
 const pki = @import("pki.zig");
 const enroll = @import("enroll.zig");
 const server = @import("server.zig");
@@ -327,6 +329,11 @@ fn cmdUpdate(allocator: std.mem.Allocator, opts: *Options) !u8 {
     applyOverrides(&cfg, opts.*);
     log.setLevelName(cfg.log_level);
 
+    const db_path = try db.pathFor(a, cfg.data_dir);
+    var database = try db.Db.open(db_path);
+    defer database.close();
+    try migrations.migrate(&database);
+
     if (opts.install_schedule) {
         const self_exe = try compat.selfExePathAlloc(a);
         const outcome = update.installSchedule(a, cfg, self_exe, opts.config_path) catch |err| switch (err) {
@@ -353,7 +360,7 @@ fn cmdUpdate(allocator: std.mem.Allocator, opts: *Options) !u8 {
     }
 
     if (opts.apply) {
-        const outcome = update.apply(a, cfg) catch |err| switch (err) {
+        const outcome = update.apply(a, &database, cfg) catch |err| switch (err) {
             error.UpdateDisabled => {
                 std.debug.print("update checks are disabled for source installs\n", .{});
                 return 1;
@@ -371,11 +378,11 @@ fn cmdUpdate(allocator: std.mem.Allocator, opts: *Options) !u8 {
         return 0;
     }
 
-    const state = update.check(a, cfg);
+    const state = update.check(a, &database, cfg);
 
     if (opts.auto) {
         if (state.update_available and cfg.update_auto) {
-            _ = update.apply(a, cfg) catch |err| {
+            _ = update.apply(a, &database, cfg) catch |err| {
                 std.debug.print("automatic update failed: {s}\n", .{@errorName(err)});
                 return 0;
             };
@@ -423,11 +430,17 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     var tls_context = try tls.Context.init(a, paths.server_cert, paths.server_key, paths.ca_cert);
     defer tls_context.deinit();
 
-    const audit_log = try audit.Log.init(allocator, cfg.data_dir);
+    const db_path = try db.pathFor(a, cfg.data_dir);
+    var database = try db.Db.open(db_path);
+    defer database.close();
+    try migrations.migrate(&database);
+
+    const audit_log = try audit.Log.init(allocator, &database);
     var app = app_mod.App{
         .allocator = allocator,
         .config = cfg,
         .config_path = opts.config_path,
+        .db = &database,
         .started_at = compat.timestamp(),
         .tls = tls_context,
         .pki = paths,

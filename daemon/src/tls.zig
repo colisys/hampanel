@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const compat = @import("compat");
 const os = @import("openssl.zig");
 const c = os.c;
@@ -58,7 +59,11 @@ pub const Context = struct {
     pub fn accept(self: *Context, fd: std.posix.socket_t) !*c.SSL {
         const ssl = c.SSL_new(self.ctx) orelse return error.SslAlloc;
         errdefer c.SSL_free(ssl);
-        if (c.SSL_set_fd(ssl, @intCast(fd)) != 1) return error.TlsSetup;
+        const fd_int: c_int = if (builtin.os.tag == .windows) blk: {
+            const raw: u32 = @truncate(@intFromPtr(fd));
+            break :blk @bitCast(raw);
+        } else @intCast(fd);
+        if (c.SSL_set_fd(ssl, fd_int) != 1) return error.TlsSetup;
         c.SSL_set_accept_state(ssl);
         if (c.SSL_accept(ssl) != 1) {
             var err_buf: [256]u8 = undefined;

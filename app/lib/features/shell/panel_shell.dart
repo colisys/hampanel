@@ -18,6 +18,7 @@ import '../sites/sites_page.dart';
 import '../software/software_page.dart';
 import '../ssh/ssh_page.dart';
 import '../store/store_page.dart';
+import '../runtimes/runtimes_page.dart';
 import '../terminal/terminal_page.dart';
 import '../tunnels/tunnels_page.dart';
 import '../waf/waf_page.dart';
@@ -62,6 +63,7 @@ class _PanelShellState extends State<PanelShell> {
     _Destination('网站', Icons.public_outlined, (_) => const SitesPage()),
     _Destination('容器', Icons.widgets_outlined, (_) => const DockerPage()),
     _Destination('应用商店', Icons.storefront_outlined, (_) => const StorePage()),
+    _Destination('运行环境', Icons.hub_outlined, (_) => const RuntimesPage()),
     _Destination('软件', Icons.inventory_2_outlined, (_) => const SoftwarePage()),
     _Destination('SSH', Icons.vpn_key_outlined, (_) => const SshPage()),
     _Destination('WAF', Icons.security_outlined, (_) => const WafPage()),

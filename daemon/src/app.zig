@@ -1,5 +1,6 @@
 const std = @import("std");
 const config = @import("config.zig");
+const db = @import("db.zig");
 const tls = @import("tls.zig");
 const pki = @import("pki.zig");
 const audit = @import("audit.zig");
@@ -9,6 +10,7 @@ pub const App = struct {
     allocator: std.mem.Allocator,
     config: config.Config,
     config_path: []const u8 = config.default_path,
+    db: *db.Db,
     started_at: i64,
     tls: tls.Context,
     pki: pki.Paths,

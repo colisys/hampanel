@@ -6,7 +6,7 @@ const version = @import("../version.zig");
 
 pub fn index(ctx: *context.Context) anyerror!void {
     const cfg = ctx.app.config;
-    const state = update.loadState(ctx.arena, cfg);
+    const state = update.loadState(ctx.arena, ctx.app.db);
     try ctx.json(.{
         .install_mode = cfg.install_mode,
         .channel = cfg.update_channel,
@@ -21,7 +21,7 @@ pub fn index(ctx: *context.Context) anyerror!void {
 }
 
 pub fn check(ctx: *context.Context) anyerror!void {
-    const state = update.check(ctx.arena, ctx.app.config);
+    const state = update.check(ctx.arena, ctx.app.db, ctx.app.config);
     try ctx.json(.{
         .current_version = state.current_version,
         .latest_version = state.latest_version,
@@ -32,7 +32,7 @@ pub fn check(ctx: *context.Context) anyerror!void {
 }
 
 pub fn apply(ctx: *context.Context) anyerror!void {
-    const outcome = update.apply(ctx.arena, ctx.app.config) catch |err| switch (err) {
+    const outcome = update.apply(ctx.arena, ctx.app.db, ctx.app.config) catch |err| switch (err) {
         error.UpdateDisabled => {
             ctx.fail(409, "update_disabled", "update channel is disabled for source installs");
             return;

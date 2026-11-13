@@ -13,6 +13,10 @@ pub fn sources(ctx: *context.Context) anyerror!void {
 
 pub fn tail(ctx: *context.Context) anyerror!void {
     const id = (try ctx.query("source")) orelse "audit";
+    if (std.mem.eql(u8, id, "audit")) {
+        try audit(ctx);
+        return;
+    }
     const list = platform.logs.sources(ctx.arena, ctx.app.config.data_dir) catch |err| {
         ctx.fail(500, "logs_failed", @errorName(err));
         return;
@@ -28,8 +32,21 @@ pub fn tail(ctx: *context.Context) anyerror!void {
 }
 
 pub fn audit(ctx: *context.Context) anyerror!void {
-    const path = try compat.path.join(ctx.arena, &.{ ctx.app.config.data_dir, "audit.jsonl" });
-    try tailPath(ctx, path);
+    var lines: usize = 200;
+    if (try ctx.query("lines")) |raw| {
+        lines = std.fmt.parseInt(usize, raw, 10) catch 200;
+        lines = std.math.clamp(lines, 1, 2000);
+    }
+    const entries = ctx.app.audit.recent(ctx.arena, lines) catch |err| {
+        ctx.fail(500, "audit_failed", @errorName(err));
+        return;
+    };
+    try ctx.json(.{
+        .path = "sqlite:audit_log",
+        .lines = lines,
+        .truncated = false,
+        .entries = entries,
+    });
 }
 
 fn tailPath(ctx: *context.Context, path: []const u8) !void {

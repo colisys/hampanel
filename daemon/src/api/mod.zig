@@ -21,6 +21,7 @@ const recycle = @import("recycle.zig");
 const versions = @import("versions.zig");
 const waf = @import("waf.zig");
 const update = @import("update.zig");
+const runtimes = @import("runtimes.zig");
 
 pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/health", .handler = health.index },
@@ -30,6 +31,25 @@ pub const routes = [_]router.Route{
     .{ .method = .POST, .pattern = "/api/v1/update/apply", .handler = update.apply },
     .{ .method = .POST, .pattern = "/api/v1/update/schedule", .handler = update.schedule },
     .{ .method = .DELETE, .pattern = "/api/v1/update/schedule", .handler = update.unschedule },
+
+    .{ .method = .GET, .pattern = "/api/v1/runtimes", .handler = runtimes.index },
+    .{ .method = .POST, .pattern = "/api/v1/runtimes", .handler = runtimes.create },
+    .{ .method = .GET, .pattern = "/api/v1/runtimes/catalog", .handler = runtimes.catalogIndex },
+    .{ .method = .GET, .pattern = "/api/v1/runtimes/catalog/:runtime/tags", .handler = runtimes.tags },
+    .{ .method = .GET, .pattern = "/api/v1/runtimes/:id/logs", .handler = runtimes.logs },
+    .{ .method = .GET, .pattern = "/api/v1/runtimes/:id/config", .handler = runtimes.configIndex },
+    .{ .method = .PUT, .pattern = "/api/v1/runtimes/:id/config", .handler = runtimes.configSave },
+    .{ .method = .GET, .pattern = "/api/v1/runtimes/:id/extensions", .handler = runtimes.extensionsIndex },
+    .{ .method = .PUT, .pattern = "/api/v1/runtimes/:id/extensions", .handler = runtimes.extensionsSave },
+    .{ .method = .GET, .pattern = "/api/v1/runtimes/:id/processes", .handler = runtimes.processesIndex },
+    .{ .method = .POST, .pattern = "/api/v1/runtimes/:id/processes/:name/:action", .handler = runtimes.processAction },
+    .{ .method = .POST, .pattern = "/api/v1/runtimes/:id/start", .handler = runtimes.start },
+    .{ .method = .POST, .pattern = "/api/v1/runtimes/:id/stop", .handler = runtimes.stop },
+    .{ .method = .POST, .pattern = "/api/v1/runtimes/:id/restart", .handler = runtimes.restart },
+    .{ .method = .POST, .pattern = "/api/v1/runtimes/:id/rebuild", .handler = runtimes.rebuild },
+    .{ .method = .DELETE, .pattern = "/api/v1/runtimes/:id", .handler = runtimes.remove },
+    .{ .method = .GET, .pattern = "/api/v1/docker/settings", .handler = runtimes.dockerSettings },
+    .{ .method = .PUT, .pattern = "/api/v1/docker/settings", .handler = runtimes.dockerSettingsSave },
 
     .{ .method = .GET, .pattern = "/api/v1/system", .handler = system.index },
     .{ .method = .GET, .pattern = "/api/v1/metrics", .handler = metrics.index },

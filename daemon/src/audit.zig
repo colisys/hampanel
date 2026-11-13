@@ -1,5 +1,6 @@
 const std = @import("std");
 const compat = @import("compat");
+const db = @import("db.zig");
 
 pub const Entry = struct {
     at: []const u8,
@@ -12,32 +13,46 @@ pub const Entry = struct {
 
 pub const Log = struct {
     allocator: std.mem.Allocator,
-    dir: []const u8,
-    mutex: std.Io.Mutex = .init,
+    database: *db.Db,
 
-    pub fn init(allocator: std.mem.Allocator, dir: []const u8) !Log {
-        try compat.cwd().makePath(dir);
-        return .{ .allocator = allocator, .dir = dir };
+    pub fn init(allocator: std.mem.Allocator, database: *db.Db) !Log {
+        return .{ .allocator = allocator, .database = database };
     }
 
     pub fn append(self: *Log, entry: Entry) void {
-        self.mutex.lockUncancelable(compat.io());
-        defer self.mutex.unlock(compat.io());
-
-        const file_path = compat.path.join(self.allocator, &.{ self.dir, "audit.jsonl" }) catch return;
-        defer self.allocator.free(file_path);
-
-        const line = std.json.Stringify.valueAlloc(self.allocator, entry, .{}) catch return;
-        defer self.allocator.free(line);
-
-        var file = compat.cwd().createFile(file_path, .{ .mode = 0o600, .truncate = false }) catch return;
-        defer file.close();
-        const size = file.length() catch return;
-        file.writePositionalAll(line, size) catch return;
-        file.writePositionalAll("\n", size + line.len) catch {};
+        self.database.execute(
+            "INSERT INTO audit_log(at, peer, method, path, status, duration_ms) VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+            &.{
+                .{ .text = entry.at },
+                .{ .text = entry.peer },
+                .{ .text = entry.method },
+                .{ .text = entry.path },
+                .{ .int = entry.status },
+                .{ .int = @intCast(entry.duration_ms) },
+            },
+        ) catch return;
     }
 
-    pub fn path(self: *Log, allocator: std.mem.Allocator) ![]u8 {
-        return compat.path.join(allocator, &.{ self.dir, "audit.jsonl" });
+    pub fn recent(self: *Log, allocator: std.mem.Allocator, limit: usize) ![]Entry {
+        self.database.lock();
+        defer self.database.unlock();
+        var statement = try self.database.prepareUnlocked(
+            "SELECT at, peer, method, path, status, duration_ms FROM audit_log ORDER BY id DESC LIMIT ?1",
+        );
+        defer statement.deinit();
+        try statement.bind(&.{.{ .int = @intCast(limit) }});
+
+        var items = std.array_list.Managed(Entry).init(allocator);
+        while (try statement.step()) {
+            try items.append(.{
+                .at = try allocator.dupe(u8, statement.columnText(0)),
+                .peer = try allocator.dupe(u8, statement.columnText(1)),
+                .method = try allocator.dupe(u8, statement.columnText(2)),
+                .path = try allocator.dupe(u8, statement.columnText(3)),
+                .status = @intCast(statement.columnInt(4)),
+                .duration_ms = @intCast(statement.columnInt(5)),
+            });
+        }
+        return items.items;
     }
 };

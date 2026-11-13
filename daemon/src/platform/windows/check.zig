@@ -1,5 +1,6 @@
 const std = @import("std");
 const backend = @import("backend.zig");
+const service = @import("windows_service");
 
 comptime {
     _ = &backend.files.resolve;
@@ -71,4 +72,6 @@ comptime {
     _ = &backend.waf.start;
     _ = &backend.waf.stop;
     _ = &backend.waf.logs;
+
+    _ = &service.run;
 }

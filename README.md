@@ -28,6 +28,7 @@ Hampanel 是一个 **CleanRoom 实现**、以 **GPL-3.0-or-later** 授权的开�
 | 网站 | Nginx 站点生成、启停、配置校验后热重载 |
 | 容器 | Docker 容器 / 镜像列表、启停、删除、日志 |
 | 应用商店 | 内嵌 Docker Compose 应用目录、Linux 包管理器精选工具（含 fail2ban）、Nix build / run |
+| 运行环境 | 借宿主机 Docker 管理 Node / Python / Java / Go / PHP / Ruby / .NET / 自定义镜像；推荐+开放版本、包管理器镜像源、supervisord 进程与可编辑配置 |
 | 防火墙 | UFW 规则查看、放行、拒绝、删除 |
 | WAF | Caddy + Coraza + 内嵌 OWASP CRS；risk gateway、TypeSafe 风险复检、GeoIP/GeoSite 选择器、detect/enforce、日志 |
 | 计划任务 | 面板托管的 root crontab 区块（增删查） |
@@ -62,6 +63,9 @@ daemon/                 Zig 后端（按模块拆分）
     windows/            Windows 后端（Win32、PowerShell、服务包装）
   src/sys/              命令执行、/proc 采样
   src/store/            Docker Compose 应用目录与编排（YAML 内嵌）
+  src/runtime/          运行环境目录、镜像构建与生命周期管理
+  src/db.zig            SQLite 封装与迁移
+  vendor/sqlite/        vendored SQLite amalgamation
   src/pki.zig           证书签发
   src/tls.zig           OpenSSL 封装
 app/                    Flutter 客户端（按 feature 拆分，Linux + Windows）
@@ -74,12 +78,19 @@ windows/driver/         WDM 内核伴随驱动（C + INF）
 tool/hampanelctl        SSH 编排 CLI
 tool/package/           Linux AppImage / Windows 单文件 exe 打包脚本
 flake.nix               Nix：构建 daemon、开发环境
-docs/                   架构与接口文档（含 docs/store.md）
+docs/                   架构与接口文档（含 docs/store.md、docs/runtimes.md）
 ```
 
 应用商店的实现与新增应用方式见 [docs/store.md](docs/store.md)；SSH 管理说明见
 [docs/ssh.md](docs/ssh.md)；软件托管与初始化语义见 [docs/software.md](docs/software.md)；回收站与版本历史见 [docs/recycle.md](docs/recycle.md)，
-AI 助手见 [docs/ai.md](docs/ai.md)。
+AI 助手见 [docs/ai.md](docs/ai.md)；运行环境管理与 SQLite 存储见 [docs/runtimes.md](docs/runtimes.md)。
+
+## 数据存储
+
+运行期受管数据存放在 `<data-dir>/hampanel.db`（SQLite，vendored amalgamation，不依赖
+系统 libsqlite3）：运行环境、可编辑配置、审计日志、更新状态与面板设置。`config.json`
+仅保留为安装器的引导配置（监听、端口、TLS、入口前缀）。详见
+[docs/runtimes.md](docs/runtimes.md)。
 
 ## 平台支持
 
