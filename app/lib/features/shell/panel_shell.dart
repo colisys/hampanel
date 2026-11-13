@@ -80,36 +80,53 @@ class _PanelShellState extends State<PanelShell> {
       body: Row(
         children: [
           Container(
-            width: 224,
+            width: 230,
             decoration: const BoxDecoration(
-              color: Color(0xFF0C1319),
-              border: Border(right: BorderSide(color: hampanelBorder)),
+              color: hampanelSurface,
+              border: Border(right: BorderSide(color: hampanelInk, width: 2)),
             ),
             child: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 22, 18, 18),
+                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
                   child: Row(
                     children: [
-                      const Icon(
-                        Icons.dns_outlined,
-                        color: hampanelAccent,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 10),
-                      const Text(
-                        'Hampanel',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
+                      Container(
+                        width: 32,
+                        height: 32,
+                        color: hampanelInk,
+                        child: const Icon(
+                          Icons.dns_outlined,
+                          color: hampanelSurface,
+                          size: 19,
                         ),
                       ),
-                      const Spacer(),
-                      Text(
-                        'v$fullClientVersion',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: hampanelMuted.withValues(alpha: 0.8),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'HAMPANEL',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.6,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: hampanelInk, width: 1.2),
+                        ),
+                        child: Text(
+                          'v$fullClientVersion',
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 9.5,
+                            color: hampanelMuted,
+                          ),
                         ),
                       ),
                     ],
@@ -129,38 +146,46 @@ class _PanelShellState extends State<PanelShell> {
                           vertical: 2,
                         ),
                         child: Material(
-                          color: selected
-                              ? hampanelAccent.withValues(alpha: 0.10)
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(9),
+                          color: selected ? hampanelInk : Colors.transparent,
+                          borderRadius: BorderRadius.circular(2),
                           child: InkWell(
-                            borderRadius: BorderRadius.circular(9),
+                            borderRadius: BorderRadius.circular(2),
                             onTap: () => setState(() => _index = index),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
+                                horizontal: 8,
+                                vertical: 9,
                               ),
                               child: Row(
                                 children: [
+                                  Container(
+                                    width: 3,
+                                    height: 18,
+                                    color: selected
+                                        ? hampanelAccent
+                                        : Colors.transparent,
+                                  ),
+                                  const SizedBox(width: 9),
                                   Icon(
                                     destination.icon,
                                     size: 18,
                                     color: selected
-                                        ? hampanelAccent
-                                        : hampanelMuted,
+                                        ? hampanelSurface
+                                        : hampanelInkSoft,
                                   ),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    destination.label,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: selected
-                                          ? Colors.white
-                                          : const Color(0xFFB6C6D2),
-                                      fontWeight: selected
-                                          ? FontWeight.w600
-                                          : FontWeight.w400,
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      destination.label,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: selected
+                                            ? hampanelSurface
+                                            : hampanelInkSoft,
+                                        fontWeight: selected
+                                            ? FontWeight.w800
+                                            : FontWeight.w500,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -173,7 +198,10 @@ class _PanelShellState extends State<PanelShell> {
                   ),
                 ),
                 const Divider(),
-                Padding(
+                Container(
+                  decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: hampanelInk, width: 2)),
+                  ),
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -191,7 +219,8 @@ class _PanelShellState extends State<PanelShell> {
                               session.enrollment.endpoint,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontSize: 11,
+                                fontFamily: 'monospace',
+                                fontSize: 10.5,
                                 color: hampanelMuted,
                               ),
                             ),
@@ -220,9 +249,12 @@ class _PanelShellState extends State<PanelShell> {
             child: Column(
               children: [
                 Container(
-                  height: 54,
+                  height: 56,
                   decoration: const BoxDecoration(
-                    border: Border(bottom: BorderSide(color: hampanelBorder)),
+                    color: hampanelBackground,
+                    border: Border(
+                      bottom: BorderSide(color: hampanelInk, width: 2),
+                    ),
                   ),
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Row(
@@ -230,20 +262,40 @@ class _PanelShellState extends State<PanelShell> {
                       Text(
                         _destinations[_index].label,
                         style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.2,
                         ),
                       ),
                       const Spacer(),
-                      const Icon(
-                        Icons.verified_user_outlined,
-                        size: 14,
-                        color: hampanelAccent,
-                      ),
-                      const SizedBox(width: 6),
-                      const Text(
-                        'mTLS 已加密',
-                        style: TextStyle(fontSize: 11, color: hampanelMuted),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: hampanelInk, width: 1.5),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(
+                              Icons.verified_user_outlined,
+                              size: 12,
+                              color: hampanelAccent,
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              'mTLS 已加密',
+                              style: TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 10,
+                                color: hampanelInk,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

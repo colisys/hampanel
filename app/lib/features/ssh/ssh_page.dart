@@ -504,7 +504,7 @@ class _SshPageState extends State<SshPage> {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: const Color(0xFF070C10),
-              borderRadius: BorderRadius.circular(9),
+              borderRadius: BorderRadius.circular(3),
               border: Border.all(color: hampanelBorder),
             ),
             child: _logsLoading
@@ -761,7 +761,7 @@ class _SshPageState extends State<SshPage> {
                     ),
                     decoration: BoxDecoration(
                       color: hampanelSurfaceAlt,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(3),
                       border: Border.all(color: hampanelBorder),
                     ),
                     child: Row(

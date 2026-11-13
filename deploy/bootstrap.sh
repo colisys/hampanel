@@ -29,6 +29,7 @@ BINARY_FILE=""
 INSTALL_MODE="source"
 UPDATE_CHANNEL="stable"
 UPDATE_REPO="colisys/hampanel"
+MIRROR=""
 
 log() { printf '[hampanel] %s\n' "$*" >&2; }
 fail() { printf '[hampanel] error: %s\n' "$*" >&2; exit 1; }
@@ -53,6 +54,7 @@ while [[ $# -gt 0 ]]; do
     --install-mode) INSTALL_MODE="${2:?}"; shift 2 ;;
     --update-channel) UPDATE_CHANNEL="${2:?}"; shift 2 ;;
     --update-repo) UPDATE_REPO="${2:?}"; shift 2 ;;
+    --mirror) MIRROR="${2:?}"; shift 2 ;;
     -h|--help)
       sed -n '2,12p' "$0"
       exit 0
@@ -138,6 +140,54 @@ install_zig() {
   rm -rf "$tmp"
 }
 
+mirror_host() {
+  case "$1" in
+    aliyun) echo "mirrors.aliyun.com" ;;
+    tencent) echo "mirrors.cloud.tencent.com" ;;
+    ustc) echo "mirrors.ustc.edu.cn" ;;
+    tuna) echo "mirrors.tuna.tsinghua.edu.cn" ;;
+    custom:*) echo "${1#custom:}" | sed 's|^https\?://||' | cut -d/ -f1 ;;
+    http://*|https://*) echo "${1#*://}" | cut -d/ -f1 ;;
+    *) echo "" ;;
+  esac
+}
+
+configure_package_mirror() {
+  [[ -n "${MIRROR:-}" ]] || return 0
+  [[ "$ROOT" == "1" ]] || { log "package mirror needs root; keeping default sources"; return 0; }
+  local host
+  host="$(mirror_host "$MIRROR")"
+  [[ -n "$host" ]] || { log "unknown mirror preset '$MIRROR'; keeping default sources"; return 0; }
+  log "using package mirror ${host}"
+  local f
+  for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list.d/ubuntu.sources; do
+    [[ -f "$f" ]] || continue
+    sed -i "s|deb.debian.org|${host}|g; s|security.debian.org|${host}|g; s|archive.ubuntu.com|${host}|g; s|security.ubuntu.com|${host}|g" "$f"
+  done
+  if [[ -f /etc/apk/repositories ]]; then
+    sed -i "s|dl-cdn.alpinelinux.org|${host}|g" /etc/apk/repositories
+  fi
+}
+
+ensure_runtime_libs() {
+  [[ "$ROOT" == "1" ]] || return 0
+  if ldconfig -p 2>/dev/null | grep -q 'libssl\.so\.3'; then
+    return
+  fi
+  configure_package_mirror
+  log "installing runtime libraries"
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq && apt-get install -y -qq libssl3 ca-certificates >/dev/null
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y -q openssl-libs ca-certificates >/dev/null
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y -q openssl-libs ca-certificates >/dev/null
+  elif command -v apk >/dev/null 2>&1; then
+    apk add --no-cache libssl3 ca-certificates >/dev/null
+  fi
+}
+
 ensure_openssl() {
   if [[ -f /usr/include/openssl/ssl.h ]] || pkg-config --exists openssl 2>/dev/null; then
     return
@@ -173,6 +223,7 @@ if [[ "$MODE" == "source" ]]; then
   fi
   [[ -n "$ZIG" ]] || fail "Zig toolchain not available"
   log "using ${ZIG} ($("$ZIG" version))"
+  configure_package_mirror
   ensure_openssl
 
   # ------------------------------------------------------------------ build
@@ -191,6 +242,7 @@ if [[ "$MODE" == "source" ]]; then
 
   install -m 0755 "$BUILD_DIR/daemon/zig-out/bin/hampaneld" "$BIN"
 else
+  ensure_runtime_libs
   log "installing prebuilt daemon from ${BINARY_FILE}"
   install -m 0755 "$BINARY_FILE" "$BIN"
   RISK_SRC="$(dirname "$BINARY_FILE")/hampanel-risk"

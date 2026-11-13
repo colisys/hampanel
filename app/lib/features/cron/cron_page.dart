@@ -194,7 +194,7 @@ class _CronPageState extends State<CronPage> {
                               ),
                               decoration: BoxDecoration(
                                 color: hampanelAccent.withValues(alpha: 0.10),
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(3),
                               ),
                               child: Text(
                                 entry.schedule,

@@ -530,7 +530,7 @@ class _FilesPageState extends State<FilesPage> {
         : entry.symlink
         ? Icons.link
         : Icons.description_outlined;
-    final color = entry.isDir ? hampanelAccent : const Color(0xFF9FB4C6);
+    final color = entry.isDir ? hampanelAccent : hampanelMuted;
     return InkWell(
       onTap: () => entry.isDir ? _load(entry.path) : _edit(entry),
       child: Padding(

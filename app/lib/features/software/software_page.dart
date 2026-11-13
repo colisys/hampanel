@@ -556,7 +556,7 @@ class _SoftwarePageState extends State<SoftwarePage> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: hampanelSurfaceAlt,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(3),
         border: Border.all(color: hampanelBorder),
       ),
       child: Column(

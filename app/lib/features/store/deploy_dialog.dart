@@ -108,7 +108,7 @@ Future<void> showDeployedDialog(
                 value,
                 style: monospace.copyWith(
                   fontSize: 12,
-                  color: secret ? hampanelAccent : const Color(0xFFD7E2EA),
+                  color: secret ? hampanelAccent : hampanelInk,
                 ),
               ),
             ),

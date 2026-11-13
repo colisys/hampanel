@@ -990,15 +990,15 @@ class _ProcessesDialogState extends State<_ProcessesDialog> {
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: const Color(0xFF0B1116),
-                  border: Border.all(color: hampanelBorder),
-                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: hampanelInk, width: 2),
+                  borderRadius: BorderRadius.circular(3),
                 ),
                 child: SingleChildScrollView(
                   child: SelectableText(
                     _output,
                     style: monospace.copyWith(
                       fontSize: 11.5,
-                      color: const Color(0xFFB9C7D2),
+                      color: const Color(0xFFE8E0CE),
                     ),
                   ),
                 ),

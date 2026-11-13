@@ -21,6 +21,7 @@ class SshInstallRequest {
     this.channel = 'stable',
     this.sourceRef = 'nightly',
     this.panelPort,
+    this.mirror,
     this.extraSans = const [],
   });
 
@@ -35,6 +36,7 @@ class SshInstallRequest {
   final String channel;
   final String sourceRef;
   final int? panelPort;
+  final String? mirror;
   final List<String> extraSans;
 
   String get effectiveEndpoint {
@@ -155,6 +157,10 @@ class SshInstaller {
       request.effectiveEndpoint,
       if (request.mode == 'source') ...['--ref', request.sourceRef],
       if (request.panelPort != null) ...['--port', '${request.panelPort}'],
+      if (request.mirror != null && request.mirror!.isNotEmpty) ...[
+        '--mirror',
+        request.mirror!,
+      ],
       for (final san in request.extraSans) ...['--san', san],
     ];
     final override = _releaseOverride;

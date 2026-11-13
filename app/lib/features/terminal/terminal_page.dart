@@ -142,12 +142,12 @@ class _TerminalPageState extends State<TerminalPage> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(3),
               child: Container(
                 decoration: BoxDecoration(
                   color: const Color(0xFF070B0E),
                   border: Border.all(color: hampanelBorder),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(3),
                 ),
                 padding: const EdgeInsets.all(8),
                 child: TerminalView(

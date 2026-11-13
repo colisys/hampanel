@@ -427,7 +427,7 @@ class _AiPageState extends State<AiPage> {
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: hampanelSurfaceAlt,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(3),
                   border: Border.all(color: hampanelBorder),
                 ),
                 child: SelectableText(
@@ -510,16 +510,16 @@ class _AiPageState extends State<AiPage> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2A2012),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF5A452A)),
+                  color: hampanelSurfaceAlt,
+                  borderRadius: BorderRadius.circular(3),
+                  border: Border.all(color: hampanelWarning, width: 2),
                 ),
                 child: Row(
                   children: [
                     const Icon(
                       Icons.key_off_outlined,
                       size: 18,
-                      color: Color(0xFFFFB74D),
+                      color: hampanelWarning,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -628,17 +628,17 @@ class _AiPageState extends State<AiPage> {
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: isUser
-              ? hampanelAccent.withValues(alpha: 0.14)
+              ? hampanelAccent.withValues(alpha: 0.12)
               : hampanelSurface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: hampanelBorder),
+          borderRadius: BorderRadius.circular(3),
+          border: Border.all(color: hampanelInk, width: 1.5),
         ),
         child: SelectableText(
           entry.text,
           style: TextStyle(
             fontSize: 12.5,
             height: 1.5,
-            color: isUser ? Colors.white : const Color(0xFFD7E2EA),
+            color: isUser ? hampanelInk : hampanelInkSoft,
           ),
         ),
       ),

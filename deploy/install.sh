@@ -25,6 +25,7 @@ DATA_DIR=""
 TLS_DIR=""
 ENROLL_FILE=""
 SERVICE_NAME="hampanel"
+MIRROR=""
 NO_START=0
 NO_SYSTEMD=0
 
@@ -52,6 +53,7 @@ Usage:
   --tls-dir <dir>        PKI directory (default: <config-dir>/tls)
   --enroll-file <path>   enrollment bundle path (default: <config-dir>/enroll.json)
   --service-name <name>  systemd unit name (default: hampanel)
+  --mirror <preset|url>  package mirror: aliyun|tencent|ustc|tuna or custom:https://host
   --no-systemd           do not install a systemd unit
   --no-start             install without starting the service
 EOF
@@ -73,6 +75,7 @@ while [[ $# -gt 0 ]]; do
     --tls-dir) TLS_DIR="${2:?}"; shift 2 ;;
     --enroll-file) ENROLL_FILE="${2:?}"; shift 2 ;;
     --service-name) SERVICE_NAME="${2:?}"; shift 2 ;;
+    --mirror) MIRROR="${2:?}"; shift 2 ;;
     --no-systemd) NO_SYSTEMD=1; shift ;;
     --no-start) NO_START=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -102,6 +105,7 @@ if [[ -n "$ENROLL_FILE" ]]; then BOOTSTRAP_ARGS+=(--enroll-file "$ENROLL_FILE");
 if [[ "$NO_SYSTEMD" == "1" ]]; then BOOTSTRAP_ARGS+=(--no-systemd); fi
 if [[ "$NO_START" == "1" ]]; then BOOTSTRAP_ARGS+=(--no-start); fi
 if [[ "$SERVICE_NAME" != "hampanel" ]]; then BOOTSTRAP_ARGS+=(--service-name "$SERVICE_NAME"); fi
+if [[ -n "$MIRROR" ]]; then BOOTSTRAP_ARGS+=(--mirror "$MIRROR"); fi
 
 release_base() {
   if [[ -n "$RELEASE_BASE" ]]; then

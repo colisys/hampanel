@@ -221,7 +221,7 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
                             height: 36,
                             decoration: BoxDecoration(
                               color: hampanelAccent.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(9),
+                              borderRadius: BorderRadius.circular(3),
                             ),
                             child: Icon(
                               _icon(app.icon),

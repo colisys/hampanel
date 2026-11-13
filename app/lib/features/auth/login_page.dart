@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/enrollment.dart';
 import '../../ui/theme.dart';
+import '../../ui/widgets.dart';
 import 'install_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -52,157 +53,255 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 760),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(28),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: hampanelAccent.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: hampanelAccent.withValues(alpha: 0.4),
-                            ),
+      body: Stack(
+        children: [
+          const Positioned.fill(child: Halftone(opacity: 0.10, spacing: 16)),
+          Positioned(
+            right: -170,
+            top: -190,
+            child: Container(
+              width: 480,
+              height: 480,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: hampanelAccent.withValues(alpha: 0.05),
+                border: Border.all(color: hampanelAccent, width: 3),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 28,
+            top: 22,
+            child: Text(
+              'HAMPANEL / MANGA CONSOLE',
+              style: mangaKicker.copyWith(color: hampanelInk),
+            ),
+          ),
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 52,
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 820),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: hampanelSurface,
+                      border: Border.all(color: hampanelInk, width: 2.5),
+                      boxShadow: mangaShadow,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(34),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 60,
+                                height: 60,
+                                color: hampanelInk,
+                                child: const Icon(
+                                  Icons.dns_outlined,
+                                  color: hampanelSurface,
+                                  size: 32,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'HAMPANEL',
+                                      style: TextStyle(
+                                        fontSize: 38,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 4,
+                                        height: 0.95,
+                                        color: hampanelInk,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      '双向 TLS 服务器面板 / BI-DIRECTIONAL TLS CONSOLE',
+                                      style: mangaKicker.copyWith(
+                                        color: hampanelMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: hampanelInk,
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: Text(
+                                  'PANEL 01',
+                                  style: mangaKicker.copyWith(
+                                    color: hampanelInk,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          child: const Icon(
-                            Icons.dns_outlined,
+                          const SizedBox(height: 20),
+                          Container(
+                            width: 44,
+                            height: 3,
                             color: hampanelAccent,
                           ),
-                        ),
-                        const SizedBox(width: 14),
-                        const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Hampanel',
-                              style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
+                          const SizedBox(height: 24),
+                          Row(
+                            children: [
+                              Text(
+                                '01',
+                                style: mangaKicker.copyWith(
+                                  color: hampanelAccent,
+                                  fontSize: 12,
+                                ),
                               ),
-                            ),
-                            Text(
-                              '双向 TLS 服务器面板',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: hampanelMuted,
+                              const SizedBox(width: 10),
+                              const Text(
+                                '导入注册凭据',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.3,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 26),
-                    const Text(
-                      '导入注册凭据',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      '将 `hampaneld init` 或 hampanelctl 生成的 enrollment JSON 粘贴到下方。'
-                      '凭据包含 CA、客户端证书与私钥，仅保存在本机。',
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: hampanelMuted,
-                        height: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _controller,
-                      minLines: 8,
-                      maxLines: 16,
-                      style: monospace,
-                      decoration: const InputDecoration(
-                        hintText: '{ "endpoint": "203.0.113.10:8443", "ca_pem": "...", ... }',
-                        alignLabelWithHint: true,
-                      ),
-                    ),
-                    if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        _error!,
-                        style: const TextStyle(
-                          color: hampanelDanger,
-                          fontSize: 12.5,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        TextButton.icon(
-                          onPressed: _paste,
-                          icon: const Icon(Icons.content_paste, size: 16),
-                          label: const Text('从剪贴板粘贴'),
-                        ),
-                        const Spacer(),
-                        FilledButton.icon(
-                          onPressed: _busy ? null : _connect,
-                          icon: _busy
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.lock_open, size: 17),
-                          label: const Text('建立连接'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    const Divider(height: 1),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            '还没有可管理的主机？可以直接通过 SSH 安装 hampaneld，'
-                            '选择发布二进制或从头构建。',
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            '将 `hampaneld init` 或 hampanelctl 生成的 enrollment JSON 粘贴到下方。'
+                            '凭据包含 CA、客户端证书与私钥，仅保存在本机。',
                             style: TextStyle(
-                              fontSize: 11.5,
+                              fontSize: 12.5,
                               color: hampanelMuted,
-                              height: 1.5,
+                              height: 1.7,
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        OutlinedButton.icon(
-                          onPressed: _busy
-                              ? null
-                              : () => Navigator.of(context).push(
-                                  MaterialPageRoute<void>(
-                                    builder: (_) => InstallPage(
-                                      onEnrolled: widget.onEnrolled,
+                          const SizedBox(height: 18),
+                          Text(
+                            'ENROLLMENT JSON',
+                            style: mangaKicker.copyWith(color: hampanelInk),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _controller,
+                            minLines: 8,
+                            maxLines: 16,
+                            style: monospace,
+                            decoration: const InputDecoration(
+                              hintText:
+                                  '{ "endpoint": "203.0.113.10:8443", "ca_pem": "...", ... }',
+                              alignLabelWithHint: true,
+                            ),
+                          ),
+                          if (_error != null) ...[
+                            const SizedBox(height: 12),
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(
+                                  Icons.error_outline,
+                                  size: 16,
+                                  color: hampanelDanger,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _error!,
+                                    style: const TextStyle(
+                                      color: hampanelDanger,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.5,
                                     ),
                                   ),
                                 ),
-                          icon: const Icon(Icons.terminal, size: 16),
-                          label: const Text('通过 SSH 安装'),
-                        ),
-                      ],
+                              ],
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              TextButton.icon(
+                                onPressed: _busy ? null : _paste,
+                                icon: const Icon(
+                                  Icons.content_paste,
+                                  size: 16,
+                                ),
+                                label: const Text('从剪贴板粘贴'),
+                              ),
+                              const Spacer(),
+                              FilledButton.icon(
+                                onPressed: _busy ? null : _connect,
+                                icon: _busy
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.lock_open, size: 17),
+                                label: const Text('建立连接'),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 18),
+                          const Divider(height: 1),
+                          const SizedBox(height: 18),
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  '还没有可管理的主机？可以直接通过 SSH 安装 hampaneld，'
+                                  '选择发布二进制或从头构建。',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: hampanelMuted,
+                                    height: 1.6,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              OutlinedButton.icon(
+                                onPressed: _busy
+                                    ? null
+                                    : () => Navigator.of(context).push(
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => InstallPage(
+                                            onEnrolled: widget.onEnrolled,
+                                          ),
+                                        ),
+                                      ),
+                                icon: const Icon(Icons.terminal, size: 16),
+                                label: const Text('通过 SSH 安装'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

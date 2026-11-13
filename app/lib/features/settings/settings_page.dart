@@ -738,7 +738,7 @@ class _SettingsPageState extends State<SettingsPage> {
               value,
               style: monospace.copyWith(
                 fontSize: 11.5,
-                color: const Color(0xFFD7E2EA),
+                color: hampanelInkSoft,
               ),
             ),
           ),

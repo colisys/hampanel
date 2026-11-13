@@ -27,11 +27,13 @@ class _InstallPageState extends State<InstallPage> {
   final _endpoint = TextEditingController();
   final _panelPort = TextEditingController();
   final _sourceRef = TextEditingController(text: 'nightly');
+  final _mirrorCustom = TextEditingController();
   final _logScroll = ScrollController();
 
   String _auth = 'password';
   String _mode = 'binary';
   String _channel = 'stable';
+  String _mirror = '';
   bool _busy = false;
   String? _error;
   final List<String> _log = [];
@@ -48,6 +50,7 @@ class _InstallPageState extends State<InstallPage> {
       _endpoint,
       _panelPort,
       _sourceRef,
+      _mirrorCustom,
     ]) {
       controller.dispose();
     }
@@ -98,6 +101,13 @@ class _InstallPageState extends State<InstallPage> {
       setState(() => _error = '请填写私钥路径');
       return;
     }
+    final mirror = _mirror == 'custom'
+        ? 'custom:${_mirrorCustom.text.trim()}'
+        : _mirror;
+    if (_mirror == 'custom' && _mirrorCustom.text.trim().isEmpty) {
+      setState(() => _error = '请填写自定义镜像地址');
+      return;
+    }
 
     setState(() {
       _busy = true;
@@ -123,6 +133,7 @@ class _InstallPageState extends State<InstallPage> {
               ? 'nightly'
               : _sourceRef.text.trim(),
           panelPort: panelPort,
+          mirror: mirror,
         ),
         onLog: _append,
       );
@@ -284,6 +295,52 @@ class _InstallPageState extends State<InstallPage> {
                       ),
                     ),
                   const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    initialValue: _mirror,
+                    decoration: const InputDecoration(
+                      labelText: '软件源镜像（Linux 依赖）',
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: '', child: Text('使用系统默认源')),
+                      DropdownMenuItem(
+                        value: 'aliyun',
+                        child: Text('阿里云 mirrors.aliyun.com'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'tencent',
+                        child: Text('腾讯云 mirrors.cloud.tencent.com'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'ustc',
+                        child: Text('中科大 mirrors.ustc.edu.cn'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'tuna',
+                        child: Text('清华 mirrors.tuna.tsinghua.edu.cn'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'custom',
+                        child: Text('自定义镜像地址'),
+                      ),
+                    ],
+                    onChanged: (value) => setState(() => _mirror = value ?? ''),
+                  ),
+                  if (_mirror == 'custom') ...[
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _mirrorCustom,
+                      decoration: const InputDecoration(
+                        labelText: '镜像域名或 URL',
+                        hintText: 'https://mirrors.example.com',
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 6),
+                  const Text(
+                    '镜像仅用于 Linux 目标机安装依赖包（apt/apk）；Windows 目标忽略此项。',
+                    style: TextStyle(fontSize: 11, color: hampanelMuted),
+                  ),
+                  const SizedBox(height: 10),
                   _row([
                     Expanded(
                       child: TextField(
@@ -352,10 +409,8 @@ class _InstallPageState extends State<InstallPage> {
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: const Color(0xFF0B1116),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.08),
-                      ),
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(color: hampanelInk, width: 2),
                     ),
                     child: Scrollbar(
                       controller: _logScroll,
@@ -366,7 +421,7 @@ class _InstallPageState extends State<InstallPage> {
                           _log.join('\n'),
                           style: monospace.copyWith(
                             fontSize: 11.5,
-                            color: const Color(0xFFB9C7D2),
+                            color: const Color(0xFFE8E0CE),
                             height: 1.45,
                           ),
                         ),

@@ -25,12 +25,25 @@ class PageHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.w600,
-                  ),
+                Row(
+                  children: [
+                    Container(
+                      width: 5,
+                      height: 22,
+                      color: hampanelAccent,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 23,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.4,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 if (subtitle != null) ...[
                   const SizedBox(height: 4),
@@ -68,32 +81,42 @@ class PanelCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: padding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (title != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title!,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+    return Container(
+      decoration: const BoxDecoration(boxShadow: mangaShadowSmall),
+      child: Card(
+        child: Padding(
+          padding: padding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (title != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        color: hampanelAccent,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          title!,
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.3,
+                          ),
                         ),
                       ),
-                    ),
-                    ?trailing,
-                  ],
+                      ?trailing,
+                    ],
+                  ),
                 ),
-              ),
-            child,
-          ],
+              child,
+            ],
+          ),
         ),
       ),
     );
@@ -122,15 +145,20 @@ class StatTile extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 11.5, color: hampanelMuted),
+          style: const TextStyle(
+            fontSize: 11,
+            color: hampanelMuted,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.4,
+          ),
         ),
         const SizedBox(height: 6),
         Text(
           value,
           style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w600,
-            color: accent ?? Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: accent ?? hampanelInk,
             fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
@@ -154,13 +182,18 @@ class StyledProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
-      child: LinearProgressIndicator(
-        value: value.clamp(0, 1),
-        minHeight: 7,
-        backgroundColor: hampanelSurfaceAlt,
-        valueColor: AlwaysStoppedAnimation<Color>(color ?? hampanelAccent),
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: hampanelInk, width: 1.5),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(1),
+        child: LinearProgressIndicator(
+          value: value.clamp(0, 1),
+          minHeight: 9,
+          backgroundColor: hampanelSurfaceAlt,
+          valueColor: AlwaysStoppedAnimation<Color>(color ?? hampanelInk),
+        ),
       ),
     );
   }
@@ -176,25 +209,32 @@ class ErrorBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF2A1517),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF5A2A2E)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.error_outline, color: hampanelDanger, size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              message,
-              style: const TextStyle(color: Color(0xFFFFC7C7), fontSize: 12.5),
+      decoration: const BoxDecoration(boxShadow: mangaShadowSmall),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: hampanelSurface,
+          borderRadius: BorderRadius.circular(3),
+          border: Border.all(color: hampanelDanger, width: 2),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline, color: hampanelDanger, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: hampanelInk,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
-          ),
-          if (onRetry != null)
-            TextButton(onPressed: onRetry, child: const Text('重试')),
-        ],
+            if (onRetry != null)
+              TextButton(onPressed: onRetry, child: const Text('重试')),
+          ],
+        ),
       ),
     );
   }
@@ -237,11 +277,23 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 36, color: hampanelMuted),
-            const SizedBox(height: 12),
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: hampanelSurfaceAlt,
+                border: Border.all(color: hampanelInk, width: 2),
+              ),
+              child: Icon(icon, size: 28, color: hampanelInk),
+            ),
+            const SizedBox(height: 14),
             Text(
               title,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+              ),
             ),
             if (message != null) ...[
               const SizedBox(height: 6),
@@ -267,15 +319,24 @@ class StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = good ? hampanelAccent : hampanelMuted;
+    final color = good ? hampanelInk : hampanelDanger;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.35)),
+        color: good ? hampanelSurfaceAlt : hampanelDanger.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(2),
+        border: Border.all(color: color, width: 1.5),
       ),
-      child: Text(text, style: TextStyle(fontSize: 10.5, color: color)),
+      child: Text(
+        text.toUpperCase(),
+        style: TextStyle(
+          fontFamily: 'monospace',
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
+          color: color,
+        ),
+      ),
     );
   }
 }
@@ -347,4 +408,66 @@ Future<String?> textInputDialog(
   );
   controller.dispose();
   return result;
+}
+
+
+/// Comic screentone: a sparse dot grid used as the empty-state backdrop.
+class Halftone extends StatelessWidget {
+  const Halftone({
+    super.key,
+    this.color = hampanelInk,
+    this.spacing = 15,
+    this.dotRadius = 1.1,
+    this.opacity = 0.09,
+    this.child,
+  });
+
+  final Color color;
+  final double spacing;
+  final double dotRadius;
+  final double opacity;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _HalftonePainter(
+        color: color.withValues(alpha: opacity),
+        spacing: spacing,
+        dotRadius: dotRadius,
+      ),
+      child: child,
+    );
+  }
+}
+
+class _HalftonePainter extends CustomPainter {
+  const _HalftonePainter({
+    required this.color,
+    required this.spacing,
+    required this.dotRadius,
+  });
+
+  final Color color;
+  final double spacing;
+  final double dotRadius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    var row = 0;
+    for (var y = 0.0; y < size.height + spacing; y += spacing) {
+      final offset = row.isOdd ? spacing / 2 : 0.0;
+      for (var x = offset; x < size.width + spacing; x += spacing) {
+        canvas.drawCircle(Offset(x, y), dotRadius, paint);
+      }
+      row++;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_HalftonePainter oldDelegate) =>
+      oldDelegate.color != color ||
+      oldDelegate.spacing != spacing ||
+      oldDelegate.dotRadius != dotRadius;
 }
