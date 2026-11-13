@@ -160,7 +160,9 @@ jobs:
   release:
     name: Publish release
     needs: [daemon, flutter-linux, flutter-windows]
-    if: github.event_name != 'pull_request'
+    if: >-
+      github.event_name != 'pull_request' &&
+      (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/nightly')
     runs-on: ubuntu-latest
     permissions:
       contents: write
