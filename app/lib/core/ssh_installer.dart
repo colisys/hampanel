@@ -319,6 +319,7 @@ String _mirrorUrl(String url, String? mirror) {
   if (value.isEmpty) return url;
   final base = value.replaceFirst(RegExp(r'/+$'), '');
   if (base.isEmpty) return url;
+  if (url == base || url.startsWith('$base/')) return url;
   return '$base/$url';
 }
 

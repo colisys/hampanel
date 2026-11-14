@@ -35,6 +35,7 @@ $script:UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
 function Mirror-Url([string]$Url) {
     if (-not $GithubMirror) { return $Url }
     $base = $GithubMirror.Trim().TrimEnd("/")
+    if ($Url -eq $base -or $Url.StartsWith("$base/")) { return $Url }
     return "$base/$Url"
 }
 

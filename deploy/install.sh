@@ -116,6 +116,11 @@ mirror_url() {
   local url="$1" mirror="${GITHUB_MIRROR:-}"
   [[ -n "$mirror" ]] || { printf '%s' "$url"; return; }
   mirror="${mirror%/}"
+  # Idempotent: never prefix a URL that already goes through this mirror.
+  if [[ "$url" == "$mirror"/* || "$url" == "$mirror" ]]; then
+    printf '%s' "$url"
+    return
+  fi
   printf '%s/%s' "$mirror" "$url"
 }
 
@@ -200,13 +205,13 @@ else
     fi
   fi
   if [[ -n "$SOURCE_BASE" ]]; then
+    # Explicit source base is already the final URL; do not stack a mirror on it.
     src_url="${SOURCE_BASE%/}/${REF}.tar.gz"
   elif [[ "$REF" == v* || "$REF" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-    src_url="https://github.com/${REPO}/archive/refs/tags/${REF}.tar.gz"
+    src_url="$(mirror_url "https://github.com/${REPO}/archive/refs/tags/${REF}.tar.gz")"
   else
-    src_url="https://github.com/${REPO}/archive/refs/heads/${REF}.tar.gz"
+    src_url="$(mirror_url "https://github.com/${REPO}/archive/refs/heads/${REF}.tar.gz")"
   fi
-  src_url="$(mirror_url "$src_url")"
   log "downloading source ${src_url}"
   curl -fsSL -A "$USER_AGENT" --retry 3 --connect-timeout 15 -o "$TMP/src.tar.gz" "$src_url" ||
     fail "failed to download source archive"
