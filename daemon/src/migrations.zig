@@ -56,6 +56,29 @@ const migrations = [_]Migration{
     .{ .version = 1, .name = "core tables", .sql = schema_v1 },
 };
 
+/// `CREATE TABLE IF NOT EXISTS` cannot add columns, so databases created
+/// before migration names were recorded keep the old `(version, applied_at)`
+/// shape and every later insert fails. Add the column in place instead.
+fn ensureSchemaMigrations(database: *db.Db) !void {
+    try database.exec(
+        "CREATE TABLE IF NOT EXISTS schema_migrations (" ++
+            "version INTEGER PRIMARY KEY, name TEXT NOT NULL DEFAULT ''," ++
+            "applied_at INTEGER NOT NULL)",
+    );
+    database.lock();
+    defer database.unlock();
+    var statement = try database.prepareUnlocked("PRAGMA table_info(schema_migrations)");
+    defer statement.deinit();
+    var has_name = false;
+    while (try statement.step()) {
+        if (std.mem.eql(u8, statement.columnText(1), "name")) has_name = true;
+    }
+    if (has_name) return;
+    try database.execUnlocked(
+        "ALTER TABLE schema_migrations ADD COLUMN name TEXT NOT NULL DEFAULT ''",
+    );
+}
+
 /// Runs every pending migration at startup. Before the first pending
 /// migration a consistent snapshot of the database is written to
 /// `<db dir>/backups/` so a failed migration can always be restored.
@@ -68,11 +91,7 @@ pub fn migrateList(
     database: *db.Db,
     list: []const Migration,
 ) !void {
-    try database.exec(
-        "CREATE TABLE IF NOT EXISTS schema_migrations (" ++
-            "version INTEGER PRIMARY KEY, name TEXT NOT NULL DEFAULT ''," ++
-            "applied_at INTEGER NOT NULL)",
-    );
+    try ensureSchemaMigrations(database);
     try database.exec(
         "INSERT INTO schema_migrations(version, name, applied_at) " ++
             "SELECT 0, 'baseline', 0 WHERE NOT EXISTS (SELECT 1 FROM schema_migrations)",
@@ -218,6 +237,27 @@ test "versioned migrations apply in order and back up first" {
         if (entry.kind == .file) count += 1;
     }
     try std.testing.expectEqual(@as(usize, 1), count);
+}
+
+test "legacy schema_migrations table gains the name column" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(dir);
+    const path = try std.fs.path.join(allocator, &.{ dir, "hampanel.db" });
+    defer allocator.free(path);
+
+    var database = try db.Db.open(path);
+    defer database.close();
+    try database.exec(
+        "CREATE TABLE schema_migrations (" ++
+            "version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)",
+    );
+    try database.exec("INSERT INTO schema_migrations(version, applied_at) VALUES(1, 0)");
+
+    try migrate(allocator, &database);
+    try std.testing.expectEqual(@as(i64, 1), try currentVersion(&database));
 }
 
 test "sqlite core migrations create the schema" {

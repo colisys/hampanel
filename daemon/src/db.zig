@@ -2,6 +2,13 @@ const std = @import("std");
 const c = @import("sqlite_c");
 const compat = @import("compat");
 
+fn logSqliteError(handle: *c.sqlite3, operation: []const u8) void {
+    std.debug.print(
+        "hampaneld: sqlite {s} failed: {s}\n",
+        .{ operation, std.mem.span(c.sqlite3_errmsg(handle)) },
+    );
+}
+
 pub const Value = union(enum) {
     null,
     int: i64,
@@ -24,7 +31,10 @@ pub const Db = struct {
         var handle: ?*c.sqlite3 = null;
         const flags = c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_FULLMUTEX;
         if (c.sqlite3_open_v2(owned.ptr, &handle, flags, null) != c.SQLITE_OK) {
-            if (handle) |h| _ = c.sqlite3_close(h);
+            if (handle) |h| {
+                logSqliteError(h, "open");
+                _ = c.sqlite3_close(h);
+            }
             std.heap.page_allocator.free(owned);
             return error.SqliteOpenFailed;
         }
@@ -70,7 +80,15 @@ pub const Db = struct {
         var err: [*c]u8 = null;
         const rc = c.sqlite3_exec(self.handle, sql.ptr, null, null, &err);
         if (rc != c.SQLITE_OK) {
-            if (err != null) c.sqlite3_free(err);
+            if (err != null) {
+                std.debug.print(
+                    "hampaneld: sqlite exec failed: {s}\n",
+                    .{std.mem.span(err)},
+                );
+                c.sqlite3_free(err);
+            } else {
+                logSqliteError(self.handle, "exec");
+            }
             return error.SqliteExecFailed;
         }
     }
@@ -92,6 +110,7 @@ pub const Db = struct {
     pub fn prepareUnlocked(self: *Db, sql: []const u8) !Statement {
         var stmt: ?*c.sqlite3_stmt = null;
         if (c.sqlite3_prepare_v2(self.handle, sql.ptr, @intCast(sql.len), &stmt, null) != c.SQLITE_OK) {
+            logSqliteError(self.handle, "prepare");
             return error.SqlitePrepareFailed;
         }
         return .{ .handle = stmt orelse return error.SqlitePrepareFailed };
@@ -141,16 +160,26 @@ pub const Statement = struct {
                 .float => |number| c.sqlite3_bind_double(self.handle, position, number),
                 .text => |text| c.sqlite3_bind_text(self.handle, position, text.ptr, @intCast(text.len), null),
             };
-            if (rc != c.SQLITE_OK) return error.SqliteBindFailed;
+            if (rc != c.SQLITE_OK) {
+                if (c.sqlite3_db_handle(self.handle)) |database| {
+                    logSqliteError(database, "bind");
+                }
+                return error.SqliteBindFailed;
+            }
         }
     }
 
     pub fn step(self: *Statement) !bool {
-        return switch (c.sqlite3_step(self.handle)) {
-            c.SQLITE_ROW => true,
-            c.SQLITE_DONE => false,
-            else => error.SqliteStepFailed,
-        };
+        switch (c.sqlite3_step(self.handle)) {
+            c.SQLITE_ROW => return true,
+            c.SQLITE_DONE => return false,
+            else => {
+                if (c.sqlite3_db_handle(self.handle)) |database| {
+                    logSqliteError(database, "step");
+                }
+                return error.SqliteStepFailed;
+            },
+        }
     }
 
     pub fn reset(self: *Statement) void {
