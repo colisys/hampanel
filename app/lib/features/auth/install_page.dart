@@ -299,6 +299,7 @@ class _InstallPageState extends State<InstallPage> {
                       decoration: const InputDecoration(
                         labelText: '源码分支或标签',
                         hintText: 'nightly',
+                        helperText: '分支使用 nightly 通道，版本 tag 使用 stable 通道',
                       ),
                     ),
                   const SizedBox(height: 10),

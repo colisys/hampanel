@@ -43,7 +43,7 @@ Usage:
   hampanel-install-linux.sh --endpoint HOST [options]
 
   --mode binary|source   install a release binary (default) or build from source
-  --channel stable|nightly   release channel; source builds require this or --ref
+  --channel stable|nightly   release channel; for --mode source the channel follows the ref
   --ref <branch|tag>     source ref for --mode source (stable channel resolves to the latest tag)
   --repo <owner/repo>    GitHub repository (default: colisys/hampanel)
   --github-mirror <url>  GitHub mirror base; the full URL is appended after it
@@ -111,6 +111,13 @@ if [[ "$NO_SYSTEMD" == "1" ]]; then BOOTSTRAP_ARGS+=(--no-systemd); fi
 if [[ "$NO_START" == "1" ]]; then BOOTSTRAP_ARGS+=(--no-start); fi
 if [[ "$SERVICE_NAME" != "hampanel" ]]; then BOOTSTRAP_ARGS+=(--service-name "$SERVICE_NAME"); fi
 if [[ -n "$MIRROR" ]]; then BOOTSTRAP_ARGS+=(--mirror "$MIRROR"); fi
+
+channel_for_ref() {
+  case "$1" in
+    v[0-9]*|[0-9]*.[0-9]*.[0-9]*) printf 'stable' ;;
+    *) printf 'nightly' ;;
+  esac
+}
 
 mirror_url() {
   local url="$1" mirror="${GITHUB_MIRROR:-}"
@@ -204,6 +211,8 @@ else
       fail "unknown channel ${CHANNEL}; use stable, nightly or --ref <tag|branch>"
     fi
   fi
+  SOURCE_CHANNEL="$(channel_for_ref "$REF")"
+  log "building from source ref ${REF} (channel ${SOURCE_CHANNEL})"
   if [[ -n "$SOURCE_BASE" ]]; then
     # Explicit source base is already the final URL; do not stack a mirror on it.
     src_url="${SOURCE_BASE%/}/${REF}.tar.gz"
@@ -223,7 +232,7 @@ else
     --source "$TMP/src" \
     --mode source \
     --install-mode source \
-    --update-channel "$CHANNEL" \
+    --update-channel "$SOURCE_CHANNEL" \
     --update-repo "$REPO" \
     "${BOOTSTRAP_ARGS[@]}"
 fi

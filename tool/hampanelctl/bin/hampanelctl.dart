@@ -188,7 +188,16 @@ Future<void> _deployLocal(_Options options, Directory source) async {
   if (options.mode == 'binary') {
     arguments.addAll(['--channel', options.channel, '--repo', options.repo]);
   } else {
-    arguments.addAll(['--source', source.path, '--install-mode', 'source']);
+    arguments.addAll([
+      '--source',
+      source.path,
+      '--install-mode',
+      'source',
+      '--update-channel',
+      'nightly',
+      '--update-repo',
+      options.repo,
+    ]);
   }
   if (options.panelPort != null)
     arguments.addAll(['--port', '${options.panelPort}']);
@@ -275,6 +284,10 @@ Future<void> _deployLinux(_Options options, Directory source) async {
     'source',
     '--install-mode',
     'source',
+    '--update-channel',
+    'nightly',
+    '--update-repo',
+    options.repo,
     '--endpoint',
     options.endpoint,
   ];
@@ -392,6 +405,8 @@ Future<void> _deployWindows(_Options options, Directory source) async {
     options.endpoint,
     '-Mode',
     'source',
+    '-Channel',
+    'nightly',
   ];
   _appendWindowsArgs(installArgs, options);
 
@@ -531,7 +546,8 @@ Options:
   --identity <path>        SSH private key
   --source <path>          repository root (default: current directory)
   --mode <binary|source>   install a published release binary (default) or build from source
-  --channel <stable|nightly> release channel for binary installs (default: stable)
+  --channel <stable|nightly> release channel for binary installs (default: stable);
+                            source installs record the nightly channel
   --repo <owner/repo>      GitHub repository for releases (default: colisys/hampanel)
   --san <host|ip>          extra certificate SAN (repeatable)
   --endpoint may omit the port; the daemon then picks a free port.

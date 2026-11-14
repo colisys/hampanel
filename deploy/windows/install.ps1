@@ -65,8 +65,10 @@ $exePath = Join-Path $InstallDir "hampaneld.exe"
 
 # ------------------------------------------------------------------- install
 $builtExe = ""
+$UpdateChannel = $Channel
 if ($Mode -eq "binary") {
     if (-not $Channel) { $Channel = "stable" }
+    $UpdateChannel = $Channel
     if (-not $ReleaseBase) {
         if ($Channel -eq "stable" -or $Channel -eq "latest") {
             $ReleaseBase = "https://github.com/$Repo/releases/latest/download"
@@ -126,6 +128,8 @@ if ($Mode -eq "binary") {
             $srcUrl = "https://github.com/$Repo/archive/refs/heads/$ref.tar.gz"
         }
         if (-not $SourceBase) { $srcUrl = Mirror-Url $srcUrl }
+        $UpdateChannel = if ($ref -match '^v?\d+\.\d+\.\d+') { "stable" } else { "nightly" }
+        Write-Step "Building from source ref $ref (channel $UpdateChannel)"
         $srcTmp = Join-Path $env:TEMP "hampanel-src"
         Remove-Item -Recurse -Force $srcTmp -ErrorAction SilentlyContinue
         $null = New-Item -ItemType Directory -Force -Path $srcTmp
@@ -136,6 +140,8 @@ if ($Mode -eq "binary") {
         if ($LASTEXITCODE -ne 0) { throw "source extraction failed" }
         $Source = $srcTmp
     }
+
+    if (-not $UpdateChannel) { $UpdateChannel = "nightly" }
 
     # ---------------------------------------------------------------- toolchain
     $zig = (Get-Command zig -ErrorAction SilentlyContinue).Source
@@ -213,7 +219,7 @@ if (-not (Test-Path (Join-Path $tlsDir "ca.crt.pem"))) {
         "--enroll-file", $enrollPath,
         "--endpoint", $Endpoint,
         "--install-mode", $Mode,
-        "--update-channel", $Channel,
+        "--update-channel", $UpdateChannel,
         "--update-repo", $Repo,
         "--service-name", $ServiceName
     )
@@ -226,7 +232,7 @@ if (-not (Test-Path (Join-Path $tlsDir "ca.crt.pem"))) {
     Write-Step "Reusing existing PKI in $tlsDir"
     & $exePath init --config $configPath --tls-dir $tlsDir --data-dir (Join-Path $DataDir "data") `
         --enroll-file $enrollPath --endpoint $Endpoint --install-mode $Mode `
-        --update-channel $Channel --update-repo $Repo --service-name $ServiceName | Out-Null
+        --update-channel $UpdateChannel --update-repo $Repo --service-name $ServiceName | Out-Null
 }
 
 # ------------------------------------------------------------------- service

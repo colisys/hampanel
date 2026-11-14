@@ -47,6 +47,46 @@ class SshInstallRequest {
     final value = endpoint?.trim() ?? '';
     return value.isEmpty ? host : value;
   }
+
+  /// Channel that carries the installer script and the stored update metadata.
+  /// Source builds follow the ref: version tags belong to stable, branches
+  /// (nightly, main, ...) belong to the nightly pre-release channel.
+  String get installChannel => effectiveInstallChannel(
+        mode: mode,
+        channel: channel,
+        sourceRef: sourceRef,
+      );
+}
+
+/// Resolves the channel whose release should provide the installer script and
+/// update metadata for this request.
+String effectiveInstallChannel({
+  required String mode,
+  required String channel,
+  required String sourceRef,
+}) {
+  if (mode != 'source') return channel;
+  final ref = sourceRef.trim();
+  if (ref.isEmpty) return channel;
+  return isVersionRef(ref) ? 'stable' : 'nightly';
+}
+
+bool isVersionRef(String ref) {
+  final value = ref.startsWith('v') ? ref.substring(1) : ref;
+  final parts = value.split('.');
+  if (parts.length != 3) return false;
+  return parts.every((part) => part.isNotEmpty && int.tryParse(part) != null);
+}
+
+/// Release base (without trailing slash) for the installer script. Mirrors are
+/// applied once and skipped for already-prefixed URLs.
+String releaseBaseFor(SshInstallRequest request, {String? override}) {
+  if (override != null) return override;
+  final channel = request.installChannel;
+  final base = channel == 'stable' || channel == 'latest'
+      ? 'https://github.com/colisys/hampanel/releases/latest/download'
+      : 'https://github.com/colisys/hampanel/releases/download/$channel';
+  return _mirrorUrl(base, request.githubMirror);
 }
 
 /// Installs hampaneld on a remote Linux or Windows host over SSH by running the
@@ -109,7 +149,8 @@ class SshInstaller {
           : _linuxCommand(request, sudo);
       onLog(
         '开始安装（${request.mode == 'binary' ? '发布二进制' : '源码构建'}，'
-        '${request.channel}）...',
+        '通道 ${request.installChannel}'
+        '${request.mode == 'source' ? '，ref ${request.sourceRef}' : ''}）...',
       );
       final exitCode = await _runStreaming(client, command, onLog);
       if (exitCode != 0) {
@@ -154,7 +195,7 @@ class SshInstaller {
       '--mode',
       request.mode,
       '--channel',
-      request.channel,
+      request.installChannel,
       '--repo',
       _repo,
       '--endpoint',
@@ -192,7 +233,7 @@ class SshInstaller {
       '-Mode',
       request.mode,
       '-Channel',
-      request.channel,
+      request.installChannel,
       '-Repo',
       _repo,
       '-Endpoint',
@@ -259,14 +300,8 @@ Invoke-WebRequest -UseBasicParsing -Uri '${_psQuote(url)}' -OutFile "\$dir\\inst
     return session.exitCode ?? -1;
   }
 
-  String _releaseBase(SshInstallRequest request) {
-    final override = _releaseOverride;
-    if (override != null) return override;
-    final base = request.channel == 'stable' || request.channel == 'latest'
-        ? 'https://github.com/$_repo/releases/latest/download'
-        : 'https://github.com/$_repo/releases/download/${request.channel}';
-    return _mirrorUrl(base, request.githubMirror);
-  }
+  String _releaseBase(SshInstallRequest request) =>
+      releaseBaseFor(request, override: _releaseOverride);
 
   String? get _releaseOverride {
     final value = Platform.environment['HAMPANEL_RELEASE_BASE'];
