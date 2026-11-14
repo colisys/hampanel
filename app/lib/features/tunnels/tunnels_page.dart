@@ -12,7 +12,10 @@ import '../../ui/widgets.dart';
 import 'tunnel_runner.dart';
 
 class TunnelsPage extends StatefulWidget {
-  const TunnelsPage({super.key});
+  const TunnelsPage({super.key, this.active = true});
+
+  /// 只在页签激活时做 SSH 探测，避免隐藏页拉起进程。
+  final bool active;
 
   @override
   State<TunnelsPage> createState() => _TunnelsPageState();
@@ -35,8 +38,18 @@ class _TunnelsPageState extends State<TunnelsPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    if (widget.active) _load();
   }
+
+  @override
+  void didUpdateWidget(covariant TunnelsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active && !_loadedOnce) {
+      _load();
+    }
+  }
+
+  bool _loadedOnce = false;
 
   @override
   void dispose() {
@@ -47,6 +60,7 @@ class _TunnelsPageState extends State<TunnelsPage> {
   }
 
   Future<void> _load() async {
+    _loadedOnce = true;
     setState(() {
       _loading = true;
       _error = null;
@@ -525,10 +539,7 @@ class _TunnelsPageState extends State<TunnelsPage> {
                       '管理端 ${Platform.operatingSystem} · 远端 ${_serverPlatform ?? '未知'}'
                       '${_sshVersion.isNotEmpty ? ' · ${_sshVersion.split('\n').first}' : ''}'
                       '${_socatVersion.isNotEmpty ? ' · ${_socatVersion.split('\n').first}' : ''}',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: hampanelMuted,
-                      ),
+                      style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                     ),
                     SizedBox(height: 12),
                     if (_profiles.isEmpty)

@@ -22,7 +22,10 @@ const _systemPrompt = '''
 ''';
 
 class AiPage extends StatefulWidget {
-  const AiPage({super.key});
+  const AiPage({super.key, this.active = true});
+
+  /// IndexedStack 会构建所有隐藏页；本地钥匙串只在页签激活时读取。
+  final bool active;
 
   @override
   State<AiPage> createState() => _AiPageState();
@@ -54,8 +57,18 @@ class _AiPageState extends State<AiPage> {
     for (final tool in _tools) {
       _toolsByName[tool.name] = tool;
     }
-    _loadConfig();
+    if (widget.active) _loadConfig();
   }
+
+  @override
+  void didUpdateWidget(covariant AiPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active && !_configLoaded) {
+      _loadConfig();
+    }
+  }
+
+  bool _configLoaded = false;
 
   @override
   void dispose() {
@@ -64,6 +77,7 @@ class _AiPageState extends State<AiPage> {
   }
 
   Future<void> _loadConfig() async {
+    _configLoaded = true;
     final config = await AiConfig.load() ?? AiConfig.defaults();
     String? key;
     String? keyError;
@@ -152,10 +166,7 @@ class _AiPageState extends State<AiPage> {
                   const SizedBox(height: 8),
                   Text(
                     _keychainError!,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: hampanelDanger,
-                    ),
+                    style: TextStyle(fontSize: 11.5, color: hampanelDanger),
                   ),
                 ],
                 if (_keyPresent) ...[

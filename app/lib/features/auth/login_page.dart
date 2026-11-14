@@ -9,7 +9,7 @@ import 'install_page.dart';
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.onEnrolled});
 
-  final Future<void> Function(Enrollment enrollment) onEnrolled;
+  final Future<void> Function(Enrollment enrollment, {String? alias}) onEnrolled;
 
   @override
   State<LoginPage> createState() => _LoginPageState();

@@ -11,7 +11,10 @@ import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 
 class TerminalPage extends StatefulWidget {
-  const TerminalPage({super.key});
+  const TerminalPage({super.key, this.autoConnect = true});
+
+  /// IndexedStack 会构建所有隐藏页；只有当前激活标签才允许自动建连。
+  final bool autoConnect;
 
   @override
   State<TerminalPage> createState() => _TerminalPageState();
@@ -38,7 +41,28 @@ class _TerminalPageState extends State<TerminalPage> {
         );
       }
     };
-    WidgetsBinding.instance.addPostFrameCallback((_) => _connect());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // 仅在页面实际可见（所在标签页处于激活状态）时建立会话，
+      // 避免 IndexedStack 隐藏页也发起连接。
+      if (widget.autoConnect && !_connectStarted) {
+        _connectStarted = true;
+        _connect();
+      }
+    });
+  }
+
+  bool _connectStarted = false;
+
+  @override
+  void didUpdateWidget(covariant TerminalPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.autoConnect && !oldWidget.autoConnect && !_connectStarted) {
+      _connectStarted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_connected) _connect();
+      });
+    }
   }
 
   @override

@@ -45,7 +45,7 @@ void main() {
 
   testWidgets('login page is shown without enrollment', (tester) async {
     await tester.pumpWidget(const HampanelApp());
-    await tester.pump();
+    await tester.pumpAndSettle();
     expect(find.text('导入注册凭据'), findsOneWidget);
   });
 }

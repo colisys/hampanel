@@ -2,12 +2,18 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/api_client.dart';
 import '../core/enrollment.dart';
+import '../core/host_store.dart';
 
 class PanelSession extends ChangeNotifier {
-  PanelSession(this.enrollment) : api = ApiClient(enrollment);
+  PanelSession(this.enrollment, this.hosts) : api = ApiClient(enrollment);
 
   final Enrollment enrollment;
+  final HostStore hosts;
   final ApiClient api;
+
+  /// Rebuilds widgets that read the host list (sidebar switcher, hosts page)
+  /// after a CRUD change that does not replace the active session.
+  void refreshHosts() => notifyListeners();
 
   @override
   void dispose() {

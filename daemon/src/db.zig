@@ -16,18 +16,19 @@ pub fn pathFor(allocator: std.mem.Allocator, data_dir: []const u8) ![]u8 {
 pub const Db = struct {
     handle: *c.sqlite3,
     mutex: std.Io.Mutex = .init,
+    file_path: ?[:0]u8 = null,
 
-    pub fn open(path: []const u8) !Db {
-        const path_z = try compat.dupeZ(std.heap.page_allocator, path);
-        defer std.heap.page_allocator.free(path_z);
+    pub fn open(raw_path: []const u8) !Db {
+        const owned = try compat.dupeZ(std.heap.page_allocator, raw_path);
 
         var handle: ?*c.sqlite3 = null;
         const flags = c.SQLITE_OPEN_READWRITE | c.SQLITE_OPEN_CREATE | c.SQLITE_OPEN_FULLMUTEX;
-        if (c.sqlite3_open_v2(path_z.ptr, &handle, flags, null) != c.SQLITE_OK) {
+        if (c.sqlite3_open_v2(owned.ptr, &handle, flags, null) != c.SQLITE_OK) {
             if (handle) |h| _ = c.sqlite3_close(h);
+            std.heap.page_allocator.free(owned);
             return error.SqliteOpenFailed;
         }
-        var db = Db{ .handle = handle.? };
+        var db = Db{ .handle = handle.?, .file_path = owned };
         try db.exec("PRAGMA journal_mode = WAL");
         try db.exec("PRAGMA synchronous = NORMAL");
         try db.exec("PRAGMA foreign_keys = ON");
@@ -35,9 +36,16 @@ pub const Db = struct {
         return db;
     }
 
+    pub fn path(self: *const Db) ?[]const u8 {
+        return self.file_path;
+    }
+
     pub fn close(self: *Db) void {
         _ = c.sqlite3_close_v2(self.handle);
-        self.* = undefined;
+        if (self.file_path) |owned| std.heap.page_allocator.free(owned);
+        self.file_path = null;
+        self.mutex = .init;
+        self.handle = undefined;
     }
 
     pub fn errmsg(self: *Db) []const u8 {

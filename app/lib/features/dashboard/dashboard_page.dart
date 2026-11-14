@@ -28,10 +28,6 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     super.initState();
     _refresh();
-    _timer = Timer.periodic(
-      const Duration(seconds: 3),
-      (_) => _refreshMetrics(),
-    );
   }
 
   @override
@@ -54,13 +50,25 @@ class _DashboardPageState extends State<DashboardPage> {
         _error = null;
         _loading = false;
       });
+      _ensurePolling();
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = describeError(error);
         _loading = false;
       });
+      _timer?.cancel();
+      _timer = null;
     }
+  }
+
+  /// 采样循环只在拿到过一次成功数据后启动；连接失败时不空转轮询。
+  void _ensurePolling() {
+    if (_timer != null) return;
+    _timer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _refreshMetrics(),
+    );
   }
 
   Future<void> _refreshMetrics() async {
@@ -165,10 +173,7 @@ class _DashboardPageState extends State<DashboardPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(fontSize: 10.5, color: hampanelMuted),
-        ),
+        Text(label, style: TextStyle(fontSize: 10.5, color: hampanelMuted)),
         const SizedBox(height: 3),
         Text(
           (value ?? 0).toStringAsFixed(2),
@@ -273,18 +278,12 @@ class _DashboardPageState extends State<DashboardPage> {
                       const SizedBox(width: 8),
                       Text(
                         disk.filesystem,
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          color: hampanelMuted,
-                        ),
+                        style: TextStyle(fontSize: 10.5, color: hampanelMuted),
                       ),
                       const Spacer(),
                       Text(
                         '${formatBytes(disk.usedBytes)} / ${formatBytes(disk.totalBytes)} · ${formatPercent(disk.percent)}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: hampanelMuted,
-                        ),
+                        style: TextStyle(fontSize: 11, color: hampanelMuted),
                       ),
                     ],
                   ),

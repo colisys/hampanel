@@ -1,9 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'core/enrollment.dart';
+import 'core/host_store.dart';
+import 'core/session.dart';
 import 'features/auth/login_page.dart';
 import 'features/shell/panel_shell.dart';
-import 'core/session.dart';
 import 'ui/theme.dart';
 
 class HampanelApp extends StatefulWidget {
@@ -17,15 +18,38 @@ class HampanelApp extends StatefulWidget {
 
 class _HampanelAppState extends State<HampanelApp>
     with WidgetsBindingObserver {
+  HostStore? _hosts;
   PanelSession? _session;
+  String? _activeId;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _syncBrightness();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    final hosts = await HostStore.open();
     final initial = widget.initial;
-    if (initial != null) _session = PanelSession(initial);
+    HostRecord? active;
+    if (initial != null) {
+      active = hosts.upsert(
+        alias: null,
+        enrollment: initial,
+        activate: true,
+      );
+    } else {
+      active = hosts.active();
+    }
+    if (!mounted) return;
+    _hosts?.close();
+    setState(() {
+      _hosts = hosts;
+      _activeId = active?.id;
+      _session = active == null ? null : PanelSession(active.enrollment, hosts);
+    });
   }
 
   void _syncBrightness() {
@@ -39,14 +63,35 @@ class _HampanelAppState extends State<HampanelApp>
     setState(_syncBrightness);
   }
 
-  Future<void> _onEnrolled(Enrollment enrollment) async {
-    await enrollment.save();
+  Future<void> _onEnrolled(
+    Enrollment enrollment, {
+    String? alias,
+  }) async {
+    final hosts = _hosts;
+    if (hosts == null) return;
+    final host = hosts.upsert(
+      alias: alias,
+      enrollment: enrollment,
+      activate: true,
+    );
+    _applyHost(host);
+  }
+
+  Future<void> _switchHost(HostRecord host) async {
+    _hosts?.setActive(host.id);
+    _applyHost(host);
+  }
+
+  void _applyHost(HostRecord host) {
     _session?.dispose();
-    setState(() => _session = PanelSession(enrollment));
+    setState(() {
+      _activeId = host.id;
+      _session = PanelSession(host.enrollment, _hosts!);
+    });
   }
 
   Future<void> _logout() async {
-    await Enrollment.clear();
+    _hosts?.setActive(null);
     _session?.dispose();
     setState(() => _session = null);
   }
@@ -55,6 +100,7 @@ class _HampanelAppState extends State<HampanelApp>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _session?.dispose();
+    _hosts?.close();
     super.dispose();
   }
 
@@ -67,12 +113,19 @@ class _HampanelAppState extends State<HampanelApp>
       title: 'Hampanel',
       debugShowCheckedModeBanner: false,
       theme: buildHampanelTheme(),
-      home: session == null
-          ? LoginPage(onEnrolled: _onEnrolled)
-          : PanelScope(
-              session: session,
-              child: PanelShell(onLogout: _logout),
-            ),
+      home: _hosts == null
+          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+          : session == null
+              ? LoginPage(onEnrolled: _onEnrolled)
+              : PanelScope(
+                  session: session,
+                  child: PanelShell(
+                    key: ValueKey('shell-$_activeId'),
+                    sessionKey: _activeId!,
+                    onLogout: _logout,
+                    onSwitchHost: _switchHost,
+                  ),
+                ),
     );
   }
 }

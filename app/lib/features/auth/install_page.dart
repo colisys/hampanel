@@ -11,7 +11,7 @@ import '../../ui/theme.dart';
 class InstallPage extends StatefulWidget {
   const InstallPage({super.key, required this.onEnrolled});
 
-  final Future<void> Function(Enrollment enrollment) onEnrolled;
+  final Future<void> Function(Enrollment enrollment, {String? alias}) onEnrolled;
 
   @override
   State<InstallPage> createState() => _InstallPageState();
@@ -25,6 +25,7 @@ class _InstallPageState extends State<InstallPage> {
   final _keyPath = TextEditingController();
   final _keyPassphrase = TextEditingController();
   final _endpoint = TextEditingController();
+  final _alias = TextEditingController();
   final _panelPort = TextEditingController();
   final _sourceRef = TextEditingController(text: 'nightly');
   final _mirrorCustom = TextEditingController();
@@ -43,6 +44,7 @@ class _InstallPageState extends State<InstallPage> {
   void dispose() {
     for (final controller in [
       _host,
+      _alias,
       _port,
       _user,
       _password,
@@ -137,11 +139,13 @@ class _InstallPageState extends State<InstallPage> {
           panelPort: panelPort,
           mirror: mirror,
           githubMirror: _githubMirror.text.trim(),
+          alias: _alias.text.trim(),
         ),
         onLog: _append,
       );
       _append('安装完成，正在保存注册凭据 ...');
-      await widget.onEnrolled(enrollment);
+      final alias = _alias.text.trim();
+      await widget.onEnrolled(enrollment, alias: alias.isEmpty ? null : alias);
       if (!mounted) return;
       Navigator.of(context).pop();
     } catch (error) {

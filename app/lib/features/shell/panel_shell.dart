@@ -1,9 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/build_info.dart';
+import '../../core/host_store.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../ai/ai_page.dart';
+import '../hosts/hosts_page.dart';
 import '../cron/cron_page.dart';
 import '../dashboard/dashboard_page.dart';
 import '../docker/docker_page.dart';
@@ -28,13 +30,20 @@ class _Destination {
 
   final String label;
   final IconData icon;
-  final WidgetBuilder builder;
+  final Widget Function(BuildContext context, bool active) builder;
 }
 
 class PanelShell extends StatefulWidget {
-  const PanelShell({super.key, required this.onLogout});
+  const PanelShell({
+    super.key,
+    required this.sessionKey,
+    required this.onLogout,
+    required this.onSwitchHost,
+  });
 
+  final String sessionKey;
   final Future<void> Function() onLogout;
+  final Future<void> Function(HostRecord host) onSwitchHost;
 
   @override
   State<PanelShell> createState() => _PanelShellState();
@@ -43,35 +52,67 @@ class PanelShell extends StatefulWidget {
 class _PanelShellState extends State<PanelShell> {
   int _index = 0;
 
-  static final _destinations = <_Destination>[
+  List<_Destination> get _destinations => [
     _Destination(
       '概览',
       Icons.space_dashboard_outlined,
-      (_) => const DashboardPage(),
+      (_, _) => const DashboardPage(),
     ),
-    _Destination('AI 助手', Icons.auto_awesome_outlined, (_) => const AiPage()),
-    _Destination('进程', Icons.memory_outlined, (_) => const ProcessesPage()),
-    _Destination('文件', Icons.folder_open_outlined, (_) => const FilesPage()),
-    _Destination('回收站', Icons.delete_outline, (_) => const RecyclePage()),
-    _Destination('终端', Icons.terminal_outlined, (_) => const TerminalPage()),
-    _Destination('端口穿透', Icons.swap_horiz, (_) => const TunnelsPage()),
+    _Destination(
+      'AI 助手',
+      Icons.auto_awesome_outlined,
+      (_, active) => AiPage(active: active),
+    ),
+    _Destination('进程', Icons.memory_outlined, (_, _) => const ProcessesPage()),
+    _Destination('文件', Icons.folder_open_outlined, (_, _) => const FilesPage()),
+    _Destination('回收站', Icons.delete_outline, (_, _) => const RecyclePage()),
+    _Destination(
+      '终端',
+      Icons.terminal_outlined,
+      (_, active) => TerminalPage(autoConnect: active),
+    ),
+    _Destination(
+      '端口穿透',
+      Icons.swap_horiz,
+      (_, active) => TunnelsPage(active: active),
+    ),
     _Destination(
       '服务',
       Icons.settings_suggest_outlined,
-      (_) => const ServicesPage(),
+      (_, _) => const ServicesPage(),
     ),
-    _Destination('网站', Icons.public_outlined, (_) => const SitesPage()),
-    _Destination('容器', Icons.widgets_outlined, (_) => const DockerPage()),
-    _Destination('应用商店', Icons.storefront_outlined, (_) => const StorePage()),
-    _Destination('运行环境', Icons.hub_outlined, (_) => const RuntimesPage()),
-    _Destination('软件', Icons.inventory_2_outlined, (_) => const SoftwarePage()),
-    _Destination('SSH', Icons.vpn_key_outlined, (_) => const SshPage()),
-    _Destination('WAF', Icons.security_outlined, (_) => const WafPage()),
-    _Destination('防火墙', Icons.shield_outlined, (_) => const FirewallPage()),
-    _Destination('计划任务', Icons.schedule_outlined, (_) => const CronPage()),
-    _Destination('日志', Icons.receipt_long_outlined, (_) => const LogsPage()),
-    _Destination('设置', Icons.tune_outlined, (_) => const SettingsPage()),
+    _Destination('网站', Icons.public_outlined, (_, _) => const SitesPage()),
+    _Destination('容器', Icons.widgets_outlined, (_, _) => const DockerPage()),
+    _Destination(
+      '应用商店',
+      Icons.storefront_outlined,
+      (_, _) => const StorePage(),
+    ),
+    _Destination('运行环境', Icons.hub_outlined, (_, _) => const RuntimesPage()),
+    _Destination(
+      '主机管理',
+      Icons.dns_outlined,
+      (_, _) => HostsPage(onSwitchHost: widget.onSwitchHost),
+    ),
+    _Destination(
+      '软件',
+      Icons.inventory_2_outlined,
+      (_, _) => const SoftwarePage(),
+    ),
+    _Destination('SSH', Icons.vpn_key_outlined, (_, _) => const SshPage()),
+    _Destination('WAF', Icons.security_outlined, (_, _) => const WafPage()),
+    _Destination('防火墙', Icons.shield_outlined, (_, _) => const FirewallPage()),
+    _Destination('计划任务', Icons.schedule_outlined, (_, _) => const CronPage()),
+    _Destination('日志', Icons.receipt_long_outlined, (_, _) => const LogsPage()),
+    _Destination('设置', Icons.tune_outlined, (_, _) => const SettingsPage()),
   ];
+
+  int _hostIndex() {
+    for (var i = 0; i < _destinations.length; i++) {
+      if (_destinations[i].label == '主机管理') return i;
+    }
+    return 0;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -87,52 +128,55 @@ class _PanelShellState extends State<PanelShell> {
             ),
             child: Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        color: hampanelInk,
-                        child: Icon(
-                          Icons.dns_outlined,
-                          color: hampanelSurface,
-                          size: 19,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      const Expanded(
-                        child: Text(
-                          'HAMPANEL',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.6,
+                SizedBox(
+                  height: 56,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 30,
+                          height: 30,
+                          color: hampanelInk,
+                          child: Icon(
+                            Icons.dns_outlined,
+                            color: hampanelSurface,
+                            size: 18,
                           ),
                         ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: hampanelInk, width: 1.2),
-                        ),
-                        child: Text(
-                          'v$fullClientVersion',
-                          style: TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 9.5,
-                            color: hampanelMuted,
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'HAMPANEL',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.6,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: hampanelInk, width: 1.2),
+                          ),
+                          child: Text(
+                            'v$fullClientVersion',
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 9.5,
+                              color: hampanelMuted,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const Divider(),
+                const Divider(height: 2, thickness: 2),
                 Expanded(
                   child: ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -197,35 +241,20 @@ class _PanelShellState extends State<PanelShell> {
                     },
                   ),
                 ),
-                const Divider(),
                 Container(
                   decoration: BoxDecoration(
-                    border: Border(top: BorderSide(color: hampanelInk, width: 2)),
+                    border: Border(
+                      top: BorderSide(color: hampanelInk, width: 2),
+                    ),
                   ),
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.lock,
-                            size: 13,
-                            color: hampanelAccent,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              session.enrollment.endpoint,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 10.5,
-                                color: hampanelMuted,
-                              ),
-                            ),
-                          ),
-                        ],
+                      _HostSwitcher(
+                        hosts: session.hosts,
+                        onSwitchHost: widget.onSwitchHost,
+                        onManage: () => setState(() => _index = _hostIndex()),
                       ),
                       const SizedBox(height: 8),
                       SizedBox(
@@ -302,10 +331,11 @@ class _PanelShellState extends State<PanelShell> {
                 ),
                 Expanded(
                   child: IndexedStack(
+                    key: ValueKey('pages-${widget.sessionKey}'),
                     index: _index,
                     children: [
-                      for (final destination in _destinations)
-                        destination.builder(context),
+                      for (final (index, destination) in _destinations.indexed)
+                        destination.builder(context, index == _index),
                     ],
                   ),
                 ),
@@ -313,6 +343,128 @@ class _PanelShellState extends State<PanelShell> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HostSwitcher extends StatelessWidget {
+  const _HostSwitcher({
+    required this.hosts,
+    required this.onSwitchHost,
+    required this.onManage,
+  });
+
+  final HostStore hosts;
+  final Future<void> Function(HostRecord host) onSwitchHost;
+  final VoidCallback onManage;
+
+  @override
+  Widget build(BuildContext context) {
+    final records = hosts.list();
+    final active = hosts.active();
+    final alias = active?.alias ?? '未选择主机';
+    final endpoint = active?.enrollment.endpoint ?? '-';
+    return PopupMenuButton<String>(
+      tooltip: '切换主机',
+      position: PopupMenuPosition.over,
+      onSelected: (value) {
+        if (value == '__manage__') {
+          onManage();
+          return;
+        }
+        for (final record in records) {
+          if (record.id != value) continue;
+          onSwitchHost(record);
+        }
+      },
+      itemBuilder: (context) => [
+        for (final record in records)
+          PopupMenuItem(
+            value: record.id,
+            child: Row(
+              children: [
+                Icon(
+                  record.id == active?.id
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off,
+                  size: 14,
+                  color: record.id == active?.id
+                      ? hampanelAccent
+                      : hampanelMuted,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    record.alias,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Text(
+                  record.enrollment.endpoint,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 9.5,
+                    color: hampanelMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+          value: '__manage__',
+          child: Row(
+            children: [
+              Icon(Icons.settings_outlined, size: 14),
+              SizedBox(width: 8),
+              Text('管理主机…', style: TextStyle(fontSize: 12.5)),
+            ],
+          ),
+        ),
+      ],
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          border: Border.all(color: hampanelInk, width: 1.2),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.lock, size: 13, color: hampanelAccent),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    alias,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    endpoint,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 9.5,
+                      color: hampanelMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.unfold_more, size: 13, color: hampanelMuted),
+          ],
+        ),
       ),
     );
   }

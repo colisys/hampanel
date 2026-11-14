@@ -264,6 +264,11 @@ fn cmdInit(allocator: std.mem.Allocator, opts: *Options) !u8 {
     try compat.cwd().makePath(cfg.data_dir);
     try cfg.save(a, opts.config_path);
 
+    const db_path = try db.pathFor(a, cfg.data_dir);
+    var database = try db.Db.open(db_path);
+    defer database.close();
+    try migrations.migrate(a, &database);
+
     const meta = try pki.initialize(a, cfg.tls_dir, endpoint, opts.sans.items, opts.force);
     const paths = try pki.paths(a, cfg.tls_dir);
     const bundle = try enroll.build(a, meta, paths, endpoint, cfg.entry_prefix);
@@ -332,7 +337,7 @@ fn cmdUpdate(allocator: std.mem.Allocator, opts: *Options) !u8 {
     const db_path = try db.pathFor(a, cfg.data_dir);
     var database = try db.Db.open(db_path);
     defer database.close();
-    try migrations.migrate(&database);
+    try migrations.migrate(a, &database);
 
     if (opts.install_schedule) {
         const self_exe = try compat.selfExePathAlloc(a);
@@ -433,7 +438,7 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     const db_path = try db.pathFor(a, cfg.data_dir);
     var database = try db.Db.open(db_path);
     defer database.close();
-    try migrations.migrate(&database);
+    try migrations.migrate(a, &database);
 
     const audit_log = try audit.Log.init(allocator, &database);
     var app = app_mod.App{

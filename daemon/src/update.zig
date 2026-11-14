@@ -511,7 +511,7 @@ test "state stored in sqlite" {
     defer allocator.free(db_path);
     var database = try db.Db.open(db_path);
     defer database.close();
-    try @import("migrations.zig").migrate(&database);
+    try @import("migrations.zig").migrate(allocator, &database);
 
     const state = State{
         .checked_at = 123,

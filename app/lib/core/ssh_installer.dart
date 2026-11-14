@@ -23,6 +23,7 @@ class SshInstallRequest {
     this.panelPort,
     this.mirror,
     this.githubMirror,
+    this.alias,
     this.extraSans = const [],
   });
 
@@ -39,6 +40,7 @@ class SshInstallRequest {
   final int? panelPort;
   final String? mirror;
   final String? githubMirror;
+  final String? alias;
   final List<String> extraSans;
 
   String get effectiveEndpoint {
