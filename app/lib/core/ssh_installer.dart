@@ -78,6 +78,26 @@ bool isVersionRef(String ref) {
   return parts.every((part) => part.isNotEmpty && int.tryParse(part) != null);
 }
 
+/// URL of the installer script. Source installs fetch the script from the same
+/// ref that will be built, so fixes in the branch apply immediately instead of
+/// depending on the last published release asset.
+String installerScriptUrlFor(
+  SshInstallRequest request, {
+  required String asset,
+  required String rawPath,
+  String? override,
+}) {
+  if (override != null) return '$override/$asset';
+  if (request.mode == 'source') {
+    final ref = request.sourceRef.trim();
+    final kind = isVersionRef(ref) ? 'tags' : 'heads';
+    final raw =
+        'https://github.com/colisys/hampanel/raw/refs/$kind/$ref/$rawPath';
+    return _mirrorUrl(raw, request.githubMirror);
+  }
+  return '${releaseBaseFor(request)}/$asset';
+}
+
 /// Release base (without trailing slash) for the installer script. Mirrors are
 /// applied once and skipped for already-prefixed URLs.
 String releaseBaseFor(SshInstallRequest request, {String? override}) {
@@ -190,7 +210,12 @@ class SshInstaller {
   }
 
   String _linuxCommand(SshInstallRequest request, bool sudo) {
-    final url = '${_releaseBase(request)}/hampanel-install-linux.sh';
+    final url = installerScriptUrlFor(
+      request,
+      asset: 'hampanel-install-linux.sh',
+      rawPath: 'deploy/install.sh',
+      override: _releaseOverride,
+    );
     final args = <String>[
       '--mode',
       request.mode,
@@ -214,13 +239,12 @@ class SshInstaller {
       for (final san in request.extraSans) ...['--san', san],
     ];
     final override = _releaseOverride;
-    final runner = sudo
-        ? (override == null
-              ? 'sudo -n '
-              : 'sudo -n env HAMPANEL_RELEASE_BASE=${_shellQuote(override)} ')
-        : (override == null
-              ? ''
-              : 'env HAMPANEL_RELEASE_BASE=${_shellQuote(override)} ');
+    final env = <String>[
+      'HAMPANEL_SOURCE_BASE=',
+      if (override != null)
+        'HAMPANEL_RELEASE_BASE=${_shellQuote(override)}',
+    ];
+    final runner = '${sudo ? 'sudo -n ' : ''}env ${env.join(' ')} ';
     return 'set -e\n'
         'tmp="\$(mktemp)"\n'
         'curl -fsSL -A ${_shellQuote(linuxUserAgent)} ${_shellQuote(url)} -o "\$tmp"\n'
@@ -228,7 +252,12 @@ class SshInstaller {
   }
 
   String _windowsCommand(SshInstallRequest request) {
-    final url = '${_releaseBase(request)}/hampanel-install-windows.ps1';
+    final url = installerScriptUrlFor(
+      request,
+      asset: 'hampanel-install-windows.ps1',
+      rawPath: 'deploy/windows/install.ps1',
+      override: _releaseOverride,
+    );
     final args = <String>[
       '-Mode',
       request.mode,
@@ -299,9 +328,6 @@ Invoke-WebRequest -UseBasicParsing -Uri '${_psQuote(url)}' -OutFile "\$dir\\inst
     stderr.flush();
     return session.exitCode ?? -1;
   }
-
-  String _releaseBase(SshInstallRequest request) =>
-      releaseBaseFor(request, override: _releaseOverride);
 
   String? get _releaseOverride {
     final value = Platform.environment['HAMPANEL_RELEASE_BASE'];
