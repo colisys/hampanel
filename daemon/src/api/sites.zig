@@ -4,6 +4,8 @@ const context = @import("context.zig");
 const platform = @import("../platform/mod.zig");
 const validate = @import("shared").validate;
 const errutil = @import("../util/errors.zig");
+const log = @import("../log.zig");
+const redact = @import("../util/redact.zig");
 
 pub fn index(ctx: *context.Context) anyerror!void {
     const list = platform.sites.list(ctx.arena) catch |err| {
@@ -58,6 +60,13 @@ pub fn create(ctx: *context.Context) anyerror!void {
     };
 
     if (!outcome.ok) ctx.response.status = 400;
+    var name_buf: [96]u8 = undefined;
+    const safe_name = redact.text(&name_buf, body.name);
+    if (outcome.ok) {
+        log.info("sites: created name={s} domains={d}", .{ safe_name, body.domains.len });
+    } else {
+        log.warn("sites: create failed name={s}", .{safe_name});
+    }
     try ctx.json(.{
         .name = body.name,
         .ok = outcome.ok,
@@ -93,6 +102,13 @@ pub fn toggle(ctx: *context.Context) anyerror!void {
     };
 
     if (!outcome.ok) ctx.response.status = 400;
+    var name_buf: [96]u8 = undefined;
+    const safe_name = redact.text(&name_buf, name);
+    if (outcome.ok) {
+        log.info("sites: toggle name={s} enabled={}", .{ safe_name, body.enabled });
+    } else {
+        log.warn("sites: toggle failed name={s} enabled={}", .{ safe_name, body.enabled });
+    }
     try ctx.json(.{ .name = name, .enabled = body.enabled, .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -118,6 +134,13 @@ pub fn destroy(ctx: *context.Context) anyerror!void {
     };
 
     if (!outcome.ok) ctx.response.status = 400;
+    var name_buf: [96]u8 = undefined;
+    const safe_name = redact.text(&name_buf, name);
+    if (outcome.ok) {
+        log.info("sites: removed name={s}", .{safe_name});
+    } else {
+        log.warn("sites: destroy failed name={s}", .{safe_name});
+    }
     try ctx.json(.{ .name = name, .removed = true, .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -132,6 +155,11 @@ pub fn reload(ctx: *context.Context) anyerror!void {
     };
 
     if (!outcome.ok) ctx.response.status = 502;
+    if (outcome.ok) {
+        log.info("sites: reloaded", .{});
+    } else {
+        log.warn("sites: reload failed", .{});
+    }
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 

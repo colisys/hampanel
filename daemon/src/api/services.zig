@@ -3,6 +3,8 @@ const context = @import("context.zig");
 const notify = @import("../notify.zig");
 const platform = @import("../platform/mod.zig");
 const validate = @import("shared").validate;
+const log = @import("../log.zig");
+const redact = @import("../util/redact.zig");
 
 pub fn index(ctx: *context.Context) anyerror!void {
     const services = platform.services.list(ctx.arena) catch |err| {
@@ -43,6 +45,12 @@ pub fn action(ctx: *context.Context) anyerror!void {
     };
 
     if (!outcome.ok) ctx.response.status = 502;
+    var unit_buf: [96]u8 = undefined;
+    if (outcome.ok) {
+        log.info("services: {s} unit={s}", .{ action_name, redact.text(&unit_buf, unit) });
+    } else {
+        log.warn("services: {s} failed unit={s}", .{ action_name, redact.text(&unit_buf, unit) });
+    }
     if (std.mem.eql(u8, action_name, "restart") and outcome.ok) {
         const body = std.fmt.allocPrint(ctx.arena, "服务 {s} 已重启", .{unit}) catch "服务已重启";
         notify.emit(ctx.app.db, .service_restart, "服务重启", body);

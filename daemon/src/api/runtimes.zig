@@ -4,6 +4,8 @@ const catalog = @import("../runtime/catalog.zig");
 const environments = @import("../runtime/environments.zig");
 const docker_settings = @import("../runtime/docker_settings.zig");
 const exec = @import("shared").exec;
+const log = @import("../log.zig");
+const redact = @import("../util/redact.zig");
 
 const ExtensionView = struct { id: []const u8, label: []const u8 };
 const ConfigView = struct { name: []const u8, container_path: []const u8 };
@@ -171,6 +173,19 @@ pub fn create(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!result.ok) ctx.response.status = 502;
+    var name_buf: [96]u8 = undefined;
+    var runtime_buf: [96]u8 = undefined;
+    if (result.ok) {
+        log.info("runtimes: created name={s} runtime={s}", .{
+            redact.text(&name_buf, body.name),
+            redact.text(&runtime_buf, body.runtime),
+        });
+    } else {
+        log.warn("runtimes: create failed name={s} runtime={s}", .{
+            redact.text(&name_buf, body.name),
+            redact.text(&runtime_buf, body.runtime),
+        });
+    }
     try ctx.json(.{
         .ok = result.ok,
         .output = result.output,
@@ -208,6 +223,12 @@ fn action(ctx: *context.Context, name: []const u8) !void {
         else => unreachable,
     };
     if (!outcome.ok) ctx.response.status = 502;
+    var id_buf: [96]u8 = undefined;
+    if (outcome.ok) {
+        log.info("runtimes: {s} id={s}", .{ name, redact.text(&id_buf, id) });
+    } else {
+        log.warn("runtimes: {s} failed id={s}", .{ name, redact.text(&id_buf, id) });
+    }
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -218,6 +239,12 @@ pub fn rebuild(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 502;
+    var id_buf: [96]u8 = undefined;
+    if (outcome.ok) {
+        log.info("runtimes: rebuilt id={s}", .{redact.text(&id_buf, id)});
+    } else {
+        log.warn("runtimes: rebuild failed id={s}", .{redact.text(&id_buf, id)});
+    }
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -232,6 +259,12 @@ pub fn remove(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 502;
+    var id_buf: [96]u8 = undefined;
+    if (outcome.ok) {
+        log.info("runtimes: removed id={s} volumes={}", .{ redact.text(&id_buf, id), volumes });
+    } else {
+        log.warn("runtimes: remove failed id={s}", .{redact.text(&id_buf, id)});
+    }
     try ctx.json(.{ .ok = outcome.ok, .removed = outcome.ok, .output = outcome.output });
 }
 
@@ -285,6 +318,20 @@ pub fn configSave(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 502;
+    var id_buf: [96]u8 = undefined;
+    var file_buf: [96]u8 = undefined;
+    // Config contents can hold credentials; only the file name is logged.
+    if (outcome.ok) {
+        log.info("runtimes: config saved id={s} file={s}", .{
+            redact.text(&id_buf, id),
+            redact.text(&file_buf, body.file),
+        });
+    } else {
+        log.warn("runtimes: config save failed id={s} file={s}", .{
+            redact.text(&id_buf, id),
+            redact.text(&file_buf, body.file),
+        });
+    }
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -318,6 +365,15 @@ pub fn extensionsSave(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 502;
+    var ext_id_buf: [96]u8 = undefined;
+    if (outcome.ok) {
+        log.info("runtimes: extensions saved id={s} count={d}", .{
+            redact.text(&ext_id_buf, id),
+            body.extensions.len,
+        });
+    } else {
+        log.warn("runtimes: extensions save failed id={s}", .{redact.text(&ext_id_buf, id)});
+    }
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -351,6 +407,21 @@ pub fn processAction(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 502;
+    var id_buf: [96]u8 = undefined;
+    var name_buf: [96]u8 = undefined;
+    if (outcome.ok) {
+        log.info("runtimes: process {s} id={s} name={s}", .{
+            action_name,
+            redact.text(&id_buf, id),
+            redact.text(&name_buf, name),
+        });
+    } else {
+        log.warn("runtimes: process {s} failed id={s} name={s}", .{
+            action_name,
+            redact.text(&id_buf, id),
+            redact.text(&name_buf, name),
+        });
+    }
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -400,6 +471,7 @@ pub fn dockerSettingsSave(ctx: *context.Context) anyerror!void {
     const snapshot = std.json.Stringify.valueAlloc(ctx.arena, body, .{}) catch "";
     ctx.app.db.setSetting("docker.settings", snapshot) catch {};
     if (!outcome.ok) ctx.response.status = 502;
+    log.info("docker: settings saved restart={} ok={}", .{ body.restart, outcome.ok });
     try ctx.json(.{
         .ok = outcome.ok,
         .output = outcome.output,

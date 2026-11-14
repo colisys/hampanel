@@ -2,6 +2,8 @@ const std = @import("std");
 const context = @import("context.zig");
 const versions = @import("../versions.zig");
 const errutil = @import("../util/errors.zig");
+const log = @import("../log.zig");
+const redact = @import("../util/redact.zig");
 
 pub fn list(ctx: *context.Context) anyerror!void {
     const path = try requirePath(ctx);
@@ -71,6 +73,12 @@ pub fn restore(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
+    var path_buf: [96]u8 = undefined;
+    var id_buf: [96]u8 = undefined;
+    log.info("versions: restored path={s} id={s}", .{
+        redact.text(&path_buf, body.path),
+        redact.text(&id_buf, body.id),
+    });
     try ctx.json(outcome);
 }
 

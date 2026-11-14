@@ -5,6 +5,8 @@ const platform = @import("../platform/mod.zig");
 const recycle = @import("../recycle.zig");
 const versions = @import("../versions.zig");
 const http_response = @import("../http/response.zig");
+const log = @import("../log.zig");
+const redact = @import("../util/redact.zig");
 
 const Entry = struct {
     name: []const u8,
@@ -169,6 +171,11 @@ pub fn write(ctx: *context.Context) anyerror!void {
     try file.writeAll(decoded);
 
     const Result = struct { path: []const u8, size: usize };
+    var path_buf: [96]u8 = undefined;
+    log.info("files: wrote path={s} bytes={d}", .{
+        redact.text(&path_buf, path),
+        decoded.len,
+    });
     try ctx.json(Result{ .path = path, .size = decoded.len });
 }
 
@@ -195,6 +202,8 @@ pub fn mkdir(ctx: *context.Context) anyerror!void {
         };
     }
     const Result = struct { path: []const u8 };
+    var path_buf: [96]u8 = undefined;
+    log.info("files: mkdir path={s}", .{redact.text(&path_buf, path)});
     try ctx.json(Result{ .path = path });
 }
 
@@ -215,6 +224,12 @@ pub fn rename(ctx: *context.Context) anyerror!void {
         return;
     };
     const Result = struct { from: []const u8, to: []const u8 };
+    var from_buf: [96]u8 = undefined;
+    var to_buf: [96]u8 = undefined;
+    log.info("files: renamed from={s} to={s}", .{
+        redact.text(&from_buf, from),
+        redact.text(&to_buf, to),
+    });
     try ctx.json(Result{ .from = from, .to = to });
 }
 
@@ -252,6 +267,12 @@ pub fn delete(ctx: *context.Context) anyerror!void {
             .recycle_id = entry.id,
         });
     }
+
+    var moved: usize = 0;
+    for (results.items) |entry| {
+        if (entry.ok) moved += 1;
+    }
+    log.info("files: delete moved={d} failed={d}", .{ moved, results.items.len - moved });
 
     try ctx.json(.{ .results = results.items });
 }
@@ -323,6 +344,11 @@ pub fn upload(ctx: *context.Context) anyerror!void {
         return;
     };
 
+    var path_buf: [96]u8 = undefined;
+    log.info("files: uploaded path={s} bytes={d}", .{
+        redact.text(&path_buf, path),
+        ctx.req.body.len,
+    });
     try ctx.json(.{ .path = path, .size = ctx.req.body.len });
 }
 

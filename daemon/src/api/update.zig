@@ -3,6 +3,8 @@ const compat = @import("compat");
 const context = @import("context.zig");
 const update = @import("../update.zig");
 const version = @import("../version.zig");
+const log = @import("../log.zig");
+const redact = @import("../util/redact.zig");
 
 pub fn index(ctx: *context.Context) anyerror!void {
     const cfg = ctx.app.config;
@@ -22,6 +24,11 @@ pub fn index(ctx: *context.Context) anyerror!void {
 
 pub fn check(ctx: *context.Context) anyerror!void {
     const state = update.check(ctx.arena, ctx.app.db, ctx.app.config);
+    log.info("update: checked current={s} latest={s} available={}", .{
+        state.current_version,
+        state.latest_version,
+        state.update_available,
+    });
     try ctx.json(.{
         .current_version = state.current_version,
         .latest_version = state.latest_version,
@@ -50,6 +57,11 @@ pub fn apply(ctx: *context.Context) anyerror!void {
             return;
         },
     };
+    var message_buf: [96]u8 = undefined;
+    log.info("update: applied updated={} message={s}", .{
+        outcome.updated,
+        redact.text(&message_buf, outcome.message),
+    });
     try ctx.json(.{ .ok = outcome.updated, .message = outcome.message });
 }
 
@@ -74,6 +86,7 @@ pub fn schedule(ctx: *context.Context) anyerror!void {
         ctx.fail(502, "schedule_failed", outcome.message);
         return;
     }
+    log.info("update: schedule installed", .{});
     try ctx.json(.{ .ok = true, .scheduled = true, .message = outcome.message });
 }
 
@@ -82,5 +95,6 @@ pub fn unschedule(ctx: *context.Context) anyerror!void {
         ctx.fail(502, "schedule_failed", @errorName(err));
         return;
     };
+    log.info("update: schedule removed", .{});
     try ctx.json(.{ .ok = true, .scheduled = false, .message = outcome.message });
 }

@@ -3,6 +3,8 @@ const context = @import("context.zig");
 const platform = @import("../platform/mod.zig");
 const errutil = @import("../util/errors.zig");
 const update = @import("../update.zig");
+const log = @import("../log.zig");
+const redact = @import("../util/redact.zig");
 
 pub fn index(ctx: *context.Context) anyerror!void {
     const entries = platform.cron.list(ctx.arena) catch |err| {
@@ -45,6 +47,14 @@ pub fn add(ctx: *context.Context) anyerror!void {
     };
 
     if (!outcome.ok) ctx.response.status = 502;
+    var schedule_buf: [96]u8 = undefined;
+    // The command is arbitrary shell text and can embed credentials, so only
+    // the schedule is logged.
+    if (outcome.ok) {
+        log.info("cron: added schedule={s}", .{redact.text(&schedule_buf, body.schedule)});
+    } else {
+        log.warn("cron: add failed schedule={s}", .{redact.text(&schedule_buf, body.schedule)});
+    }
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -71,6 +81,12 @@ pub fn remove(ctx: *context.Context) anyerror!void {
     };
 
     if (!outcome.ok) ctx.response.status = 502;
+    var id_buf: [96]u8 = undefined;
+    if (outcome.ok) {
+        log.info("cron: removed id={s}", .{redact.text(&id_buf, body.id)});
+    } else {
+        log.warn("cron: remove failed id={s}", .{redact.text(&id_buf, body.id)});
+    }
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 

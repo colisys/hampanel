@@ -2,6 +2,8 @@ const std = @import("std");
 const context = @import("context.zig");
 const recycle = @import("../recycle.zig");
 const errutil = @import("../util/errors.zig");
+const log = @import("../log.zig");
+const redact = @import("../util/redact.zig");
 
 pub fn list(ctx: *context.Context) anyerror!void {
     const entries = recycle.list(ctx.arena, ctx.app.config.data_dir) catch |err| {
@@ -21,6 +23,8 @@ pub fn restore(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
+    var id_buf: [96]u8 = undefined;
+    log.info("recycle: restored id={s}", .{redact.text(&id_buf, body.id)});
     try ctx.json(outcome);
 }
 
@@ -34,6 +38,8 @@ pub fn purge(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
+    var id_buf: [96]u8 = undefined;
+    log.info("recycle: purged id={s}", .{redact.text(&id_buf, body.id)});
     try ctx.json(outcome);
 }
 
@@ -42,6 +48,7 @@ pub fn empty(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
+    log.info("recycle: emptied", .{});
     try ctx.json(outcome);
 }
 

@@ -3,6 +3,8 @@ const context = @import("context.zig");
 const platform = @import("../platform/mod.zig");
 const validate = @import("shared").validate;
 const errutil = @import("../util/errors.zig");
+const log = @import("../log.zig");
+const redact = @import("../util/redact.zig");
 
 pub fn index(ctx: *context.Context) anyerror!void {
     const status = platform.firewall.status(ctx.arena) catch |err| {
@@ -50,6 +52,13 @@ pub fn add(ctx: *context.Context) anyerror!void {
     };
 
     if (!outcome.ok) ctx.response.status = 502;
+    var source_buf: [96]u8 = undefined;
+    const source = if (body.from.len == 0) "any" else redact.text(&source_buf, body.from);
+    if (outcome.ok) {
+        log.info("firewall: added action={s} port={s} source={s}", .{ body.action, body.port, source });
+    } else {
+        log.warn("firewall: add failed action={s} port={s}", .{ body.action, body.port });
+    }
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -74,6 +83,12 @@ pub fn remove(ctx: *context.Context) anyerror!void {
     };
 
     if (!outcome.ok) ctx.response.status = 502;
+    var id_buf: [96]u8 = undefined;
+    if (outcome.ok) {
+        log.info("firewall: removed id={s}", .{redact.text(&id_buf, body.id)});
+    } else {
+        log.warn("firewall: remove failed id={s}", .{redact.text(&id_buf, body.id)});
+    }
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 

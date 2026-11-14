@@ -2,6 +2,8 @@ const std = @import("std");
 const context = @import("context.zig");
 const platform = @import("../platform/mod.zig");
 const errutil = @import("../util/errors.zig");
+const log = @import("../log.zig");
+const redact = @import("../util/redact.zig");
 
 pub fn list(ctx: *context.Context) anyerror!void {
     const items = platform.software.list(ctx.arena, ctx.app.config.data_dir) catch |err| {
@@ -20,6 +22,12 @@ pub fn initialize(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
+    var id_buf: [96]u8 = undefined;
+    if (outcome.ok) {
+        log.info("software: initialized id={s}", .{redact.text(&id_buf, id)});
+    } else {
+        log.warn("software: initialize failed id={s}", .{redact.text(&id_buf, id)});
+    }
     try ctx.json(outcome);
 }
 
@@ -41,6 +49,12 @@ pub fn fail2banBan(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
+    var jail_buf: [96]u8 = undefined;
+    if (outcome.ok) {
+        log.info("fail2ban: ban jail={s} ip={s}", .{ redact.text(&jail_buf, body.jail), body.ip });
+    } else {
+        log.warn("fail2ban: ban failed jail={s} ip={s}", .{ redact.text(&jail_buf, body.jail), body.ip });
+    }
     try ctx.json(outcome);
 }
 
@@ -54,6 +68,12 @@ pub fn fail2banUnban(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
+    var jail_buf: [96]u8 = undefined;
+    if (outcome.ok) {
+        log.info("fail2ban: unban jail={s} ip={s}", .{ redact.text(&jail_buf, body.jail), body.ip });
+    } else {
+        log.warn("fail2ban: unban failed jail={s} ip={s}", .{ redact.text(&jail_buf, body.jail), body.ip });
+    }
     try ctx.json(outcome);
 }
 
@@ -77,6 +97,11 @@ pub fn fail2banLimits(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
+    log.info("fail2ban: limits maxretry={d} bantime={d} findtime={d}", .{
+        body.maxretry,
+        body.bantime,
+        body.findtime,
+    });
     try ctx.json(outcome);
 }
 

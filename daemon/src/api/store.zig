@@ -4,6 +4,7 @@ const catalog = @import("../store/catalog.zig");
 const store = @import("../store/apps.zig");
 const platform = @import("../platform/mod.zig");
 const errutil = @import("../util/errors.zig");
+const log = @import("../log.zig");
 
 const AppView = struct {
     slug: []const u8,
@@ -77,6 +78,12 @@ pub fn deploy(ctx: *context.Context) anyerror!void {
     };
 
     if (!result.ok) ctx.response.status = 502;
+    // Deployment params can carry passwords and API keys; they are never logged.
+    if (result.ok) {
+        log.info("store: deployed slug={s}", .{app.slug});
+    } else {
+        log.warn("store: deploy failed slug={s}", .{app.slug});
+    }
     try ctx.json(.{
         .ok = result.ok,
         .output = result.output,
@@ -108,6 +115,11 @@ fn simpleAction(ctx: *context.Context, start_app: bool) !void {
         };
 
     if (!outcome.ok) ctx.response.status = 502;
+    if (outcome.ok) {
+        log.info("store: {s} slug={s}", .{ if (start_app) "started" else "stopped", app.slug });
+    } else {
+        log.warn("store: {s} failed slug={s}", .{ if (start_app) "start" else "stop", app.slug });
+    }
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -138,6 +150,11 @@ pub fn remove(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 502;
+    if (outcome.ok) {
+        log.info("store: removed slug={s} volumes={}", .{ app.slug, volumes });
+    } else {
+        log.warn("store: remove failed slug={s}", .{app.slug});
+    }
     try ctx.json(.{ .ok = outcome.ok, .removed = outcome.ok, .output = outcome.output });
 }
 
@@ -163,6 +180,7 @@ pub fn installPackage(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 502;
+    log.info("store: package install id={s} ok={}", .{ id, outcome.ok });
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -172,6 +190,7 @@ pub fn refreshPackages(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 502;
+    log.info("store: package index refreshed ok={}", .{outcome.ok});
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -198,6 +217,7 @@ pub fn nixBuild(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 502;
+    log.info("nix: build target={s} ok={}", .{ body.target, outcome.ok });
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -215,6 +235,7 @@ pub fn nixRun(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 502;
+    log.info("nix: run target={s} args={d} ok={}", .{ body.target, body.args.len, outcome.ok });
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 

@@ -3,6 +3,7 @@ const context = @import("context.zig");
 const notify = @import("../notify.zig");
 const exec = @import("shared").exec;
 const validate = @import("shared").validate;
+const log = @import("../log.zig");
 
 const max_output = 8 * 1024 * 1024;
 
@@ -129,6 +130,11 @@ pub fn action(ctx: *context.Context) anyerror!void {
         output: []const u8,
     };
     if (!result.ok()) ctx.response.status = 502;
+    if (result.ok()) {
+        log.info("docker: {s} container={s}", .{ action_name, id });
+    } else {
+        log.warn("docker: {s} failed container={s}", .{ action_name, id });
+    }
     if (std.mem.eql(u8, action_name, "restart") and result.ok()) {
         const body = std.fmt.allocPrint(ctx.arena, "容器 {s} 已重启", .{id}) catch "容器已重启";
         notify.emit(ctx.app.db, .docker_restart, "容器重启", body);

@@ -2,6 +2,8 @@ const std = @import("std");
 const context = @import("context.zig");
 const platform = @import("../platform/mod.zig");
 const errutil = @import("../util/errors.zig");
+const log = @import("../log.zig");
+const redact = @import("../util/redact.zig");
 
 pub fn status(ctx: *context.Context) anyerror!void {
     const value = platform.ssh.status(ctx.arena) catch |err| {
@@ -34,6 +36,13 @@ pub fn apply(ctx: *context.Context) anyerror!void {
         return;
     };
 
+    var mode_buf: [96]u8 = undefined;
+    log.info("ssh: config applied port={d} root_login={s} password={} pubkey={}", .{
+        body.port,
+        redact.text(&mode_buf, body.permit_root_login),
+        body.password_authentication,
+        body.pubkey_authentication,
+    });
     try ctx.json(outcome);
 }
 
@@ -62,6 +71,17 @@ pub fn addKey(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 400;
+    var user_buf: [96]u8 = undefined;
+    var comment_buf: [96]u8 = undefined;
+    // Key material is never logged; only the owning user and the comment.
+    if (outcome.ok) {
+        log.info("ssh: key added user={s} comment={s}", .{
+            redact.text(&user_buf, body.user),
+            redact.text(&comment_buf, body.comment),
+        });
+    } else {
+        log.warn("ssh: key add failed user={s}", .{redact.text(&user_buf, body.user)});
+    }
     try ctx.json(outcome);
 }
 
@@ -77,6 +97,18 @@ pub fn removeKey(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 400;
+    var user_buf: [96]u8 = undefined;
+    if (outcome.ok) {
+        log.info("ssh: key removed user={s} index={d}", .{
+            redact.text(&user_buf, body.user),
+            body.index,
+        });
+    } else {
+        log.warn("ssh: key remove failed user={s} index={d}", .{
+            redact.text(&user_buf, body.user),
+            body.index,
+        });
+    }
     try ctx.json(outcome);
 }
 
@@ -98,6 +130,8 @@ pub fn setLogging(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
+    var mode_buf: [96]u8 = undefined;
+    log.info("ssh: logging mode={s}", .{redact.text(&mode_buf, body.mode)});
     try ctx.json(outcome);
 }
 

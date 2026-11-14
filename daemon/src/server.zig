@@ -13,6 +13,7 @@ const audit = @import("audit.zig");
 const log = @import("log.zig");
 const timeutil = @import("util/time.zig");
 const prefix = @import("util/prefix.zig");
+const redact = @import("util/redact.zig");
 
 pub fn serve(app: *app_mod.App) !void {
     const io = compat.io();
@@ -83,14 +84,25 @@ fn handleConnection(app: *app_mod.App, connection: std.Io.net.Stream) void {
         const req = http_request.read(&conn, allocator, app.config.max_body_bytes) catch |err| {
             switch (err) {
                 error.EndOfStream, error.Io, error.WouldBlock => return,
-                error.BodyTooLarge => sendPlain(&conn, 413, "payload too large"),
-                error.HeaderTooLarge, error.LineTooLong => sendPlain(&conn, 400, "header too large"),
-                else => sendPlain(&conn, 400, "malformed request"),
+                error.BodyTooLarge => {
+                    log.warn("oversized request from {s}", .{identity.cn()});
+                    sendPlain(&conn, 413, "payload too large");
+                },
+                error.HeaderTooLarge, error.LineTooLong => {
+                    log.warn("oversized headers from {s}", .{identity.cn()});
+                    sendPlain(&conn, 400, "header too large");
+                },
+                else => {
+                    log.warn("malformed request from {s}: {s}", .{ identity.cn(), @errorName(err) });
+                    sendPlain(&conn, 400, "malformed request");
+                },
             }
             return;
         };
 
         const route_path = prefix.strip(app.config.entry_prefix, req.path) orelse {
+            // Never log the raw path: the entry prefix is a secret.
+            log.warn("request rejected for {s}: entry prefix mismatch", .{identity.cn()});
             sendNotFound(&conn);
             return;
         };
@@ -123,14 +135,26 @@ fn handleConnection(app: *app_mod.App, connection: std.Io.net.Stream) void {
             .not_found => ctx.fail(404, "not_found", "route not found"),
         }
 
-        if (ctx.hijacked) return;
+        const elapsed = sinceMs(started_ms);
+
+        if (ctx.hijacked) {
+            logRequest(identity.cn(), req.method, route_path, 101, elapsed);
+            return;
+        }
 
         if (!ctx.sent) {
             http_response.write(&conn, ctx.response, req.keep_alive and !ctx.response.close) catch return;
             ctx.sent = true;
         }
 
-        recordAudit(app, ctx, connection, started_ms, route_path, allocator);
+        recordAudit(app, ctx, connection, elapsed, route_path, allocator);
+        // Unmatched paths are client-controlled noise; keep them out of the
+        // access log so log lines cannot be forged or leak probed paths.
+        const logged_target = switch (routed) {
+            .not_found => "-",
+            else => route_path,
+        };
+        logRequest(identity.cn(), req.method, logged_target, ctx.response.status, elapsed);
 
         if (ctx.req.header("x-hampanel-ai") != null and isMutation(ctx.req.method)) {
             var body_buf: [512]u8 = undefined;
@@ -150,14 +174,12 @@ fn recordAudit(
     app: *app_mod.App,
     ctx: context.Context,
     connection: std.Io.net.Stream,
-    started_ms: i64,
+    elapsed: u64,
     route_path: []const u8,
     allocator: std.mem.Allocator,
 ) void {
     var ts_buf: [32]u8 = undefined;
     const peer = std.fmt.allocPrint(allocator, "{f}", .{connection.socket.address}) catch "unknown";
-    const now = compat.milliTimestamp();
-    const elapsed: u64 = if (now >= started_ms) @intCast(now - started_ms) else 0;
     app.audit.append(audit.Entry{
         .at = timeutil.nowIso(&ts_buf),
         .peer = peer,
@@ -166,6 +188,46 @@ fn recordAudit(
         .status = ctx.response.status,
         .duration_ms = elapsed,
     });
+}
+
+fn sinceMs(started_ms: i64) u64 {
+    const now = compat.milliTimestamp();
+    return if (now >= started_ms) @intCast(now - started_ms) else 0;
+}
+
+/// Access log for every routed call. Only the method, the confirmed route
+/// path, the status and the duration are recorded: request bodies, query
+/// strings and headers can carry credentials and never reach the log.
+fn logRequest(
+    peer_cn: []const u8,
+    method: http_request.Method,
+    target: []const u8,
+    status: u16,
+    duration_ms: u64,
+) void {
+    const level: log.Level = if (status >= 500)
+        .err
+    else if (status == 404)
+        .debug
+    else if (status >= 400)
+        .warn
+    else if (isMutation(method))
+        .info
+    else
+        .debug;
+    var cn_buf: [96]u8 = undefined;
+    var target_buf: [96]u8 = undefined;
+    log.write(
+        level,
+        "{s} {s} {s} -> {d} ({d} ms)",
+        .{
+            redact.text(&cn_buf, peer_cn),
+            @tagName(method),
+            redact.text(&target_buf, target),
+            status,
+            duration_ms,
+        },
+    );
 }
 
 fn sendNotFound(conn: *Conn) void {

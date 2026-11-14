@@ -16,6 +16,7 @@ test {
     _ = @import("pki.zig");
     _ = @import("enroll.zig");
     _ = @import("update.zig");
+    _ = @import("util/redact.zig");
     _ = @import("util/time.zig");
     _ = @import("util/url.zig");
     _ = @import("shared").validate;

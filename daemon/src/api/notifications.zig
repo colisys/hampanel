@@ -1,6 +1,7 @@
 const std = @import("std");
 const context = @import("context.zig");
 const notify = @import("../notify.zig");
+const log = @import("../log.zig");
 
 pub fn index(ctx: *context.Context) anyerror!void {
     const config = notify.load(ctx.arena, ctx.app.db);
@@ -20,6 +21,9 @@ pub fn update(ctx: *context.Context) anyerror!void {
         ctx.fail(500, "save_failed", @errorName(err));
         return;
     };
+    // Provider secrets (Bark key, ntfy token) stay out of the log; only the
+    // enabled flags are recorded.
+    log.info("notifications: updated bark={} ntfy={}", .{ body.bark_enabled, body.ntfy_enabled });
     try ctx.json(body);
 }
 
@@ -45,5 +49,6 @@ pub fn testSend(ctx: *context.Context) anyerror!void {
         "Hampanel 测试通知",
         "这是一条来自 Hampanel 的测试推送。",
     );
+    log.info("notifications: test provider={s} ok={}", .{ body.provider, outcome.ok });
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }

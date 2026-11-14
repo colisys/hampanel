@@ -2,6 +2,8 @@ const std = @import("std");
 const context = @import("context.zig");
 const platform = @import("../platform/mod.zig");
 const errutil = @import("../util/errors.zig");
+const log = @import("../log.zig");
+const redact = @import("../util/redact.zig");
 
 pub fn status(ctx: *context.Context) anyerror!void {
     const value = platform.waf.status(ctx.arena, ctx.app.config.data_dir) catch |err| {
@@ -16,6 +18,7 @@ pub fn install(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
+    log.info("waf: installed ok={}", .{outcome.ok});
     try ctx.json(outcome);
 }
 
@@ -70,6 +73,14 @@ pub fn configure(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 400;
+    var mode_buf: [96]u8 = undefined;
+    var host_buf: [96]u8 = undefined;
+    log.info("waf: configured mode={s} listen={s}:{d} ok={}", .{
+        redact.text(&mode_buf, body.mode),
+        redact.text(&host_buf, body.listen_host),
+        body.listen_port,
+        outcome.ok,
+    });
     try ctx.json(outcome);
 }
 
@@ -79,6 +90,7 @@ pub fn start(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) ctx.response.status = 502;
+    log.info("waf: started ok={}", .{outcome.ok});
     try ctx.json(outcome);
 }
 
@@ -87,6 +99,7 @@ pub fn stop(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
+    log.info("waf: stopped ok={}", .{outcome.ok});
     try ctx.json(outcome);
 }
 
@@ -100,6 +113,8 @@ pub fn setTypesafeKey(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
+    // The API key itself is a credential and must never reach the log.
+    log.info("waf: typesafe key updated (redacted) ok={}", .{outcome.ok});
     try ctx.json(outcome);
 }
 
@@ -108,6 +123,7 @@ pub fn clearTypesafeKey(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
+    log.info("waf: typesafe key cleared ok={}", .{outcome.ok});
     try ctx.json(outcome);
 }
 

@@ -34,6 +34,7 @@ pub fn ws(ctx: *context.Context) anyerror!void {
         return;
     };
     ctx.hijacked = true;
+    log.info("terminal: session opened cols={d} rows={d}", .{ cols, rows });
 
     var session = Session{ .term = &term, .conn = ctx.conn };
     const reader = std.Thread.spawn(.{}, readFromTerminal, .{&session}) catch {
