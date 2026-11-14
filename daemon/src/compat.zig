@@ -131,7 +131,13 @@ pub const Dir = struct {
     }
 
     pub fn readFileAlloc(self: Dir, allocator: std.mem.Allocator, sub_path: []const u8, max: usize) ![]u8 {
-        return self.inner.readFileAlloc(io(), sub_path, allocator, .limited(max));
+        // Streaming read: virtual files (procfs/sysfs) report size 0, and the
+        // size-based allocation path then returns empty content.
+        var file = try self.inner.openFile(io(), sub_path, .{});
+        defer file.close(io());
+        var buffer: [16 * 1024]u8 = undefined;
+        var reader = file.readerStreaming(io(), &buffer);
+        return reader.interface.allocRemaining(allocator, .limited(max));
     }
 
     pub fn makePath(self: Dir, sub_path: []const u8) !void {

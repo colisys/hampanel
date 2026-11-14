@@ -5,6 +5,7 @@ test {
     _ = @import("compat");
     _ = @import("db.zig");
     _ = @import("migrations.zig");
+    _ = @import("notify.zig");
     _ = @import("runtime/images.zig");
     _ = @import("runtime/environments.zig");
     _ = @import("runtime/docker_settings.zig");

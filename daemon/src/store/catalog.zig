@@ -113,6 +113,30 @@ pub const apps = [_]App{
         },
     },
     .{
+        .slug = "bark",
+        .name = "Bark",
+        .description = "自托管 iOS 推送服务，只监听本机 HTTP 端口。Bark 不支持 mTLS，公网访问请在 WAF 中为它添加一条域名路由（面板内置 Caddy 自动签发受信任证书），或接入你自己的反向代理。",
+        .category = "工具",
+        .icon = "bell",
+        .compose = @embedFile("catalog/bark.yml"),
+        .params = &.{
+            .{ .key = "port", .label = "本机 HTTP 端口", .kind = .port, .default = "8089" },
+        },
+    },
+    .{
+        .slug = "certbot",
+        .name = "Certbot",
+        .description = "Let's Encrypt 证书签发与续期（standalone 模式）。先停占用 80 端口的服务，签好后在 Nginx 等站点中引用证书。",
+        .category = "工具",
+        .icon = "cert",
+        .compose = @embedFile("catalog/certbot.yml"),
+        .params = &.{
+            .{ .key = "domain", .label = "域名", .default = "" },
+            .{ .key = "email", .label = "联系邮箱", .default = "" },
+            .{ .key = "http_port", .label = "HTTP 验证端口", .kind = .port, .default = "80" },
+        },
+    },
+    .{
         .slug = "adminer",
         .name = "Adminer",
         .description = "单文件数据库管理界面，支持 MySQL/PostgreSQL 等。",

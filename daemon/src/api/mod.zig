@@ -21,6 +21,7 @@ const recycle = @import("recycle.zig");
 const versions = @import("versions.zig");
 const waf = @import("waf.zig");
 const update = @import("update.zig");
+const notifications = @import("notifications.zig");
 const runtimes = @import("runtimes.zig");
 
 pub const routes = [_]router.Route{
@@ -31,6 +32,9 @@ pub const routes = [_]router.Route{
     .{ .method = .POST, .pattern = "/api/v1/update/apply", .handler = update.apply },
     .{ .method = .POST, .pattern = "/api/v1/update/schedule", .handler = update.schedule },
     .{ .method = .DELETE, .pattern = "/api/v1/update/schedule", .handler = update.unschedule },
+    .{ .method = .GET, .pattern = "/api/v1/notifications", .handler = notifications.index },
+    .{ .method = .PUT, .pattern = "/api/v1/notifications", .handler = notifications.update },
+    .{ .method = .POST, .pattern = "/api/v1/notifications/test", .handler = notifications.testSend },
 
     .{ .method = .GET, .pattern = "/api/v1/runtimes", .handler = runtimes.index },
     .{ .method = .POST, .pattern = "/api/v1/runtimes", .handler = runtimes.create },

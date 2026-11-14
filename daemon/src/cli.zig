@@ -14,6 +14,7 @@ const audit = @import("audit.zig");
 const log = @import("log.zig");
 const version = @import("version.zig");
 const update = @import("update.zig");
+const notify = @import("notify.zig");
 const validate = @import("shared").validate;
 
 const Command = enum { run, init, enroll, version, update, help };
@@ -453,6 +454,7 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     };
 
     log.info("hampaneld {s} starting (GPL-3.0-or-later)", .{version.version});
+    notify.startMonitor(&database);
 
     if (opts.service) {
         if (builtin.os.tag != .windows) {

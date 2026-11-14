@@ -1,0 +1,15 @@
+services:
+  certbot:
+    image: certbot/certbot:latest
+    ports:
+      - "{{http_port}}:80"
+    volumes:
+      - certs:/etc/letsencrypt
+      - lib:/var/lib/letsencrypt
+    command: >-
+      certonly --standalone --non-interactive --agree-tos
+      --email {{email}} -d {{domain}}
+
+volumes:
+  certs:
+  lib:

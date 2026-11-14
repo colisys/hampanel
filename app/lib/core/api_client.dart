@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'ai_context.dart';
 import 'enrollment.dart';
 
 class ApiException implements Exception {
@@ -102,6 +103,9 @@ class ApiClient {
   }) async {
     try {
       final request = await _http.openUrl(method, uri(path, query));
+      if (AiRequestContext.active) {
+        request.headers.set('x-hampanel-ai', '1');
+      }
       if (body != null) {
         final bytes = utf8.encode(jsonEncode(body));
         request.headers.contentType = ContentType.json;

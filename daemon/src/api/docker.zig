@@ -1,5 +1,6 @@
 const std = @import("std");
 const context = @import("context.zig");
+const notify = @import("../notify.zig");
 const exec = @import("shared").exec;
 const validate = @import("shared").validate;
 
@@ -128,6 +129,10 @@ pub fn action(ctx: *context.Context) anyerror!void {
         output: []const u8,
     };
     if (!result.ok()) ctx.response.status = 502;
+    if (std.mem.eql(u8, action_name, "restart") and result.ok()) {
+        const body = std.fmt.allocPrint(ctx.arena, "容器 {s} 已重启", .{id}) catch "容器已重启";
+        notify.emit(ctx.app.db, .docker_restart, "容器重启", body);
+    }
     try ctx.json(Body{ .id = id, .action = action_name, .ok = result.ok(), .output = textOf(result) });
 }
 

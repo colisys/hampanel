@@ -9,6 +9,7 @@ import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import 'ai_client.dart';
+import '../../core/ai_context.dart';
 import 'ai_tools.dart';
 
 const _systemPrompt = '''
@@ -361,7 +362,8 @@ class _AiPageState extends State<AiPage> {
               result = jsonEncode({'ok': false, 'error': '用户拒绝执行该操作'});
               _appendToolNotice('已拒绝：${tool.summary(call.arguments)}');
             } else {
-              result = await _executeTool(tool, call.arguments);
+              result =
+                  await AiRequestContext.run(() => _executeTool(tool, call.arguments));
               _appendToolNotice('已执行：${tool.summary(call.arguments)}');
             }
           } else {

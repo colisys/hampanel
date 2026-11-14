@@ -172,6 +172,8 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
       'monitor' => Icons.monitor_heart_outlined,
       'code' => Icons.code,
       'tools' => Icons.build_outlined,
+      'bell' => Icons.notifications_active_outlined,
+      'cert' => Icons.verified_user_outlined,
       _ => Icons.apps,
     };
   }

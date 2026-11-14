@@ -1,6 +1,7 @@
 const std = @import("std");
 const compat = @import("compat");
 const app_mod = @import("app.zig");
+const notify = @import("notify.zig");
 const Conn = @import("net/conn.zig").Conn;
 const tls = @import("tls.zig");
 const http_request = @import("http/request.zig");
@@ -63,6 +64,15 @@ fn handleConnection(app: *app_mod.App, connection: std.Io.net.Stream) void {
     }
 
     log.debug("client {s} connected from {f}", .{ identity.cn(), connection.socket.address });
+    {
+        var body_buf: [256]u8 = undefined;
+        const body = std.fmt.bufPrint(
+            &body_buf,
+            "来自 {f} 的客户端已通过 mTLS 认证（{s}）",
+            .{ connection.socket.address, identity.cn() },
+        ) catch "客户端已通过 mTLS 认证";
+        notify.emit(app.db, .login, "面板登录", body);
+    }
 
     while (true) {
         var arena = std.heap.ArenaAllocator.init(app.allocator);
@@ -122,6 +132,16 @@ fn handleConnection(app: *app_mod.App, connection: std.Io.net.Stream) void {
 
         recordAudit(app, ctx, connection, started_ms, route_path, allocator);
 
+        if (ctx.req.header("x-hampanel-ai") != null and isMutation(ctx.req.method)) {
+            var body_buf: [512]u8 = undefined;
+            const body = std.fmt.bufPrint(
+                &body_buf,
+                "{s} {s} → {d}",
+                .{ @tagName(ctx.req.method), route_path, ctx.response.status },
+            ) catch "AI 触发了变更操作";
+            notify.emit(app.db, .ai_command, "AI 执行操作", body);
+        }
+
         if (!req.keep_alive or ctx.response.close) return;
     }
 }
@@ -161,4 +181,11 @@ fn sendPlain(conn: *Conn, status: u16, message: []const u8) void {
         .{message},
     ) catch return;
     http_response.write(conn, .{ .status = status, .body = body }, false) catch {};
+}
+
+fn isMutation(method: http_request.Method) bool {
+    return switch (method) {
+        .POST, .PUT, .PATCH, .DELETE => true,
+        else => false,
+    };
 }
