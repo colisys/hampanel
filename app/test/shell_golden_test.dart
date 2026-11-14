@@ -10,6 +10,9 @@ import 'package:hampanel/core/session.dart';
 import 'package:hampanel/features/shell/panel_shell.dart';
 import 'package:hampanel/ui/theme.dart';
 
+const _notoFontPath = '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc';
+const _monoFontPath = '/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf';
+
 Future<void> _loadFont(String family, String path) async {
   final bytes = File(path).readAsBytesSync();
   final loader = FontLoader(family)
@@ -17,23 +20,30 @@ Future<void> _loadFont(String family, String path) async {
   await loader.load();
 }
 
+/// Font rasterisation differs per platform, so the golden only makes sense on
+/// a Linux host that has the reference fonts installed. CI runners have
+/// neither, so skip there instead of failing in setUpAll.
+String? _goldenSkipReason() {
+  if (!Platform.isLinux) return 'golden requires the Linux font stack';
+  for (final path in [_notoFontPath, _monoFontPath]) {
+    if (!File(path).existsSync()) return 'golden font missing: $path';
+  }
+  return null;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  final skipReason = _goldenSkipReason();
   late String caPem;
   late String certPem;
   late String keyPem;
   late Directory dir;
 
   setUpAll(() async {
-    await _loadFont(
-      'Noto Sans CJK SC',
-      '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-    );
-    await _loadFont(
-      'DejaVu Sans Mono',
-      '/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf',
-    );
+    if (skipReason != null) return;
+    await _loadFont('Noto Sans CJK SC', _notoFontPath);
+    await _loadFont('DejaVu Sans Mono', _monoFontPath);
     dir = await Directory.systemTemp.createTemp('hampanel-golden');
     addTearDown(() => dir.delete(recursive: true));
     final result = await Process.run('openssl', [
@@ -109,5 +119,5 @@ void main() {
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/shell_dark.png'),
     );
-  });
+  }, skip: skipReason != null);
 }
