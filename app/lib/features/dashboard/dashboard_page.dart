@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
+import '../../core/client_settings.dart';
 import '../../core/format.dart';
 import '../../core/models/metrics.dart';
 import '../../core/models/system_info.dart';
@@ -36,13 +37,26 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
+    ClientSettings.instance.addListener(_onSettingsChanged);
+    ClientSettings.instance.load();
     _refresh();
   }
 
   @override
   void dispose() {
+    ClientSettings.instance.removeListener(_onSettingsChanged);
     _timer?.cancel();
     super.dispose();
+  }
+
+  void _onSettingsChanged() {
+    if (!mounted) return;
+    if (_timer != null) {
+      _timer!.cancel();
+      _timer = null;
+      _ensurePolling();
+    }
+    setState(() {});
   }
 
   Future<void> _refresh() async {
@@ -76,7 +90,7 @@ class _DashboardPageState extends State<DashboardPage> {
   void _ensurePolling() {
     if (_timer != null) return;
     _timer = Timer.periodic(
-      const Duration(seconds: 3),
+      Duration(seconds: ClientSettings.instance.overviewRefreshSeconds),
       (_) => _refreshMetrics(),
     );
   }
@@ -126,7 +140,8 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   InterfaceMetrics? get _selectedInterface {
-    final interfaces = _metrics?.network.interfaces ?? const <InterfaceMetrics>[];
+    final interfaces =
+        _metrics?.network.interfaces ?? const <InterfaceMetrics>[];
     for (final iface in interfaces) {
       if (iface.name == _iface) return iface;
     }
@@ -354,16 +369,20 @@ class _DashboardPageState extends State<DashboardPage> {
               Expanded(
                 child: StatTile(
                   label: '下行',
-                  value: '${formatBytes(selected?.rxRateBps ?? network?.rxRateBps)}/s',
-                  detail: '累计 ${formatBytes(selected?.rxBytes ?? network?.rxBytes)}',
+                  value:
+                      '${formatBytes(selected?.rxRateBps ?? network?.rxRateBps)}/s',
+                  detail:
+                      '累计 ${formatBytes(selected?.rxBytes ?? network?.rxBytes)}',
                   accent: hampanelAccent,
                 ),
               ),
               Expanded(
                 child: StatTile(
                   label: '上行',
-                  value: '${formatBytes(selected?.txRateBps ?? network?.txRateBps)}/s',
-                  detail: '累计 ${formatBytes(selected?.txBytes ?? network?.txBytes)}',
+                  value:
+                      '${formatBytes(selected?.txRateBps ?? network?.txRateBps)}/s',
+                  detail:
+                      '累计 ${formatBytes(selected?.txBytes ?? network?.txBytes)}',
                   accent: hampanelAccent,
                 ),
               ),
@@ -560,7 +579,13 @@ class _SparkPainter extends CustomPainter {
     }
   }
 
-  void _line(Canvas canvas, Size size, List<double> data, Color lineColor, double max) {
+  void _line(
+    Canvas canvas,
+    Size size,
+    List<double> data,
+    Color lineColor,
+    double max,
+  ) {
     if (data.length < 2) {
       if (data.length == 1) {
         canvas.drawCircle(

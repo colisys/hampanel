@@ -359,11 +359,12 @@ class _SoftwarePageState extends State<SoftwarePage> {
                   padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
                   children: [
                     for (final item in _items) ...[
-                      _softwareCard(item),
-                      if (item.id == 'fail2ban' && item.initialized) ...[
-                        const SizedBox(height: 10),
-                        _fail2banPanel(),
-                      ],
+                      _softwareCard(
+                        item,
+                        extra: item.id == 'fail2ban' && item.initialized
+                            ? _fail2banSection()
+                            : null,
+                      ),
                       const SizedBox(height: 12),
                     ],
                   ],
@@ -373,7 +374,7 @@ class _SoftwarePageState extends State<SoftwarePage> {
     );
   }
 
-  Widget _softwareCard(SoftwareItem item) {
+  Widget _softwareCard(SoftwareItem item, {Widget? extra}) {
     final initializing = _initializingId == item.id;
     return PanelCard(
       title: item.name,
@@ -392,11 +393,7 @@ class _SoftwarePageState extends State<SoftwarePage> {
         children: [
           Text(
             item.description,
-            style: TextStyle(
-              fontSize: 12,
-              color: hampanelMuted,
-              height: 1.5,
-            ),
+            style: TextStyle(fontSize: 12, color: hampanelMuted, height: 1.5),
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -436,6 +433,12 @@ class _SoftwarePageState extends State<SoftwarePage> {
                 ),
             ],
           ),
+          if (extra != null) ...[
+            const SizedBox(height: 14),
+            Container(height: 1, color: hampanelBorder),
+            const SizedBox(height: 14),
+            extra,
+          ],
         ],
       ),
     );
@@ -445,108 +448,109 @@ class _SoftwarePageState extends State<SoftwarePage> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          '$label: ',
-          style: TextStyle(fontSize: 11, color: hampanelMuted),
-        ),
+        Text('$label: ', style: TextStyle(fontSize: 11, color: hampanelMuted)),
         SelectableText(value, style: monospace.copyWith(fontSize: 11)),
       ],
     );
   }
 
-  Widget _fail2banPanel() {
+  Widget _fail2banSection() {
     if (_f2bLoading && _fail2ban == null) return const LoadingView();
     if (_f2bError != null) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: ErrorBanner(message: _f2bError!, onRetry: _loadFail2ban),
-        ),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: ErrorBanner(message: _f2bError!, onRetry: _loadFail2ban),
       );
     }
     final status = _fail2ban;
     if (status == null) return const SizedBox.shrink();
 
-    return PanelCard(
-      title: 'Fail2ban 管理',
-      trailing: Wrap(
-        spacing: 8,
-        children: [
-          StatusPill(text: status.active ? '运行中' : '未运行', good: status.active),
-          OutlinedButton.icon(
-            onPressed: _loadFail2ban,
-            icon: const Icon(Icons.refresh, size: 16),
-            label: const Text('刷新'),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text(
+              '封禁管理',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(width: 8),
+            StatusPill(
+              text: status.active ? '运行中' : '未运行',
+              good: status.active,
+            ),
+            const Spacer(),
+            OutlinedButton.icon(
+              onPressed: _loadFail2ban,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('刷新'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (status.message.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Text(
+              status.message,
+              style: TextStyle(fontSize: 11.5, color: hampanelDanger),
+            ),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (status.message.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
+        if (status.jails.isEmpty)
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              '当前没有启用的 jail。',
+              style: TextStyle(fontSize: 12, color: hampanelMuted),
+            ),
+          )
+        else
+          for (final jail in status.jails) _jailCard(jail),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            const Expanded(
               child: Text(
-                status.message,
-                style: TextStyle(fontSize: 11.5, color: hampanelDanger),
+                'DEFAULT 阈值',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
               ),
             ),
-          if (status.jails.isEmpty)
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                '当前没有启用的 jail。',
-                style: TextStyle(fontSize: 12, color: hampanelMuted),
+            FilledButton.icon(
+              onPressed: _saveLimits,
+              icon: const Icon(Icons.save_outlined, size: 16),
+              label: const Text('保存阈值'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _maxretryController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'maxretry'),
               ),
-            )
-          else
-            for (final jail in status.jails) _jailCard(jail),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'DEFAULT 阈值',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: _bantimeController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'bantime（秒）'),
               ),
-              FilledButton.icon(
-                onPressed: _saveLimits,
-                icon: const Icon(Icons.save_outlined, size: 16),
-                label: const Text('保存阈值'),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: _findtimeController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'findtime（秒）'),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _maxretryController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'maxretry'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _bantimeController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'bantime（秒）'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _findtimeController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'findtime（秒）'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 

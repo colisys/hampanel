@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
+import '../../core/format.dart';
 import '../../core/models/service.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
@@ -292,7 +293,9 @@ class _ServiceLogsDialogState extends State<_ServiceLogsDialog> {
         : all;
     if (_query.trim().isEmpty) return windowed;
     final needle = _query.toLowerCase();
-    return windowed.where((line) => line.toLowerCase().contains(needle)).toList();
+    return windowed
+        .where((line) => line.toLowerCase().contains(needle))
+        .toList();
   }
 
   @override
@@ -356,7 +359,9 @@ class _ServiceLogsDialogState extends State<_ServiceLogsDialog> {
                 ),
                 child: SingleChildScrollView(
                   child: SelectableText(
-                    visible.isEmpty ? '没有匹配的日志行' : visible.join('\n'),
+                    visible.isEmpty
+                        ? '没有匹配的日志行'
+                        : localizeLogTimestamps(visible.join('\n')),
                     style: monospace,
                   ),
                 ),
@@ -369,7 +374,8 @@ class _ServiceLogsDialogState extends State<_ServiceLogsDialog> {
         TextButton(
           onPressed: visible.isEmpty
               ? null
-              : () => Clipboard.setData(ClipboardData(text: visible.join('\n'))),
+              : () =>
+                    Clipboard.setData(ClipboardData(text: visible.join('\n'))),
           child: const Text('复制显示内容'),
         ),
         TextButton(

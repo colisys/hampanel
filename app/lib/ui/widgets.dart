@@ -27,11 +27,7 @@ class PageHeader extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Container(
-                      width: 5,
-                      height: 22,
-                      color: hampanelAccent,
-                    ),
+                    Container(width: 5, height: 22, color: hampanelAccent),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -49,10 +45,7 @@ class PageHeader extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     subtitle!,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: hampanelMuted,
-                    ),
+                    style: TextStyle(fontSize: 12.5, color: hampanelMuted),
                   ),
                 ],
               ],
@@ -94,11 +87,7 @@ class PanelCard extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: Row(
                     children: [
-                      Container(
-                        width: 6,
-                        height: 6,
-                        color: hampanelAccent,
-                      ),
+                      Container(width: 6, height: 6, color: hampanelAccent),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -164,10 +153,7 @@ class StatTile extends StatelessWidget {
         ),
         if (detail != null) ...[
           const SizedBox(height: 4),
-          Text(
-            detail!,
-            style: TextStyle(fontSize: 11, color: hampanelMuted),
-          ),
+          Text(detail!, style: TextStyle(fontSize: 11, color: hampanelMuted)),
         ],
       ],
     );
@@ -323,7 +309,9 @@ class StatusPill extends StatelessWidget {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: good ? hampanelSurfaceAlt : hampanelDanger.withValues(alpha: 0.08),
+        color: good
+            ? hampanelSurfaceAlt
+            : hampanelDanger.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(2),
         border: Border.all(color: color, width: 1.5),
       ),
@@ -395,10 +383,7 @@ Future<String?> textInputDialog(
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('取消'),
-        ),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text('取消')),
         FilledButton(
           onPressed: () => Navigator.pop(context, controller.text),
           child: Text(confirmLabel),
@@ -409,7 +394,6 @@ Future<String?> textInputDialog(
   controller.dispose();
   return result;
 }
-
 
 /// Comic screentone: a sparse dot grid used as the empty-state backdrop.
 class Halftone extends StatelessWidget {
@@ -470,4 +454,65 @@ class _HalftonePainter extends CustomPainter {
       oldDelegate.color != color ||
       oldDelegate.spacing != spacing ||
       oldDelegate.dotRadius != dotRadius;
+}
+
+/// 页面内的二级导航，渲染在内容区左侧，与一级侧栏形成层级。
+class SubNav extends StatelessWidget {
+  const SubNav({
+    super.key,
+    required this.items,
+    required this.index,
+    required this.onChanged,
+    this.width = 168,
+  });
+
+  final List<String> items;
+  final int index;
+  final ValueChanged<int> onChanged;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      margin: const EdgeInsets.fromLTRB(12, 4, 0, 24),
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          for (var i = 0; i < items.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: InkWell(
+                onTap: () => onChanged(i),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: i == index ? hampanelSurfaceAlt : null,
+                    border: Border(
+                      left: BorderSide(
+                        color: i == index ? hampanelAccent : Colors.transparent,
+                        width: 3,
+                      ),
+                    ),
+                  ),
+                  child: Text(
+                    items[i],
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: i == index
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                      color: i == index ? hampanelInk : hampanelMuted,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }

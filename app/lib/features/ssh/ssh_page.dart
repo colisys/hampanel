@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
+import '../../core/format.dart';
 import '../../core/models/ssh_logs.dart';
 import '../../core/models/ssh_status.dart';
 import '../../core/session.dart';
@@ -16,6 +17,7 @@ class SshPage extends StatefulWidget {
 }
 
 class _SshPageState extends State<SshPage> {
+  int _section = 0;
   final _portController = TextEditingController();
   final _userController = TextEditingController(text: 'root');
 
@@ -403,15 +405,14 @@ class _SshPageState extends State<SshPage> {
                       style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                     ),
                   ),
-                if (logging.message.isNotEmpty)
+                if (logging.message.isNotEmpty &&
+                    !(logging.message.contains('rsyslog') &&
+                        !logging.rsyslogAvailable))
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       logging.message,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: hampanelMuted,
-                      ),
+                      style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                     ),
                   ),
               ],
@@ -514,17 +515,14 @@ class _SshPageState extends State<SshPage> {
                 ? SingleChildScrollView(
                     child: Text(
                       _logsError!,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: hampanelDanger,
-                      ),
+                      style: TextStyle(fontSize: 12, color: hampanelDanger),
                     ),
                   )
                 : SingleChildScrollView(
                     child: SelectableText(
                       (_sshLogs?.content ?? '').isEmpty
                           ? '暂无日志。'
-                          : _sshLogs!.content,
+                          : localizeLogTimestamps(_sshLogs!.content),
                       style: monospace.copyWith(fontSize: 11.5),
                     ),
                   ),
@@ -582,225 +580,238 @@ class _SshPageState extends State<SshPage> {
   }
 
   Widget _content(SshStatus status) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
-      children: [
-        PanelCard(
-          title: '运行状态',
-          trailing: StatusPill(
-            text: status.active ? '运行中' : '未运行',
-            good: status.active,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _row(
-                '服务',
-                status.service.isEmpty ? '-' : '${status.service}.service',
+    final overview = <Widget>[
+      PanelCard(
+        title: '运行状态',
+        trailing: StatusPill(
+          text: status.active ? '运行中' : '未运行',
+          good: status.active,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _row(
+              '服务',
+              status.service.isEmpty ? '-' : '${status.service}.service',
+            ),
+            _row('版本', status.version.isEmpty ? '-' : status.version),
+            _row('当前用户', status.currentUser.isEmpty ? '-' : status.currentUser),
+            _row(
+              '托管文件',
+              status.dropIn.isEmpty ? '使用 sshd_config Include' : status.dropIn,
+            ),
+            if (status.message.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                status.message,
+                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               ),
-              _row('版本', status.version.isEmpty ? '-' : status.version),
-              _row(
-                '当前用户',
-                status.currentUser.isEmpty ? '-' : status.currentUser,
-              ),
-              _row(
-                '托管文件',
-                status.dropIn.isEmpty
-                    ? '使用 sshd_config Include'
-                    : status.dropIn,
-              ),
-              if (status.message.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(
-                  status.message,
-                  style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+            ],
+          ],
+        ),
+      ),
+      const SizedBox(height: 14),
+      PanelCard(
+        title: '生效配置',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 150,
+                  child: TextField(
+                    controller: _portController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'SSH 端口'),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _rootLogin,
+                    decoration: const InputDecoration(
+                      labelText: 'PermitRootLogin',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'prohibit-password',
+                        child: Text('prohibit-password'),
+                      ),
+                      DropdownMenuItem(value: 'yes', child: Text('yes')),
+                      DropdownMenuItem(value: 'no', child: Text('no')),
+                      DropdownMenuItem(
+                        value: 'forced-commands-only',
+                        child: Text('forced-commands-only'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) setState(() => _rootLogin = value);
+                    },
+                  ),
                 ),
               ],
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('密码登录', style: TextStyle(fontSize: 13)),
+              subtitle: const Text(
+                'PasswordAuthentication',
+                style: TextStyle(fontSize: 11),
+              ),
+              value: _passwordAuth,
+              onChanged: (value) => setState(() => _passwordAuth = value),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('公钥登录', style: TextStyle(fontSize: 13)),
+              subtitle: const Text(
+                'PubkeyAuthentication',
+                style: TextStyle(fontSize: 11),
+              ),
+              value: _pubkeyAuth,
+              onChanged: (value) => setState(() => _pubkeyAuth = value),
+            ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: _busy ? null : _save,
+                icon: _busy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined, size: 16),
+                label: const Text('保存并重载'),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 14),
-        PanelCard(
-          title: '生效配置',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  SizedBox(
-                    width: 150,
-                    child: TextField(
-                      controller: _portController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'SSH 端口'),
-                    ),
+      ),
+      const SizedBox(height: 14),
+    ];
+    final logs = <Widget>[
+      _loggingCard(),
+      const SizedBox(height: 14),
+      _logsCard(),
+    ];
+    final keys = <Widget>[
+      PanelCard(
+        title: 'Authorized Keys',
+        trailing: Wrap(
+          spacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed: _keysLoading ? null : _loadKeys,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('刷新'),
+            ),
+            FilledButton.icon(
+              onPressed: _addKey,
+              icon: const Icon(Icons.add, size: 16),
+              label: const Text('添加公钥'),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 260,
+              child: TextField(
+                controller: _userController,
+                decoration: const InputDecoration(labelText: '用户'),
+                onSubmitted: (_) => _loadKeys(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (_keysLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: LoadingView(),
+              )
+            else if (_keysError != null)
+              Text(
+                _keysError!,
+                style: TextStyle(fontSize: 12, color: hampanelDanger),
+              )
+            else if (_keys.isEmpty)
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  '该用户尚未配置公钥。',
+                  style: TextStyle(fontSize: 12, color: hampanelMuted),
+                ),
+              )
+            else
+              for (final key in _keys)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _rootLogin,
-                      decoration: const InputDecoration(
-                        labelText: 'PermitRootLogin',
+                  decoration: BoxDecoration(
+                    color: hampanelSurfaceAlt,
+                    borderRadius: BorderRadius.circular(3),
+                    border: Border.all(color: hampanelBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.key, size: 17, color: hampanelAccent),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              key.comment.isEmpty
+                                  ? key.keyType
+                                  : '${key.keyType} · ${key.comment}',
+                              style: const TextStyle(fontSize: 12.5),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              key.key,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: monospace.copyWith(
+                                fontSize: 11,
+                                color: hampanelMuted,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'prohibit-password',
-                          child: Text('prohibit-password'),
-                        ),
-                        DropdownMenuItem(value: 'yes', child: Text('yes')),
-                        DropdownMenuItem(value: 'no', child: Text('no')),
-                        DropdownMenuItem(
-                          value: 'forced-commands-only',
-                          child: Text('forced-commands-only'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) setState(() => _rootLogin = value);
-                      },
-                    ),
+                      IconButton(
+                        tooltip: '删除',
+                        onPressed: () => _removeKey(key),
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('密码登录', style: TextStyle(fontSize: 13)),
-                subtitle: const Text(
-                  'PasswordAuthentication',
-                  style: TextStyle(fontSize: 11),
                 ),
-                value: _passwordAuth,
-                onChanged: (value) => setState(() => _passwordAuth = value),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('公钥登录', style: TextStyle(fontSize: 13)),
-                subtitle: const Text(
-                  'PubkeyAuthentication',
-                  style: TextStyle(fontSize: 11),
-                ),
-                value: _pubkeyAuth,
-                onChanged: (value) => setState(() => _pubkeyAuth = value),
-              ),
-              const SizedBox(height: 6),
-              Align(
-                alignment: Alignment.centerRight,
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : _save,
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save_outlined, size: 16),
-                  label: const Text('保存并重载'),
-                ),
-              ),
-            ],
-          ),
+          ],
         ),
-        const SizedBox(height: 14),
-        _loggingCard(),
-        const SizedBox(height: 14),
-        _logsCard(),
-        const SizedBox(height: 14),
-        PanelCard(
-          title: 'Authorized Keys',
-          trailing: Wrap(
-            spacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: _keysLoading ? null : _loadKeys,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('刷新'),
-              ),
-              FilledButton.icon(
-                onPressed: _addKey,
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('添加公钥'),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(
-                width: 260,
-                child: TextField(
-                  controller: _userController,
-                  decoration: const InputDecoration(labelText: '用户'),
-                  onSubmitted: (_) => _loadKeys(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (_keysLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: LoadingView(),
-                )
-              else if (_keysError != null)
-                Text(
-                  _keysError!,
-                  style: TextStyle(fontSize: 12, color: hampanelDanger),
-                )
-              else if (_keys.isEmpty)
-                Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Text(
-                    '该用户尚未配置公钥。',
-                    style: TextStyle(fontSize: 12, color: hampanelMuted),
-                  ),
-                )
-              else
-                for (final key in _keys)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: hampanelSurfaceAlt,
-                      borderRadius: BorderRadius.circular(3),
-                      border: Border.all(color: hampanelBorder),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.key, size: 17, color: hampanelAccent),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                key.comment.isEmpty
-                                    ? key.keyType
-                                    : '${key.keyType} · ${key.comment}',
-                                style: const TextStyle(fontSize: 12.5),
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                key.key,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: monospace.copyWith(
-                                  fontSize: 11,
-                                  color: hampanelMuted,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: '删除',
-                          onPressed: () => _removeKey(key),
-                          icon: const Icon(Icons.delete_outline, size: 18),
-                        ),
-                      ],
-                    ),
-                  ),
-            ],
+      ),
+    ];
+    final pages = [overview, keys, logs];
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SubNav(
+          items: const ['概览', '密钥', '日志'],
+          index: _section,
+          onChanged: (index) => setState(() => _section = index),
+        ),
+        const VerticalDivider(width: 1),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+            children: pages[_section],
           ),
         ),
       ],
