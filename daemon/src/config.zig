@@ -23,6 +23,7 @@ pub const Config = struct {
     install_mode: []const u8 = "source",
     update_channel: []const u8 = "stable",
     update_repo: []const u8 = "colisys/hampanel",
+    github_mirror: []const u8 = "",
     update_auto: bool = false,
     service_name: []const u8 = "hampanel",
 

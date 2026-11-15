@@ -19,7 +19,54 @@ pub fn index(ctx: *context.Context) anyerror!void {
         .error_message = state.error_message,
         .scheduled = update.scheduleInstalled(ctx.arena),
         .updatable = cfg.updatesEnabled(),
+        .github_mirror = cfg.github_mirror,
     });
+}
+
+pub fn configure(ctx: *context.Context) anyerror!void {
+    const Body = struct {
+        channel: ?[]const u8 = null,
+        github_mirror: ?[]const u8 = null,
+    };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected channel or github_mirror");
+        return;
+    };
+
+    if (body.channel) |channel| {
+        if (!std.mem.eql(u8, channel, "stable") and
+            !std.mem.eql(u8, channel, "nightly") and
+            !std.mem.eql(u8, channel, "latest"))
+        {
+            ctx.fail(400, "bad_channel", "channel must be stable or nightly");
+            return;
+        }
+        ctx.app.config.update_channel = try ctx.arena.dupe(u8, channel);
+    }
+
+    if (body.github_mirror) |raw| {
+        const trimmed = std.mem.trim(u8, raw, " \t\r\n/");
+        const valid = trimmed.len == 0 or
+            (trimmed.len <= 200 and
+                (std.mem.startsWith(u8, trimmed, "https://") or
+                    std.mem.startsWith(u8, trimmed, "http://")));
+        if (!valid) {
+            ctx.fail(400, "bad_mirror", "mirror must be an http(s) URL");
+            return;
+        }
+        ctx.app.config.github_mirror = try ctx.arena.dupe(u8, trimmed);
+    }
+
+    ctx.app.config.save(ctx.arena, ctx.app.config_path) catch |err| {
+        ctx.fail(500, "save_failed", @errorName(err));
+        return;
+    };
+    var mirror_buf: [96]u8 = undefined;
+    log.info("update: config channel={s} mirror={s}", .{
+        ctx.app.config.update_channel,
+        redact.text(&mirror_buf, ctx.app.config.github_mirror),
+    });
+    try index(ctx);
 }
 
 pub fn check(ctx: *context.Context) anyerror!void {

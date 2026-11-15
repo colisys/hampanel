@@ -42,6 +42,7 @@ const Options = struct {
     install_mode: ?[]const u8 = null,
     update_channel: ?[]const u8 = null,
     update_repo: ?[]const u8 = null,
+    github_mirror: ?[]const u8 = null,
     service_name: ?[]const u8 = null,
 };
 
@@ -106,6 +107,8 @@ pub fn run(allocator: std.mem.Allocator, process_args: std.process.Args) !u8 {
             opts.update_channel = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--update-repo")) {
             opts.update_repo = takeValue(args.items, &index, arg) orelse return 2;
+        } else if (std.mem.eql(u8, arg, "--github-mirror")) {
+            opts.github_mirror = takeValue(args.items, &index, arg) orelse return 2;
         } else if (std.mem.eql(u8, arg, "--check")) {
             opts.check = true;
         } else if (std.mem.eql(u8, arg, "--apply")) {
@@ -245,6 +248,17 @@ fn cmdInit(allocator: std.mem.Allocator, opts: *Options) !u8 {
             return 2;
         }
         cfg.update_repo = repo;
+    }
+    if (opts.github_mirror) |mirror| {
+        const trimmed = std.mem.trim(u8, mirror, " \t\r\n/");
+        if (trimmed.len > 200 or
+            (trimmed.len > 0 and !std.mem.startsWith(u8, trimmed, "http://") and
+                !std.mem.startsWith(u8, trimmed, "https://")))
+        {
+            std.debug.print("invalid --github-mirror: expected an http(s) URL\n", .{});
+            return 2;
+        }
+        cfg.github_mirror = trimmed;
     }
     if (opts.service_name) |service_name| {
         if (!validate.isUnitName(service_name)) {

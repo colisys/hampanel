@@ -108,6 +108,7 @@ if [[ -n "$DATA_DIR" ]]; then BOOTSTRAP_ARGS+=(--data-dir "$DATA_DIR"); fi
 if [[ -n "$TLS_DIR" ]]; then BOOTSTRAP_ARGS+=(--tls-dir "$TLS_DIR"); fi
 if [[ -n "$ENROLL_FILE" ]]; then BOOTSTRAP_ARGS+=(--enroll-file "$ENROLL_FILE"); fi
 if [[ "$NO_SYSTEMD" == "1" ]]; then BOOTSTRAP_ARGS+=(--no-systemd); fi
+if [[ -n "$GITHUB_MIRROR" ]]; then BOOTSTRAP_ARGS+=(--mirror "$GITHUB_MIRROR"); fi
 if [[ "$NO_START" == "1" ]]; then BOOTSTRAP_ARGS+=(--no-start); fi
 if [[ "$SERVICE_NAME" != "hampanel" ]]; then BOOTSTRAP_ARGS+=(--service-name "$SERVICE_NAME"); fi
 if [[ -n "$MIRROR" ]]; then BOOTSTRAP_ARGS+=(--mirror "$MIRROR"); fi

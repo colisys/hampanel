@@ -111,8 +111,10 @@ pub fn apply(allocator: std.mem.Allocator, database: *db.Db, cfg: config.Config)
 
     const asset = assetName();
     const base = releaseBase(allocator, cfg) catch return error.OutOfMemory;
-    const archive_url = std.fmt.allocPrint(allocator, "{s}/{s}", .{ base, asset }) catch return error.OutOfMemory;
-    const sums_url = std.fmt.allocPrint(allocator, "{s}/SHA256SUMS.txt", .{base}) catch return error.OutOfMemory;
+    const raw_archive = std.fmt.allocPrint(allocator, "{s}/{s}", .{ base, asset }) catch return error.OutOfMemory;
+    const raw_sums = std.fmt.allocPrint(allocator, "{s}/SHA256SUMS.txt", .{base}) catch return error.OutOfMemory;
+    const archive_url = mirrorUrl(allocator, cfg, raw_archive) catch return error.OutOfMemory;
+    const sums_url = mirrorUrl(allocator, cfg, raw_sums) catch return error.OutOfMemory;
     const archive_path = compat.path.join(allocator, &.{ workdir, asset }) catch return error.OutOfMemory;
     const sums_path = compat.path.join(allocator, &.{ workdir, "SHA256SUMS.txt" }) catch return error.OutOfMemory;
 
@@ -264,16 +266,26 @@ fn releaseBase(allocator: std.mem.Allocator, cfg: config.Config) ![]u8 {
 
 fn fetchLatestVersion(allocator: std.mem.Allocator, cfg: config.Config) ![]const u8 {
     const base = try releaseBase(allocator, cfg);
-    const url = try std.fmt.allocPrint(allocator, "{s}/version.txt", .{base});
+    const raw = try std.fmt.allocPrint(allocator, "{s}/version.txt", .{base});
+    const url = try mirrorUrl(allocator, cfg, raw);
     const text = try curlText(allocator, url);
     const trimmed = std.mem.trim(u8, text, " \t\r\n");
     if (trimmed.len == 0 or std.mem.indexOfScalar(u8, trimmed, '.') == null) return error.InvalidVersion;
     return trimmed;
 }
 
+/// Configures a GitHub mirror prefix. Mirrors accept the full upstream URL
+/// appended after the mirror base (for example `https://mirror/https://github.com/...`).
+fn mirrorUrl(allocator: std.mem.Allocator, cfg: config.Config, url: []const u8) ![]u8 {
+    const mirror = std.mem.trimEnd(u8, std.mem.trim(u8, cfg.github_mirror, " \t\r\n"), "/");
+    if (mirror.len == 0) return allocator.dupe(u8, url);
+    if (std.mem.startsWith(u8, url, mirror)) return allocator.dupe(u8, url);
+    return std.fmt.allocPrint(allocator, "{s}/{s}", .{ mirror, url });
+}
+
 fn curlText(allocator: std.mem.Allocator, url: []const u8) ![]const u8 {
     const result = try exec.run(allocator, &.{
-        "curl", "-fsSL",                 "--retry", "2", "--connect-timeout", "15", "--max-time", "30",
+        "curl", "-fsSL",         "--retry", "2", "--connect-timeout", "15", "--max-time", "30",
         "-H",   curl_user_agent, url,
     }, 256 * 1024);
     if (!result.ok()) return error.HttpFailed;
@@ -282,7 +294,7 @@ fn curlText(allocator: std.mem.Allocator, url: []const u8) ![]const u8 {
 
 fn download(allocator: std.mem.Allocator, url: []const u8, path: []const u8) !void {
     const result = try exec.run(allocator, &.{
-        "curl", "-fsSL",                 "--retry", "2",  "--connect-timeout", "15", "--max-time", "600",
+        "curl", "-fsSL",         "--retry", "2",  "--connect-timeout", "15", "--max-time", "600",
         "-H",   curl_user_agent, "-o",      path, url,
     }, 256 * 1024);
     if (!result.ok()) return error.DownloadFailed;
@@ -464,6 +476,24 @@ fn installUserCrontab(allocator: std.mem.Allocator, text: []const u8) !exec.Resu
 fn textOf(result: exec.Result) []const u8 {
     if (result.stderr.len > 0) return result.stderr;
     return result.stdout;
+}
+
+test "mirror urls are prefixed once and trimmed" {
+    const allocator = std.testing.allocator;
+    var cfg = config.Config{ .github_mirror = "https://mirror.example/ " };
+    const one = try mirrorUrl(allocator, cfg, "https://github.com/owner/repo/releases/latest/download/version.txt");
+    defer allocator.free(one);
+    try std.testing.expectEqualStrings(
+        "https://mirror.example/https://github.com/owner/repo/releases/latest/download/version.txt",
+        one,
+    );
+    const again = try mirrorUrl(allocator, cfg, one);
+    defer allocator.free(again);
+    try std.testing.expectEqualStrings(one, again);
+    cfg.github_mirror = "";
+    const direct = try mirrorUrl(allocator, cfg, "https://github.com/x");
+    defer allocator.free(direct);
+    try std.testing.expectEqualStrings("https://github.com/x", direct);
 }
 
 test "version comparison handles semver and nightly commits" {

@@ -273,6 +273,7 @@ INIT_ARGS=(init
   --update-repo "$UPDATE_REPO"
   --service-name "$SERVICE_NAME")
 if [[ -n "$PORT" ]]; then INIT_ARGS+=(--port "$PORT"); fi
+if [[ -n "$MIRROR" ]]; then INIT_ARGS+=(--github-mirror "$MIRROR"); fi
 if [[ "$ENTRY_PREFIX_SET" == "1" ]]; then INIT_ARGS+=(--entry-prefix "$ENTRY_PREFIX"); fi
 if [[ ${#SANS[@]} -gt 0 ]]; then
   for san in "${SANS[@]}"; do INIT_ARGS+=(--san "$san"); done
