@@ -2,15 +2,37 @@ import 'package:material_ui/material_ui.dart';
 
 import 'theme.dart';
 
-enum MdBlockKind { paragraph, heading, bullet, numbered, code, quote, divider }
+enum MdBlockKind {
+  paragraph,
+  heading,
+  bullet,
+  numbered,
+  code,
+  quote,
+  divider,
+  table,
+}
+
+enum MdAlign { left, center, right }
 
 class MdBlock {
-  const MdBlock(this.kind, {this.text = '', this.level = 0, this.items = const []});
+  const MdBlock(
+    this.kind, {
+    this.text = '',
+    this.level = 0,
+    this.items = const [],
+    this.header = const [],
+    this.rows = const [],
+    this.aligns = const [],
+  });
 
   final MdBlockKind kind;
   final String text;
   final int level;
   final List<String> items;
+  final List<String> header;
+  final List<List<String>> rows;
+  final List<MdAlign> aligns;
 }
 
 /// 极简 Markdown 解析：标题、列表、引用、代码块、分隔线与段落。
@@ -28,7 +50,8 @@ List<MdBlock> parseMarkdown(String source) {
     paragraph = [];
   }
 
-  for (final rawLine in lines) {
+  for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    final rawLine = lines[lineIndex];
     final trimmed = rawLine.trim();
     if (trimmed.startsWith('```')) {
       if (inCode) {
@@ -55,7 +78,8 @@ List<MdBlock> parseMarkdown(String source) {
       continue;
     }
     if (trimmed.startsWith('#')) {
-      final hashes = trimmed.length - trimmed.replaceFirst(RegExp(r'^#+'), '').length;
+      final hashes =
+          trimmed.length - trimmed.replaceFirst(RegExp(r'^#+'), '').length;
       if (hashes <= 6 && trimmed.length > hashes && trimmed[hashes] == ' ') {
         flushParagraph();
         blocks.add(
@@ -84,6 +108,36 @@ List<MdBlock> parseMarkdown(String source) {
       _appendListItem(blocks, MdBlockKind.numbered, numbered.group(2)!);
       continue;
     }
+    if (trimmed.contains('|') && lineIndex + 1 < lines.length) {
+      final header = _splitTableRow(trimmed);
+      if (header.isNotEmpty &&
+          _isTableDelimiter(lines[lineIndex + 1], header.length)) {
+        final aligns = _tableAligns(lines[lineIndex + 1], header.length);
+        final rows = <List<String>>[];
+        var next = lineIndex + 2;
+        while (next < lines.length) {
+          final rowLine = lines[next].trim();
+          if (rowLine.isEmpty || !rowLine.contains('|')) break;
+          final cells = _splitTableRow(rowLine);
+          rows.add([
+            for (var c = 0; c < header.length; c++)
+              c < cells.length ? cells[c] : '',
+          ]);
+          next += 1;
+        }
+        flushParagraph();
+        blocks.add(
+          MdBlock(
+            MdBlockKind.table,
+            header: header,
+            rows: rows,
+            aligns: aligns,
+          ),
+        );
+        lineIndex = next - 1;
+        continue;
+      }
+    }
     paragraph.add(rawLine);
   }
   if (inCode && code.isNotEmpty) {
@@ -91,6 +145,36 @@ List<MdBlock> parseMarkdown(String source) {
   }
   flushParagraph();
   return blocks;
+}
+
+List<String> _splitTableRow(String line) {
+  var trimmed = line.trim();
+  if (trimmed.startsWith('|')) trimmed = trimmed.substring(1);
+  if (trimmed.endsWith('|')) trimmed = trimmed.substring(0, trimmed.length - 1);
+  return [for (final cell in trimmed.split('|')) cell.trim()];
+}
+
+bool _isTableDelimiter(String line, int columns) {
+  if (!line.contains('-') || !line.contains('|')) return false;
+  final cells = _splitTableRow(line);
+  if (cells.length != columns) return false;
+  final pattern = RegExp(r'^:?-{1,}:?$');
+  return cells.every(pattern.hasMatch);
+}
+
+List<MdAlign> _tableAligns(String line, int columns) {
+  final cells = _splitTableRow(line);
+  return [
+    for (var i = 0; i < columns; i++)
+      if (i < cells.length &&
+          cells[i].startsWith(':') &&
+          cells[i].endsWith(':'))
+        MdAlign.center
+      else if (i < cells.length && cells[i].endsWith(':'))
+        MdAlign.right
+      else
+        MdAlign.left,
+  ];
 }
 
 void _appendListItem(List<MdBlock> blocks, MdBlockKind kind, String text) {
@@ -135,10 +219,7 @@ class MarkdownText extends StatelessWidget {
         };
         return Text(
           block.text,
-          style: style.copyWith(
-            fontSize: size,
-            fontWeight: FontWeight.w800,
-          ),
+          style: style.copyWith(fontSize: size, fontWeight: FontWeight.w800),
         );
       case MdBlockKind.bullet:
       case MdBlockKind.numbered:
@@ -194,9 +275,58 @@ class MarkdownText extends StatelessWidget {
         );
       case MdBlockKind.divider:
         return Container(height: 2, color: hampanelBorder);
+      case MdBlockKind.table:
+        return _table(block, style);
       case MdBlockKind.paragraph:
         return _inline(block.text, style);
     }
+  }
+
+  Widget _table(MdBlock block, TextStyle style) {
+    Widget cell(String text, MdAlign align, {bool header = false}) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        alignment: switch (align) {
+          MdAlign.center => Alignment.center,
+          MdAlign.right => Alignment.centerRight,
+          MdAlign.left => Alignment.centerLeft,
+        },
+        child: _inline(
+          text,
+          header ? style.copyWith(fontWeight: FontWeight.w700) : style,
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(border: Border.all(color: hampanelBorder)),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Table(
+          defaultColumnWidth: const IntrinsicColumnWidth(),
+          border: TableBorder.symmetric(
+            inside: BorderSide(color: hampanelBorder),
+          ),
+          children: [
+            TableRow(
+              decoration: BoxDecoration(color: hampanelSurfaceAlt),
+              children: [
+                for (var i = 0; i < block.header.length; i++)
+                  cell(block.header[i], block.aligns[i], header: true),
+              ],
+            ),
+            for (final row in block.rows)
+              TableRow(
+                children: [
+                  for (var i = 0; i < block.header.length; i++)
+                    cell(row[i], block.aligns[i]),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _inline(String text, TextStyle style) {
