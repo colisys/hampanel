@@ -26,6 +26,21 @@ pub fn swap(ctx: *context.Context) anyerror!void {
     try ctx.json(outcome);
 }
 
+pub fn swapDevice(ctx: *context.Context) anyerror!void {
+    const Body = struct { device: []const u8 };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected device path");
+        return;
+    };
+    const outcome = platform.host_settings.enableSwapDevice(ctx.arena, body.device) catch |err| {
+        fail(ctx, err);
+        return;
+    };
+    if (!outcome.ok) ctx.response.status = 502;
+    log.info("host: swap device={s} ok={}", .{ body.device, outcome.ok });
+    try ctx.json(outcome);
+}
+
 pub fn ntp(ctx: *context.Context) anyerror!void {
     const Body = struct { enabled: bool };
     const body = ctx.requireJson(Body) catch {
@@ -74,6 +89,7 @@ fn fail(ctx: *context.Context, err: anyerror) void {
     switch (err) {
         error.Unsupported => ctx.fail(501, "unsupported", "该功能在当前平台不可用"),
         error.InvalidSize => ctx.fail(400, "bad_size", "交换文件大小需在 64 MiB 到 64 GiB 之间"),
+        error.InvalidDevice => ctx.fail(400, "bad_device", "设备路径必须是 /dev/ 下的块设备"),
         error.InvalidEntry => ctx.fail(400, "bad_entry", "启动项索引超出范围"),
         error.ContentTooLarge => ctx.fail(400, "too_large", "hosts 内容过大"),
         error.InvalidContent => ctx.fail(400, "bad_content", "hosts 内容包含非法字符"),

@@ -58,6 +58,7 @@ pub const routes = [_]router.Route{
 
     .{ .method = .GET, .pattern = "/api/v1/host/settings", .handler = host.settings },
     .{ .method = .POST, .pattern = "/api/v1/host/swap", .handler = host.swap },
+    .{ .method = .POST, .pattern = "/api/v1/host/swap-device", .handler = host.swapDevice },
     .{ .method = .POST, .pattern = "/api/v1/host/ntp", .handler = host.ntp },
     .{ .method = .PUT, .pattern = "/api/v1/host/hosts", .handler = host.hosts },
     .{ .method = .POST, .pattern = "/api/v1/host/grub", .handler = host.grub },

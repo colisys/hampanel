@@ -27,6 +27,10 @@ pub fn setSwap(_: std.mem.Allocator, _: u32) !Outcome {
     return error.Unsupported;
 }
 
+pub fn enableSwapDevice(_: std.mem.Allocator, _: []const u8) !Outcome {
+    return error.Unsupported;
+}
+
 pub fn setNtp(_: std.mem.Allocator, _: bool) !Outcome {
     return error.Unsupported;
 }

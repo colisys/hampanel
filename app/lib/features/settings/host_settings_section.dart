@@ -17,6 +17,7 @@ class HostSettingsSection extends StatefulWidget {
 
 class _HostSettingsSectionState extends State<HostSettingsSection> {
   final _swapMb = TextEditingController(text: '2048');
+  final _swapDevice = TextEditingController();
   final _hosts = TextEditingController();
   Map<String, dynamic>? _status;
   String? _error;
@@ -35,6 +36,7 @@ class _HostSettingsSectionState extends State<HostSettingsSection> {
   @override
   void dispose() {
     _swapMb.dispose();
+    _swapDevice.dispose();
     _hosts.dispose();
     super.dispose();
   }
@@ -191,6 +193,32 @@ class _HostSettingsSectionState extends State<HostSettingsSection> {
                   '使用 /swapfile（64 MiB – 64 GiB），写入 /etc/fstab 后开机自动挂载。',
                   style: TextStyle(fontSize: 11, color: hampanelMuted),
                 ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 240,
+                      child: TextField(
+                        controller: _swapDevice,
+                        decoration: const InputDecoration(
+                          labelText: '已有分区 / 设备',
+                          hintText: '/dev/vg0/swap 或 /dev/sdb2',
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    OutlinedButton(
+                      onPressed: _busy ? null : _enableSwapDevice,
+                      child: const Text('启用现有分区'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '仅对已格式化为 swap 的块设备执行 swapon，不会自动格式化分区。',
+                  style: TextStyle(fontSize: 11, color: hampanelMuted),
+                ),
               ],
             ),
           ),
@@ -320,6 +348,19 @@ class _HostSettingsSectionState extends State<HostSettingsSection> {
     {'size_mb': 0},
     success: '交换文件已关闭',
   );
+
+  Future<void> _enableSwapDevice() async {
+    final device = _swapDevice.text.trim();
+    if (!device.startsWith('/dev/')) {
+      _toast('请输入 /dev/ 下的块设备路径');
+      return;
+    }
+    await _post(
+      '/api/v1/host/swap-device',
+      {'device': device},
+      success: '$device 已启用为交换空间',
+    );
+  }
 
   Widget _row(String label, String value) {
     return Padding(

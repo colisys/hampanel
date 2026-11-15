@@ -120,6 +120,26 @@ fn removeFstabEntry(allocator: std.mem.Allocator) !void {
     try writeFile("/etc/fstab", kept.items);
 }
 
+/// 使用已有分区/设备作为交换空间。只执行 swapon，不格式化块设备。
+pub fn enableSwapDevice(allocator: std.mem.Allocator, device: []const u8) !Outcome {
+    if (!validDevice(device)) return error.InvalidDevice;
+    const result = exec.run(allocator, &.{ "swapon", device }, 1024 * 1024) catch
+        return error.ToolMissing;
+    return .{ .ok = result.ok(), .output = errText(result) };
+}
+
+fn validDevice(device: []const u8) bool {
+    if (device.len <= 5 or device.len > 128) return false;
+    if (!std.mem.startsWith(u8, device, "/dev/")) return false;
+    if (std.mem.indexOf(u8, device, "..") != null) return false;
+    for (device) |ch| {
+        if (std.ascii.isAlphanumeric(ch)) continue;
+        if (ch == '/' or ch == '.' or ch == '_' or ch == '-') continue;
+        return false;
+    }
+    return true;
+}
+
 pub fn setNtp(allocator: std.mem.Allocator, enabled: bool) !Outcome {
     const value = if (enabled) "true" else "false";
     const result = exec.run(allocator, &.{ "timedatectl", "set-ntp", value }, 1024 * 1024) catch
