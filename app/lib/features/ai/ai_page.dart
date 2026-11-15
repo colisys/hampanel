@@ -624,6 +624,7 @@ class _AiPageState extends State<AiPage> {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 720;
     return Column(
       children: [
         PageHeader(
@@ -645,6 +646,12 @@ class _AiPageState extends State<AiPage> {
               onPressed: _resetChat,
               icon: const Icon(Icons.delete_sweep_outlined, size: 20),
             ),
+            if (compact)
+              IconButton(
+                tooltip: '对话列表',
+                onPressed: _openConversationPicker,
+                icon: const Icon(Icons.forum_outlined, size: 20),
+              ),
           ],
         ),
         if (_loading)
@@ -684,8 +691,10 @@ class _AiPageState extends State<AiPage> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SizedBox(width: 230, child: _conversationList()),
-                VerticalDivider(width: 1, color: hampanelBorder),
+                if (!compact) ...[
+                  SizedBox(width: 230, child: _conversationList()),
+                  VerticalDivider(width: 1, color: hampanelBorder),
+                ],
                 Expanded(
                   child: Column(
                     children: [
@@ -707,10 +716,10 @@ class _AiPageState extends State<AiPage> {
                                       ),
                               )
                             : ListView.builder(
-                                padding: const EdgeInsets.fromLTRB(
-                                  24,
+                                padding: EdgeInsets.fromLTRB(
+                                  compact ? 12 : 24,
                                   0,
-                                  24,
+                                  compact ? 12 : 24,
                                   12,
                                 ),
                                 itemCount: _messages.length,
@@ -773,7 +782,23 @@ class _AiPageState extends State<AiPage> {
     );
   }
 
-  Widget _conversationList() {
+  void _openConversationPicker() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: hampanelSurface,
+      isScrollControlled: true,
+      builder: (sheetContext) => SizedBox(
+        height: 460,
+        child: SafeArea(
+          child: _conversationList(
+            onPicked: () => Navigator.of(sheetContext).pop(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _conversationList({VoidCallback? onPicked}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -793,7 +818,10 @@ class _AiPageState extends State<AiPage> {
               const Spacer(),
               IconButton(
                 tooltip: '新对话',
-                onPressed: _startConversation,
+                onPressed: () {
+                  _startConversation();
+                  onPicked?.call();
+                },
                 icon: const Icon(Icons.add, size: 16),
                 visualDensity: VisualDensity.compact,
               ),
@@ -814,7 +842,10 @@ class _AiPageState extends State<AiPage> {
                   borderRadius: BorderRadius.circular(2),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(2),
-                    onTap: () => _selectConversation(conversation.id),
+                    onTap: () {
+                      _selectConversation(conversation.id);
+                      onPicked?.call();
+                    },
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(8, 6, 2, 6),
                       child: Row(

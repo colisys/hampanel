@@ -73,7 +73,7 @@ void main() {
     'narrow shell collapses the sidebar into a drawer',
     skip: !_opensslReady,
     (tester) async {
-      tester.view.physicalSize = const Size(480, 900);
+      tester.view.physicalSize = const Size(360, 800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
