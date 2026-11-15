@@ -304,9 +304,9 @@ class _ServiceLogsDialogState extends State<_ServiceLogsDialog> {
     final visible = _visibleLines;
     return AlertDialog(
       title: Text('${widget.unit} 日志'),
-      content: SizedBox(
-        width: 960,
-        height: 560,
+      content: DialogBody(
+        maxWidth: 960,
+        maxHeight: 560,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

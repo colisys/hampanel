@@ -95,9 +95,9 @@ class _FilesPageState extends State<FilesPage> {
         context: context,
         builder: (context) => AlertDialog(
           title: Text(entry.name),
-          content: SizedBox(
-            width: 820,
-            height: 560,
+          content: DialogBody(
+            maxWidth: 820,
+            maxHeight: 560,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -234,9 +234,9 @@ class _FilesPageState extends State<FilesPage> {
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: Text('${entry.name} 的历史版本'),
-          content: SizedBox(
-            width: 720,
-            height: 460,
+          content: DialogBody(
+            maxWidth: 720,
+            maxHeight: 460,
             child: ListView.separated(
               itemCount: versions.length,
               separatorBuilder: (_, _) => const Divider(),
@@ -300,9 +300,9 @@ class _FilesPageState extends State<FilesPage> {
         context: context,
         builder: (context) => AlertDialog(
           title: Text('版本 ${formatDateTime(version.createdAt)}'),
-          content: SizedBox(
-            width: 820,
-            height: 520,
+          content: DialogBody(
+            maxWidth: 820,
+            maxHeight: 520,
             child: SingleChildScrollView(
               child: SelectableText(
                 encoding == 'utf8'

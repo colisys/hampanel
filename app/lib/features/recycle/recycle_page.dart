@@ -191,10 +191,7 @@ class _RecyclePageState extends State<RecyclePage> {
                       const SizedBox(width: 8),
                       Text(
                         isDir ? '-' : formatBytes(entry.size),
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: hampanelMuted,
-                        ),
+                        style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                       ),
                     ],
                   ),

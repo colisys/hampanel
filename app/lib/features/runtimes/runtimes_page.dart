@@ -40,12 +40,13 @@ class _RuntimesPageState extends State<RuntimesPage> {
       if (!mounted) return;
       setState(() {
         _catalog = RuntimeCatalog.fromJson(catalogJson as Map<String, dynamic>);
-        _environments = (((envJson as Map<String, dynamic>?)?['environments']
-                    as List<dynamic>?) ??
-                const [])
-            .whereType<Map<String, dynamic>>()
-            .map(RuntimeEnvironment.fromJson)
-            .toList();
+        _environments =
+            (((envJson as Map<String, dynamic>?)?['environments']
+                        as List<dynamic>?) ??
+                    const [])
+                .whereType<Map<String, dynamic>>()
+                .map(RuntimeEnvironment.fromJson)
+                .toList();
         _loading = false;
       });
     } catch (error) {
@@ -173,11 +174,12 @@ class _RuntimesPageState extends State<RuntimesPage> {
   Future<void> _configs(RuntimeEnvironment env) async {
     try {
       final json = await _api.getJson('/api/v1/runtimes/${env.id}/config');
-      final files = (((json as Map<String, dynamic>)['files'] as List<dynamic>?) ??
-              const [])
-          .whereType<Map<String, dynamic>>()
-          .map(RuntimeConfigFile.fromJson)
-          .toList();
+      final files =
+          (((json as Map<String, dynamic>)['files'] as List<dynamic>?) ??
+                  const [])
+              .whereType<Map<String, dynamic>>()
+              .map(RuntimeConfigFile.fromJson)
+              .toList();
       if (!mounted) return;
       await showDialog<void>(
         context: context,
@@ -408,7 +410,10 @@ class _EnvironmentCard extends StatelessWidget {
                 onSelected: onAction,
                 itemBuilder: (_) => const [
                   PopupMenuItem(value: 'delete', child: Text('删除（保留数据）')),
-                  PopupMenuItem(value: 'delete-volumes', child: Text('删除并删除数据卷')),
+                  PopupMenuItem(
+                    value: 'delete-volumes',
+                    child: Text('删除并删除数据卷'),
+                  ),
                 ],
               ),
             ],
@@ -478,12 +483,14 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
 
   Future<void> _loadTags(RuntimePreset preset) async {
     try {
-      final json = await widget.api
-          .getJson('/api/v1/runtimes/catalog/${preset.id}/tags');
-      final tags = (((json as Map<String, dynamic>)['tags'] as List<dynamic>?) ??
-              const [])
-          .whereType<String>()
-          .toList();
+      final json = await widget.api.getJson(
+        '/api/v1/runtimes/catalog/${preset.id}/tags',
+      );
+      final tags =
+          (((json as Map<String, dynamic>)['tags'] as List<dynamic>?) ??
+                  const [])
+              .whereType<String>()
+              .toList();
       if (!mounted || _preset?.id != preset.id) return;
       setState(() => _tags = tags);
     } catch (_) {
@@ -520,8 +527,8 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
     final preset = _preset;
     return AlertDialog(
       title: const Text('新建运行环境'),
-      content: SizedBox(
-        width: 640,
+      content: DialogBody(
+        maxWidth: 640,
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -581,7 +588,10 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
                   children: [
                     for (final tag in _tags.take(16))
                       ActionChip(
-                        label: Text(tag, style: const TextStyle(fontSize: 10.5)),
+                        label: Text(
+                          tag,
+                          style: const TextStyle(fontSize: 10.5),
+                        ),
                         onPressed: () => setState(() => _tag.text = tag),
                       ),
                   ],
@@ -731,11 +741,7 @@ class _ConfigDialogState extends State<_ConfigDialog> {
       final map = result as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       if (map['ok'] != true) {
-        await showOutputDialog(
-          context,
-          '保存失败',
-          map['output'] as String? ?? '',
-        );
+        await showOutputDialog(context, '保存失败', map['output'] as String? ?? '');
       } else {
         if (mounted) Navigator.of(context).pop();
       }
@@ -751,9 +757,9 @@ class _ConfigDialogState extends State<_ConfigDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text('${widget.env.name} · 配置'),
-      content: SizedBox(
-        width: 820,
-        height: 560,
+      content: DialogBody(
+        maxWidth: 820,
+        maxHeight: 560,
         child: Column(
           children: [
             if (widget.files.isNotEmpty)
@@ -762,10 +768,7 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                 decoration: const InputDecoration(labelText: '配置文件'),
                 items: [
                   for (final file in widget.files)
-                    DropdownMenuItem(
-                      value: file.path,
-                      child: Text(file.path),
-                    ),
+                    DropdownMenuItem(value: file.path, child: Text(file.path)),
                 ],
                 onChanged: (value) {
                   final file = widget.files.firstWhere((f) => f.path == value);
@@ -842,11 +845,7 @@ class _ExtensionsDialogState extends State<_ExtensionsDialog> {
       final map = result as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       if (map['ok'] != true) {
-        await showOutputDialog(
-          context,
-          '重建失败',
-          map['output'] as String? ?? '',
-        );
+        await showOutputDialog(context, '重建失败', map['output'] as String? ?? '');
       } else {
         await widget.onChanged();
         if (mounted) Navigator.of(context).pop();
@@ -865,8 +864,8 @@ class _ExtensionsDialogState extends State<_ExtensionsDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text('${widget.env.name} · 扩展'),
-      content: SizedBox(
-        width: 520,
+      content: DialogBody(
+        maxWidth: 520,
         child: widget.preset.extensions.isEmpty
             ? const Text('该运行时没有可选的扩展。')
             : Wrap(
@@ -931,8 +930,9 @@ class _ProcessesDialogState extends State<_ProcessesDialog> {
 
   Future<void> _refresh() async {
     try {
-      final json = await widget.api
-          .getJson('/api/v1/runtimes/${widget.env.id}/processes');
+      final json = await widget.api.getJson(
+        '/api/v1/runtimes/${widget.env.id}/processes',
+      );
       final map = json as Map<String, dynamic>? ?? const {};
       final output = map['output'] as String? ?? '';
       if (!mounted) return;
@@ -960,11 +960,7 @@ class _ProcessesDialogState extends State<_ProcessesDialog> {
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       if (map['ok'] != true) {
-        await showOutputDialog(
-          context,
-          '操作失败',
-          map['output'] as String? ?? '',
-        );
+        await showOutputDialog(context, '操作失败', map['output'] as String? ?? '');
       }
     } catch (error) {
       if (mounted) {
@@ -981,9 +977,9 @@ class _ProcessesDialogState extends State<_ProcessesDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text('${widget.env.name} · 进程'),
-      content: SizedBox(
-        width: 720,
-        height: 420,
+      content: DialogBody(
+        maxWidth: 720,
+        maxHeight: 420,
         child: Column(
           children: [
             Row(
@@ -1067,10 +1063,10 @@ class _DockerSettingsDialogState extends State<_DockerSettingsDialog> {
   @override
   void initState() {
     super.initState();
-    final mirrors = ((widget.initial['registry_mirrors'] as List<dynamic>?) ??
-            const [])
-        .whereType<String>()
-        .join('\n');
+    final mirrors =
+        ((widget.initial['registry_mirrors'] as List<dynamic>?) ?? const [])
+            .whereType<String>()
+            .join('\n');
     _mirrors = TextEditingController(text: mirrors);
     _cidr = TextEditingController(
       text: widget.initial['fixed_cidr_v6'] as String? ?? '',
@@ -1104,11 +1100,7 @@ class _DockerSettingsDialogState extends State<_DockerSettingsDialog> {
       final map = result as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       if (map['ok'] != true) {
-        await showOutputDialog(
-          context,
-          '保存失败',
-          map['output'] as String? ?? '',
-        );
+        await showOutputDialog(context, '保存失败', map['output'] as String? ?? '');
       } else {
         await showOutputDialog(
           context,
@@ -1131,8 +1123,8 @@ class _DockerSettingsDialogState extends State<_DockerSettingsDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Docker 守护进程设置'),
-      content: SizedBox(
-        width: 620,
+      content: DialogBody(
+        maxWidth: 620,
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1212,9 +1204,9 @@ class _EnvironmentDetailDialog extends StatelessWidget {
       length: 4,
       child: AlertDialog(
         title: Text('${env.name} · 运行环境'),
-        content: SizedBox(
-          width: 920,
-          height: 580,
+        content: DialogBody(
+          maxWidth: 920,
+          maxHeight: 580,
           child: Column(
             children: [
               const Align(
@@ -1416,16 +1408,11 @@ class _RuntimeConfigTabState extends State<_RuntimeConfigTab> {
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       if (map['ok'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('配置已保存并应用')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('配置已保存并应用')));
         await _load();
       } else {
-        await showOutputDialog(
-          context,
-          '保存失败',
-          map['output'] as String? ?? '',
-        );
+        await showOutputDialog(context, '保存失败', map['output'] as String? ?? '');
       }
     } catch (error) {
       if (mounted) {
@@ -1463,10 +1450,7 @@ class _RuntimeConfigTabState extends State<_RuntimeConfigTab> {
                   for (final file in _files)
                     DropdownMenuItem(
                       value: file.path,
-                      child: Text(
-                        file.path,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                      child: Text(file.path, overflow: TextOverflow.ellipsis),
                     ),
                 ],
                 onChanged: (value) {
@@ -1568,16 +1552,11 @@ class _RuntimeExtensionsTabState extends State<_RuntimeExtensionsTab> {
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       if (map['ok'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('扩展已保存，正在重建镜像')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('扩展已保存，正在重建镜像')));
         await widget.onChanged();
       } else {
-        await showOutputDialog(
-          context,
-          '保存失败',
-          map['output'] as String? ?? '',
-        );
+        await showOutputDialog(context, '保存失败', map['output'] as String? ?? '');
       }
     } catch (error) {
       if (mounted) {

@@ -147,8 +147,8 @@ class _SoftwarePageState extends State<SoftwarePage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text('初始化 ${item.name}？'),
-          content: SizedBox(
-            width: 540,
+          content: DialogBody(
+            maxWidth: 540,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -233,8 +233,8 @@ class _SoftwarePageState extends State<SoftwarePage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('封禁 IP'),
-          content: SizedBox(
-            width: 420,
+          content: DialogBody(
+            maxWidth: 420,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

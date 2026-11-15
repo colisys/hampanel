@@ -58,8 +58,8 @@ class _FirewallPageState extends State<FirewallPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('新增防火墙规则'),
-          content: SizedBox(
-            width: 480,
+          content: DialogBody(
+            maxWidth: 480,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

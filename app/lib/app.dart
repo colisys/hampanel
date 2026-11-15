@@ -16,8 +16,7 @@ class HampanelApp extends StatefulWidget {
   State<HampanelApp> createState() => _HampanelAppState();
 }
 
-class _HampanelAppState extends State<HampanelApp>
-    with WidgetsBindingObserver {
+class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
   HostStore? _hosts;
   PanelSession? _session;
   String? _activeId;
@@ -35,11 +34,7 @@ class _HampanelAppState extends State<HampanelApp>
     final initial = widget.initial;
     HostRecord? active;
     if (initial != null) {
-      active = hosts.upsert(
-        alias: null,
-        enrollment: initial,
-        activate: true,
-      );
+      active = hosts.upsert(alias: null, enrollment: initial, activate: true);
     } else {
       active = hosts.active();
     }
@@ -63,10 +58,7 @@ class _HampanelAppState extends State<HampanelApp>
     setState(_syncBrightness);
   }
 
-  Future<void> _onEnrolled(
-    Enrollment enrollment, {
-    String? alias,
-  }) async {
+  Future<void> _onEnrolled(Enrollment enrollment, {String? alias}) async {
     final hosts = _hosts;
     if (hosts == null) return;
     final host = hosts.upsert(
@@ -116,16 +108,16 @@ class _HampanelAppState extends State<HampanelApp>
       home: _hosts == null
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
           : session == null
-              ? LoginPage(onEnrolled: _onEnrolled)
-              : PanelScope(
-                  session: session,
-                  child: PanelShell(
-                    key: ValueKey('shell-$_activeId'),
-                    sessionKey: _activeId!,
-                    onLogout: _logout,
-                    onSwitchHost: _switchHost,
-                  ),
-                ),
+          ? LoginPage(onEnrolled: _onEnrolled)
+          : PanelScope(
+              session: session,
+              child: PanelShell(
+                key: ValueKey('shell-$_activeId'),
+                sessionKey: _activeId!,
+                onLogout: _logout,
+                onSwitchHost: _switchHost,
+              ),
+            ),
     );
   }
 }

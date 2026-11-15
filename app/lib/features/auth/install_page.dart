@@ -11,7 +11,8 @@ import '../../ui/theme.dart';
 class InstallPage extends StatefulWidget {
   const InstallPage({super.key, required this.onEnrolled});
 
-  final Future<void> Function(Enrollment enrollment, {String? alias}) onEnrolled;
+  final Future<void> Function(Enrollment enrollment, {String? alias})
+  onEnrolled;
 
   @override
   State<InstallPage> createState() => _InstallPageState();
@@ -326,10 +327,7 @@ class _InstallPageState extends State<InstallPage> {
                         value: 'tuna',
                         child: Text('清华 mirrors.tuna.tsinghua.edu.cn'),
                       ),
-                      DropdownMenuItem(
-                        value: 'custom',
-                        child: Text('自定义镜像地址'),
-                      ),
+                      DropdownMenuItem(value: 'custom', child: Text('自定义镜像地址')),
                     ],
                     onChanged: (value) => setState(() => _mirror = value ?? ''),
                   ),
@@ -394,10 +392,7 @@ class _InstallPageState extends State<InstallPage> {
                   const SizedBox(height: 12),
                   Text(
                     _error!,
-                    style: TextStyle(
-                      color: hampanelDanger,
-                      fontSize: 12.5,
-                    ),
+                    style: TextStyle(color: hampanelDanger, fontSize: 12.5),
                   ),
                 ],
                 const SizedBox(height: 16),

@@ -35,9 +35,9 @@ class TunnelStore {
 
   static Future<void> save(List<TunnelProfile> profiles) async {
     await _dir().create(recursive: true);
-    await _file.writeAsString(jsonEncode([
-      for (final profile in profiles) profile.toJson(),
-    ]));
+    await _file.writeAsString(
+      jsonEncode([for (final profile in profiles) profile.toJson()]),
+    );
     if (!Platform.isWindows) {
       await Process.run('chmod', ['600', _file.path]);
     }

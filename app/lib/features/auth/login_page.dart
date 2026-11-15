@@ -9,7 +9,8 @@ import 'install_page.dart';
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.onEnrolled});
 
-  final Future<void> Function(Enrollment enrollment, {String? alias}) onEnrolled;
+  final Future<void> Function(Enrollment enrollment, {String? alias})
+  onEnrolled;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -207,8 +208,7 @@ class _LoginPageState extends State<LoginPage> {
                               hintStyle: monospace.copyWith(
                                 color: hampanelMuted,
                               ),
-                              hintText:
-                                  '{ "endpoint": "203.0.113.10:8443", "ca_pem": "...", ... }',
+                              hintText: '{ "endpoint": "203.0.113.10:8443", "ca_pem": "...", ... }',
                               alignLabelWithHint: true,
                             ),
                           ),
@@ -242,10 +242,7 @@ class _LoginPageState extends State<LoginPage> {
                             children: [
                               TextButton.icon(
                                 onPressed: _busy ? null : _paste,
-                                icon: const Icon(
-                                  Icons.content_paste,
-                                  size: 16,
-                                ),
+                                icon: const Icon(Icons.content_paste, size: 16),
                                 label: const Text('从剪贴板粘贴'),
                               ),
                               const Spacer(),

@@ -139,8 +139,8 @@ class _AiPageState extends State<AiPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('AI 配置'),
-          content: SizedBox(
-            width: 560,
+          content: DialogBody(
+            maxWidth: 560,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -369,7 +369,9 @@ class _AiPageState extends State<AiPage> {
 
     _inputController.clear();
     if (conversation.title == '新对话') {
-      conversation.title = text.length > 18 ? '${text.substring(0, 18)}…' : text;
+      conversation.title = text.length > 18
+          ? '${text.substring(0, 18)}…'
+          : text;
     }
     conversation.updatedAt = DateTime.now().millisecondsSinceEpoch;
     setState(() {
@@ -539,8 +541,8 @@ class _AiPageState extends State<AiPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('AI 请求执行操作'),
-        content: SizedBox(
-          width: 620,
+        content: DialogBody(
+          maxWidth: 620,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -603,7 +605,8 @@ class _AiPageState extends State<AiPage> {
     final conversation = _active;
     if (!mounted || conversation == null) return;
     setState(
-      () => conversation.entries.add(ConversationEntry(role: 'tool', text: text)),
+      () =>
+          conversation.entries.add(ConversationEntry(role: 'tool', text: text)),
     );
   }
 

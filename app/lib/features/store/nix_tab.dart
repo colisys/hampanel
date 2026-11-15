@@ -114,9 +114,8 @@ class _NixTabState extends State<NixTab> {
   Future<void> _runCustom(bool build) async {
     final target = _custom.text.trim();
     if (target.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入 nixpkgs 属性名')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请输入 nixpkgs 属性名')));
       return;
     }
     await _run(target, build);

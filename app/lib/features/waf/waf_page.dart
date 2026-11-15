@@ -330,9 +330,9 @@ class _WafPageState extends State<WafPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('选择 GeoIP 国家/地区（拒绝）'),
-          content: SizedBox(
-            width: 520,
-            height: 460,
+          content: DialogBody(
+            maxWidth: 520,
+            maxHeight: 460,
             child: ListView(
               children: [
                 for (final country in catalog.countries)
@@ -388,9 +388,9 @@ class _WafPageState extends State<WafPage> {
               .toList();
           return AlertDialog(
             title: const Text('选择 GeoSite 分类（拒绝）'),
-            content: SizedBox(
-              width: 620,
-              height: 520,
+            content: DialogBody(
+              maxWidth: 620,
+              maxHeight: 520,
               child: Column(
                 children: [
                   TextField(
@@ -463,8 +463,8 @@ class _WafPageState extends State<WafPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: Text(existing == null ? '新增站点策略' : '编辑站点策略'),
-          content: SizedBox(
-            width: 620,
+          content: DialogBody(
+            maxWidth: 620,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1136,11 +1136,7 @@ class _WafPageState extends State<WafPage> {
           '否则攻击者可以绕过 WAF。\n\n'
           '日志路径：${status.logPath}\n'
           '配置文件：${status.configPath}',
-          style: TextStyle(
-            fontSize: 12,
-            color: hampanelMuted,
-            height: 1.6,
-          ),
+          style: TextStyle(fontSize: 12, color: hampanelMuted, height: 1.6),
         ),
       ),
     ];

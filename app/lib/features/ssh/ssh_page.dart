@@ -179,8 +179,8 @@ class _SshPageState extends State<SshPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('添加 SSH 公钥'),
-        content: SizedBox(
-          width: 620,
+        content: DialogBody(
+          maxWidth: 620,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

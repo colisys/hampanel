@@ -83,10 +83,9 @@ class _ProcessesPageState extends State<ProcessesPage> {
     final api = PanelScope.of(context).api;
     setState(() => _busyPid = process.pid);
     try {
-      await api.postJson(
-        '/api/v1/processes/${process.pid}/kill',
-        {'signal': signal},
-      );
+      await api.postJson('/api/v1/processes/${process.pid}/kill', {
+        'signal': signal,
+      });
       _toast('已向 PID ${process.pid} 发送 $signal 信号');
       await _load();
     } catch (error) {
@@ -282,9 +281,8 @@ class _ProcessDetailDialogState extends State<_ProcessDetailDialog> {
 
   Future<void> _load() async {
     try {
-      final json = await PanelScope.of(
-        context,
-      ).api.getJson('/api/v1/processes/${widget.pid}');
+      final json = await PanelScope.of(context).api
+          .getJson('/api/v1/processes/${widget.pid}');
       if (!mounted) return;
       setState(() {
         _detail = ProcessDetail.fromJson(json as Map<String, dynamic>);
@@ -301,9 +299,9 @@ class _ProcessDetailDialogState extends State<_ProcessDetailDialog> {
     final detail = _detail;
     return AlertDialog(
       title: Text('进程详情 · PID ${widget.pid}'),
-      content: SizedBox(
-        width: 880,
-        height: 560,
+      content: DialogBody(
+        maxWidth: 880,
+        maxHeight: 560,
         child: _error != null
             ? ErrorBanner(message: _error!, onRetry: _load)
             : detail == null
@@ -388,7 +386,10 @@ class _ProcessDetailDialogState extends State<_ProcessDetailDialog> {
               ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
+        ),
       ],
     );
   }

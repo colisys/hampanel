@@ -136,9 +136,9 @@ class _DockerPageState extends State<DockerPage> {
         context: context,
         builder: (context) => AlertDialog(
           title: Text('${container.name} 日志'),
-          content: SizedBox(
-            width: 860,
-            height: 520,
+          content: DialogBody(
+            maxWidth: 860,
+            maxHeight: 520,
             child: SingleChildScrollView(
               child: SelectableText(
                 (map['output'] as String? ?? '').isEmpty
@@ -208,35 +208,35 @@ class _DockerPageState extends State<DockerPage> {
           )
         else
           Expanded(
-          child: _loading
-              ? const LoadingView()
-              : DefaultTabController(
-                  length: 2,
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 24),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: TabBar(
-                            isScrollable: true,
-                            tabAlignment: TabAlignment.start,
-                            tabs: [
-                              Tab(text: '容器'),
-                              Tab(text: '镜像'),
-                            ],
+            child: _loading
+                ? const LoadingView()
+                : DefaultTabController(
+                    length: 2,
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 24),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: TabBar(
+                              isScrollable: true,
+                              tabAlignment: TabAlignment.start,
+                              tabs: [
+                                Tab(text: '容器'),
+                                Tab(text: '镜像'),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      Expanded(
-                        child: TabBarView(
-                          children: [_containersTab(), _imagesTab()],
+                        Expanded(
+                          child: TabBarView(
+                            children: [_containersTab(), _imagesTab()],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-        ),
+          ),
       ],
     );
   }
@@ -282,10 +282,7 @@ class _DockerPageState extends State<DockerPage> {
                       const SizedBox(height: 4),
                       Text(
                         container.image,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: hampanelMuted,
-                        ),
+                        style: TextStyle(fontSize: 11, color: hampanelMuted),
                       ),
                     ],
                   ),
@@ -294,10 +291,7 @@ class _DockerPageState extends State<DockerPage> {
                   flex: 3,
                   child: Text(
                     container.status,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: hampanelMuted,
-                    ),
+                    style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                   ),
                 ),
                 SizedBox(
@@ -358,11 +352,7 @@ class _DockerPageState extends State<DockerPage> {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                Icon(
-                  Icons.layers_outlined,
-                  size: 20,
-                  color: hampanelMuted,
-                ),
+                Icon(Icons.layers_outlined, size: 20, color: hampanelMuted),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Text(
@@ -385,10 +375,7 @@ class _DockerPageState extends State<DockerPage> {
                   width: 90,
                   child: Text(
                     image.size,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: hampanelMuted,
-                    ),
+                    style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                   ),
                 ),
                 SizedBox(

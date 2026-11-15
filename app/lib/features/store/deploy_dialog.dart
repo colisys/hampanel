@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../ui/widgets.dart';
 import '../../core/models/store_app.dart';
 import '../../ui/theme.dart';
 
@@ -16,8 +17,8 @@ Future<Map<String, String>?> showDeployDialog(
     context: context,
     builder: (context) => AlertDialog(
       title: Text('部署 ${app.name}'),
-      content: SizedBox(
-        width: 520,
+      content: DialogBody(
+        maxWidth: 520,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,9 +123,9 @@ Future<void> showDeployedDialog(
     context: context,
     builder: (context) => AlertDialog(
       title: Text('$appName 部署结果'),
-      content: SizedBox(
-        width: 760,
-        height: 460,
+      content: DialogBody(
+        maxWidth: 760,
+        maxHeight: 460,
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -167,9 +168,9 @@ Future<void> showOutputDialog(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(title),
-      content: SizedBox(
-        width: 820,
-        height: 500,
+      content: DialogBody(
+        maxWidth: 820,
+        maxHeight: 500,
         child: SingleChildScrollView(
           child: SelectableText(
             output.isEmpty ? '（无输出）' : output,

@@ -16,10 +16,13 @@ class AiKeychain {
   static Future<String?> readKey() async {
     try {
       if (Platform.isLinux) {
-        final result = await Process.run(
-          'secret-tool',
-          ['lookup', 'service', _service, 'account', _account],
-        );
+        final result = await Process.run('secret-tool', [
+          'lookup',
+          'service',
+          _service,
+          'account',
+          _account,
+        ]);
         if (result.exitCode != 0) return null;
         final value = (result.stdout as String).trim();
         return value.isEmpty ? null : value;
@@ -38,10 +41,12 @@ class AiKeychain {
         return value.isEmpty ? null : value;
       }
       if (Platform.isWindows) {
-        final result = await Process.run(
-          'powershell.exe',
-          ['-NoProfile', '-NonInteractive', '-Command', _windowsReadScript],
-        );
+        final result = await Process.run('powershell.exe', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          _windowsReadScript,
+        ]);
         if (result.exitCode != 0) return null;
         final value = (result.stdout as String).trim();
         return value.isEmpty ? null : value;
@@ -55,10 +60,14 @@ class AiKeychain {
   static Future<void> writeKey(String key) async {
     try {
       if (Platform.isLinux) {
-        final process = await Process.start(
-          'secret-tool',
-          ['store', '--label=Hampanel AI', 'service', _service, 'account', _account],
-        );
+        final process = await Process.start('secret-tool', [
+          'store',
+          '--label=Hampanel AI',
+          'service',
+          _service,
+          'account',
+          _account,
+        ]);
         process.stdin.write(key);
         await process.stdin.close();
         final code = await process.exitCode;
@@ -97,10 +106,13 @@ class AiKeychain {
   static Future<void> deleteKey() async {
     try {
       if (Platform.isLinux) {
-        await Process.run(
-          'secret-tool',
-          ['clear', 'service', _service, 'account', _account],
-        );
+        await Process.run('secret-tool', [
+          'clear',
+          'service',
+          _service,
+          'account',
+          _account,
+        ]);
         return;
       }
       if (Platform.isMacOS) {
@@ -114,10 +126,12 @@ class AiKeychain {
         return;
       }
       if (Platform.isWindows) {
-        await Process.run(
-          'powershell.exe',
-          ['-NoProfile', '-NonInteractive', '-Command', _windowsDeleteScript],
-        );
+        await Process.run('powershell.exe', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          _windowsDeleteScript,
+        ]);
         return;
       }
     } on ProcessException {

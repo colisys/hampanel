@@ -60,16 +60,14 @@ class RuntimePreset {
     recommendedTags: ((json['recommended_tags'] as List<dynamic>?) ?? const [])
         .whereType<String>()
         .toList(),
-    extensions:
-        ((json['extensions'] as List<dynamic>?) ?? const [])
-            .whereType<Map<String, dynamic>>()
-            .map(RuntimeExtension.fromJson)
-            .toList(),
-    configFiles:
-        ((json['config_files'] as List<dynamic>?) ?? const [])
-            .whereType<Map<String, dynamic>>()
-            .map(RuntimeConfigSpec.fromJson)
-            .toList(),
+    extensions: ((json['extensions'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(RuntimeExtension.fromJson)
+        .toList(),
+    configFiles: ((json['config_files'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(RuntimeConfigSpec.fromJson)
+        .toList(),
   );
 
   RuntimeExtension? extensionById(String id) {

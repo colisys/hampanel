@@ -69,7 +69,9 @@ class ConversationStore {
 
   static File get _file {
     final directory = Enrollment.configDirectory();
-    return File('${directory.path}${Platform.pathSeparator}ai_conversations.json');
+    return File(
+      '${directory.path}${Platform.pathSeparator}ai_conversations.json',
+    );
   }
 
   static Future<List<AiConversation>> load() async {

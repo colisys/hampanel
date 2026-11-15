@@ -122,9 +122,9 @@ class _TunnelsPageState extends State<TunnelsPage> {
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           title: const Text('新建端口穿透'),
-          content: SizedBox(
-            width: 640,
-            height: 560,
+          content: DialogBody(
+            maxWidth: 640,
+            maxHeight: 560,
             child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -457,9 +457,9 @@ class _TunnelsPageState extends State<TunnelsPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
-        content: SizedBox(
-          width: 760,
-          height: 420,
+        content: DialogBody(
+          maxWidth: 760,
+          maxHeight: 420,
           child: SingleChildScrollView(
             child: SelectableText(
               text.isEmpty ? '（无输出）' : text,

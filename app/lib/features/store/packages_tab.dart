@@ -104,19 +104,13 @@ class _PackagesTabState extends State<PackagesTab> {
     if (name == null || name.trim().isEmpty) return;
     setState(() => _busyId = '__custom__');
     try {
-      final json = await _api.postJson(
-        '/api/v1/store/packages/custom',
-        {'name': name.trim()},
-        timeout: const Duration(minutes: 5),
-      );
+      final json = await _api.postJson('/api/v1/store/packages/custom', {
+        'name': name.trim(),
+      }, timeout: const Duration(minutes: 5));
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       if (map['ok'] == false) {
-        await showOutputDialog(
-          context,
-          '安装失败',
-          map['output'] as String? ?? '',
-        );
+        await showOutputDialog(context, '安装失败', map['output'] as String? ?? '');
       } else {
         _toast('$name 已安装');
       }

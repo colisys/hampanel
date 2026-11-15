@@ -22,18 +22,18 @@ class Fail2banJail {
   final List<String> bannedIps;
 
   factory Fail2banJail.fromJson(Map<String, dynamic> json) => Fail2banJail(
-        name: json['name'] as String? ?? '',
-        currentlyFailed: (json['currently_failed'] as num?)?.toInt() ?? 0,
-        totalFailed: (json['total_failed'] as num?)?.toInt() ?? 0,
-        currentlyBanned: (json['currently_banned'] as num?)?.toInt() ?? 0,
-        totalBanned: (json['total_banned'] as num?)?.toInt() ?? 0,
-        maxretry: json['maxretry'] as String? ?? '',
-        bantime: json['bantime'] as String? ?? '',
-        findtime: json['findtime'] as String? ?? '',
-        bannedIps: ((json['banned_ips'] as List<dynamic>?) ?? const [])
-            .whereType<String>()
-            .toList(),
-      );
+    name: json['name'] as String? ?? '',
+    currentlyFailed: (json['currently_failed'] as num?)?.toInt() ?? 0,
+    totalFailed: (json['total_failed'] as num?)?.toInt() ?? 0,
+    currentlyBanned: (json['currently_banned'] as num?)?.toInt() ?? 0,
+    totalBanned: (json['total_banned'] as num?)?.toInt() ?? 0,
+    maxretry: json['maxretry'] as String? ?? '',
+    bantime: json['bantime'] as String? ?? '',
+    findtime: json['findtime'] as String? ?? '',
+    bannedIps: ((json['banned_ips'] as List<dynamic>?) ?? const [])
+        .whereType<String>()
+        .toList(),
+  );
 }
 
 class Fail2banStatus {
@@ -54,14 +54,14 @@ class Fail2banStatus {
   final String message;
 
   factory Fail2banStatus.fromJson(Map<String, dynamic> json) => Fail2banStatus(
-        installed: json['installed'] as bool? ?? false,
-        initialized: json['initialized'] as bool? ?? false,
-        active: json['active'] as bool? ?? false,
-        version: json['version'] as String? ?? '',
-        jails: ((json['jails'] as List<dynamic>?) ?? const [])
-            .whereType<Map<String, dynamic>>()
-            .map(Fail2banJail.fromJson)
-            .toList(),
-        message: json['message'] as String? ?? '',
-      );
+    installed: json['installed'] as bool? ?? false,
+    initialized: json['initialized'] as bool? ?? false,
+    active: json['active'] as bool? ?? false,
+    version: json['version'] as String? ?? '',
+    jails: ((json['jails'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(Fail2banJail.fromJson)
+        .toList(),
+    message: json['message'] as String? ?? '',
+  );
 }

@@ -24,6 +24,8 @@ String _bundle(String caPem, String certPem, String keyPem) => jsonEncode({
   'created_at': 'now',
 });
 
+final _opensslReady = Process.runSync('openssl', ['version']).exitCode == 0;
+
 void main() {
   late String caPem;
   late String certPem;
@@ -36,10 +38,19 @@ void main() {
       if (pki.existsSync()) pki.deleteSync(recursive: true);
     });
     final result = await Process.run('openssl', [
-      'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-      '-keyout', '${pki.path}/key.pem',
-      '-out', '${pki.path}/cert.pem',
-      '-days', '1', '-subj', '/CN=hosts-test',
+      'req',
+      '-x509',
+      '-newkey',
+      'rsa:2048',
+      '-nodes',
+      '-keyout',
+      '${pki.path}/key.pem',
+      '-out',
+      '${pki.path}/cert.pem',
+      '-days',
+      '1',
+      '-subj',
+      '/CN=hosts-test',
     ]);
     if (result.exitCode != 0) {
       fail('openssl failed: ${result.stderr}');
@@ -49,7 +60,9 @@ void main() {
     keyPem = File('${pki.path}/key.pem').readAsStringSync();
   });
 
-  testWidgets('editing a host closes the dialog', (tester) async {
+  testWidgets('editing a host closes the dialog', skip: !_opensslReady, (
+    tester,
+  ) async {
     final dir = Directory.systemTemp.createTempSync('hampanel-hosts');
     addTearDown(() {
       if (dir.existsSync()) dir.deleteSync(recursive: true);
@@ -58,9 +71,7 @@ void main() {
     late HostStore store;
     await tester.runAsync(() async {
       store = await HostStore.open(directory: dir);
-      final enrollment = Enrollment.fromText(
-        _bundle(caPem, certPem, keyPem),
-      );
+      final enrollment = Enrollment.fromText(_bundle(caPem, certPem, keyPem));
       store.upsert(alias: 'aliyun', enrollment: enrollment, activate: true);
     });
     addTearDown(store.close);
@@ -68,9 +79,10 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildHampanelTheme(),
-        home: _Harness(store: store, enrollment: Enrollment.fromText(
-          _bundle(caPem, certPem, keyPem),
-        )),
+        home: _Harness(
+          store: store,
+          enrollment: Enrollment.fromText(_bundle(caPem, certPem, keyPem)),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -110,9 +122,7 @@ class _HarnessState extends State<_Harness> {
   Widget build(BuildContext context) {
     return PanelScope(
       session: _session,
-      child: Scaffold(
-        body: HostsPage(onSwitchHost: _switch),
-      ),
+      child: Scaffold(body: HostsPage(onSwitchHost: _switch)),
     );
   }
 }

@@ -58,8 +58,8 @@ class _CronPageState extends State<CronPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('新增计划任务'),
-        content: SizedBox(
-          width: 560,
+        content: DialogBody(
+          maxWidth: 560,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

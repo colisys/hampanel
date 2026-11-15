@@ -16,13 +16,13 @@ class RecycleEntry {
   final int deletedAt;
 
   factory RecycleEntry.fromJson(Map<String, dynamic> json) => RecycleEntry(
-        id: json['id'] as String? ?? '',
-        originalPath: json['original_path'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        kind: json['kind'] as String? ?? 'file',
-        size: (json['size'] as num?)?.toInt() ?? 0,
-        deletedAt: (json['deleted_at'] as num?)?.toInt() ?? 0,
-      );
+    id: json['id'] as String? ?? '',
+    originalPath: json['original_path'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    kind: json['kind'] as String? ?? 'file',
+    size: (json['size'] as num?)?.toInt() ?? 0,
+    deletedAt: (json['deleted_at'] as num?)?.toInt() ?? 0,
+  );
 }
 
 class FileVersion {
@@ -37,8 +37,8 @@ class FileVersion {
   final int size;
 
   factory FileVersion.fromJson(Map<String, dynamic> json) => FileVersion(
-        id: json['id'] as String? ?? '',
-        createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
-        size: (json['size'] as num?)?.toInt() ?? 0,
-      );
+    id: json['id'] as String? ?? '',
+    createdAt: (json['created_at'] as num?)?.toInt() ?? 0,
+    size: (json['size'] as num?)?.toInt() ?? 0,
+  );
 }

@@ -57,8 +57,8 @@ class _SitesPageState extends State<SitesPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('新建站点'),
-        content: SizedBox(
-          width: 520,
+        content: DialogBody(
+          maxWidth: 520,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

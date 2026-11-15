@@ -19,7 +19,8 @@ class SshLoggingStatus {
   final String service;
   final String message;
 
-  factory SshLoggingStatus.fromJson(Map<String, dynamic> json) => SshLoggingStatus(
+  factory SshLoggingStatus.fromJson(Map<String, dynamic> json) =>
+      SshLoggingStatus(
         mode: json['mode'] as String? ?? 'syslog',
         file: json['file'] as String? ?? '',
         rsyslogAvailable: json['rsyslog_available'] as bool? ?? false,
@@ -45,9 +46,9 @@ class SshLogs {
   final String content;
 
   factory SshLogs.fromJson(Map<String, dynamic> json) => SshLogs(
-        source: json['source'] as String? ?? '',
-        path: json['path'] as String? ?? '',
-        truncated: json['truncated'] as bool? ?? false,
-        content: json['content'] as String? ?? '',
-      );
+    source: json['source'] as String? ?? '',
+    path: json['path'] as String? ?? '',
+    truncated: json['truncated'] as bool? ?? false,
+    content: json['content'] as String? ?? '',
+  );
 }

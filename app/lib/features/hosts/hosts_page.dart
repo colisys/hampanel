@@ -322,8 +322,8 @@ class _HostEditDialogState extends State<_HostEditDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(_isEdit ? '编辑主机' : '新增主机'),
-      content: SizedBox(
-        width: 520,
+      content: DialogBody(
+        maxWidth: 520,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,

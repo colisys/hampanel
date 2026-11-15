@@ -52,10 +52,10 @@ class SshInstallRequest {
   /// Source builds follow the ref: version tags belong to stable, branches
   /// (nightly, main, ...) belong to the nightly pre-release channel.
   String get installChannel => effectiveInstallChannel(
-        mode: mode,
-        channel: channel,
-        sourceRef: sourceRef,
-      );
+    mode: mode,
+    channel: channel,
+    sourceRef: sourceRef,
+  );
 }
 
 /// Resolves the channel whose release should provide the installer script and
@@ -241,8 +241,7 @@ class SshInstaller {
     final override = _releaseOverride;
     final env = <String>[
       'HAMPANEL_SOURCE_BASE=',
-      if (override != null)
-        'HAMPANEL_RELEASE_BASE=${_shellQuote(override)}',
+      if (override != null) 'HAMPANEL_RELEASE_BASE=${_shellQuote(override)}',
     ];
     final runner = '${sudo ? 'sudo -n ' : ''}env ${env.join(' ')} ';
     return 'set -e\n'

@@ -378,8 +378,8 @@ Future<String?> textInputDialog(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(title),
-      content: SizedBox(
-        width: 460,
+      content: DialogBody(
+        maxWidth: 460,
         child: TextField(
           controller: controller,
           autofocus: true,
@@ -564,5 +564,30 @@ class SubNavMenu extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 对话框主体：桌面维持设计宽度，窄屏自动收窄到可用空间，避免横向溢出。
+class DialogBody extends StatelessWidget {
+  const DialogBody({
+    super.key,
+    required this.maxWidth,
+    this.maxHeight,
+    required this.child,
+  });
+
+  final double maxWidth;
+  final double? maxHeight;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final width = maxWidth < size.width - 48 ? maxWidth : size.width - 48;
+    if (maxHeight == null) return SizedBox(width: width, child: child);
+    final height = maxHeight! < size.height - 96
+        ? maxHeight!
+        : size.height - 96;
+    return SizedBox(width: width, height: height, child: child);
   }
 }
