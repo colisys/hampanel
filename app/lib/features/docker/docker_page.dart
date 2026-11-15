@@ -18,6 +18,9 @@ class _DockerPageState extends State<DockerPage> {
   List<DockerImage> _images = const [];
   String? _error;
   bool _loading = true;
+  bool _engineMissing = false;
+  String? _engine;
+  bool _installing = false;
 
   ApiClient get _api => PanelScope.of(context).api;
 
@@ -31,6 +34,7 @@ class _DockerPageState extends State<DockerPage> {
     setState(() {
       _loading = true;
       _error = null;
+      _engineMissing = false;
     });
     try {
       final results = await Future.wait([
@@ -41,6 +45,7 @@ class _DockerPageState extends State<DockerPage> {
       final imageJson = results[1] as Map<String, dynamic>;
       if (!mounted) return;
       setState(() {
+        _engine = containerJson['engine'] as String?;
         _containers =
             ((containerJson['containers'] as List<dynamic>?) ?? const [])
                 .whereType<Map<String, dynamic>>()
@@ -52,12 +57,45 @@ class _DockerPageState extends State<DockerPage> {
             .toList();
         _loading = false;
       });
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        if (error.code == 'engine_unavailable') {
+          _engineMissing = true;
+        } else {
+          _error = error.message;
+        }
+        _loading = false;
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = describeError(error);
         _loading = false;
       });
+    }
+  }
+
+  Future<void> _installDocker() async {
+    setState(() => _installing = true);
+    try {
+      final json = await _api.postJson(
+        '/api/v1/store/packages/docker/install',
+        const <String, dynamic>{},
+        timeout: const Duration(minutes: 5),
+      );
+      final map = json as Map<String, dynamic>? ?? const {};
+      if (!mounted) return;
+      if (map['ok'] == false) {
+        _toast(map['output'] as String? ?? 'Docker 安装失败');
+      } else {
+        _toast('Docker 已安装，正在重新检测');
+      }
+      await _load();
+    } catch (error) {
+      _toast(describeError(error));
+    } finally {
+      if (mounted) setState(() => _installing = false);
     }
   }
 
@@ -135,7 +173,10 @@ class _DockerPageState extends State<DockerPage> {
       children: [
         PageHeader(
           title: '容器',
-          subtitle: '${_containers.length} 个容器 · ${_images.length} 个镜像',
+          subtitle: _engineMissing
+              ? '未检测到 Docker 或 Podman'
+              : '${_containers.length} 个容器 · ${_images.length} 个镜像'
+                    '${_engine == null ? '' : ' · $_engine'}',
           actions: [
             IconButton(
               onPressed: _load,
@@ -144,7 +185,29 @@ class _DockerPageState extends State<DockerPage> {
           ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
-        Expanded(
+        if (_engineMissing)
+          Expanded(
+            child: EmptyState(
+              icon: Icons.widgets_outlined,
+              title: '还没有容器运行时',
+              message:
+                  '容器、运行环境和应用商店的 Docker 应用都依赖 Docker（或兼容的 Podman）。'
+                  '可以在应用商店的系统工具里安装 Docker，或直接点击下面的按钮。',
+              action: FilledButton.icon(
+                onPressed: _installing ? null : _installDocker,
+                icon: _installing
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.download_outlined, size: 16),
+                label: Text(_installing ? '安装中…' : '安装 Docker'),
+              ),
+            ),
+          )
+        else
+          Expanded(
           child: _loading
               ? const LoadingView()
               : DefaultTabController(

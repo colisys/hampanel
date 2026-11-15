@@ -2,8 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hampanel/app.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:hampanel/core/enrollment.dart';
+import 'package:hampanel/features/auth/login_page.dart';
 
 const enrollmentSample = '''
 {
@@ -44,7 +45,11 @@ void main() {
   });
 
   testWidgets('login page is shown without enrollment', (tester) async {
-    await tester.pumpWidget(const HampanelApp());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LoginPage(onEnrolled: (_, {alias}) async {}),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('导入注册凭据'), findsOneWidget);
   });

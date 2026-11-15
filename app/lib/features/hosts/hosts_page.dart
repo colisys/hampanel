@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
@@ -56,12 +58,18 @@ class _HostsPageState extends State<HostsPage> {
     );
     if (updated == null) return;
     _afterChange();
-    if (updated.id == _hosts.activeId) {
+    if (updated.id == _hosts.activeId && !_sameCredentials(host, updated)) {
       await widget.onSwitchHost(updated);
     } else {
       _toast('已更新 ${updated.alias}');
     }
   }
+
+  /// Alias-only edits keep the live session; swapping credentials requires a
+  /// new API client, so only then is the host re-activated.
+  bool _sameCredentials(HostRecord before, HostRecord after) =>
+      jsonEncode(before.enrollment.toJson()) ==
+      jsonEncode(after.enrollment.toJson());
 
   Future<void> _delete(HostRecord host) async {
     if (host.id == _hosts.activeId) {
@@ -300,7 +308,7 @@ class _HostEditDialogState extends State<_HostEditDialog> {
           widget.store.setActive(existing.id);
         }
       }
-      if (mounted) Navigator.of(context).pop(result);
+      if (mounted) Navigator.of(context, rootNavigator: true).pop(result);
     } on FormatException catch (error) {
       setState(() => _error = error.message);
     } catch (error) {

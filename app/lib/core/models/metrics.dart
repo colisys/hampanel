@@ -76,24 +76,55 @@ class DiskMetrics {
   );
 }
 
-class NetworkMetrics {
-  const NetworkMetrics({
+class InterfaceMetrics {
+  const InterfaceMetrics({
+    required this.name,
     required this.rxBytes,
     required this.txBytes,
     required this.rxRateBps,
     required this.txRateBps,
   });
 
+  final String name;
   final int rxBytes;
   final int txBytes;
   final double rxRateBps;
   final double txRateBps;
+
+  factory InterfaceMetrics.fromJson(Map<String, dynamic> json) =>
+      InterfaceMetrics(
+        name: json['name'] as String? ?? '-',
+        rxBytes: (json['rx_bytes'] as num?)?.toInt() ?? 0,
+        txBytes: (json['tx_bytes'] as num?)?.toInt() ?? 0,
+        rxRateBps: (json['rx_rate_bps'] as num?)?.toDouble() ?? 0,
+        txRateBps: (json['tx_rate_bps'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+class NetworkMetrics {
+  const NetworkMetrics({
+    required this.rxBytes,
+    required this.txBytes,
+    required this.rxRateBps,
+    required this.txRateBps,
+    required this.interfaces,
+  });
+
+  final int rxBytes;
+  final int txBytes;
+  final double rxRateBps;
+  final double txRateBps;
+  final List<InterfaceMetrics> interfaces;
 
   factory NetworkMetrics.fromJson(Map<String, dynamic> json) => NetworkMetrics(
     rxBytes: (json['rx_bytes'] as num?)?.toInt() ?? 0,
     txBytes: (json['tx_bytes'] as num?)?.toInt() ?? 0,
     rxRateBps: (json['rx_rate_bps'] as num?)?.toDouble() ?? 0,
     txRateBps: (json['tx_rate_bps'] as num?)?.toDouble() ?? 0,
+    interfaces: ((json['interfaces'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(InterfaceMetrics.fromJson)
+        .toList(),
   );
 }
 

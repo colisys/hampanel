@@ -94,6 +94,40 @@ class _PackagesTabState extends State<PackagesTab> {
     }
   }
 
+  Future<void> _installCustom() async {
+    final name = await textInputDialog(
+      context,
+      title: '安装自定义软件包',
+      label: '包名（来自系统软件源）',
+      confirmLabel: '安装',
+    );
+    if (name == null || name.trim().isEmpty) return;
+    setState(() => _busyId = '__custom__');
+    try {
+      final json = await _api.postJson(
+        '/api/v1/store/packages/custom',
+        {'name': name.trim()},
+        timeout: const Duration(minutes: 5),
+      );
+      final map = json as Map<String, dynamic>? ?? const {};
+      if (!mounted) return;
+      if (map['ok'] == false) {
+        await showOutputDialog(
+          context,
+          '安装失败',
+          map['output'] as String? ?? '',
+        );
+      } else {
+        _toast('$name 已安装');
+      }
+      await _load();
+    } catch (error) {
+      _toast(describeError(error));
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -133,6 +167,12 @@ class _PackagesTabState extends State<PackagesTab> {
                 style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               ),
               const Spacer(),
+              OutlinedButton.icon(
+                onPressed: _busyId == null ? _installCustom : null,
+                icon: const Icon(Icons.add_box_outlined, size: 16),
+                label: const Text('自定义安装'),
+              ),
+              const SizedBox(width: 10),
               OutlinedButton.icon(
                 onPressed: _refresh,
                 icon: const Icon(Icons.sync, size: 16),

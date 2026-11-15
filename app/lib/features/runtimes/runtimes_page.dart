@@ -140,6 +140,18 @@ class _RuntimesPageState extends State<RuntimesPage> {
     }
   }
 
+  Future<void> _manage(RuntimeEnvironment env) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _EnvironmentDetailDialog(
+        api: _api,
+        env: env,
+        preset: _catalog?.presetById(env.runtime),
+        onChanged: _load,
+      ),
+    );
+  }
+
   Future<void> _logs(RuntimeEnvironment env) async {
     try {
       final json = await _api.getJson(
@@ -265,7 +277,9 @@ class _RuntimesPageState extends State<RuntimesPage> {
                         env: env,
                         busy: _busy,
                         onAction: (action) {
-                          if (action == 'logs') {
+                          if (action == 'manage') {
+                            _manage(env);
+                          } else if (action == 'logs') {
                             _logs(env);
                           } else if (action == 'config') {
                             _configs(env);
@@ -352,6 +366,10 @@ class _EnvironmentCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
+              FilledButton(
+                onPressed: busy ? null : () => onAction('manage'),
+                child: const Text('管理'),
+              ),
               FilledButton(
                 onPressed: busy ? null : () => onAction('start'),
                 child: const Text('启动'),
@@ -510,12 +528,17 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
             children: [
               DropdownButtonFormField<String>(
                 initialValue: preset?.id,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: '运行时'),
                 items: [
                   for (final runtime in widget.catalog.runtimes)
                     DropdownMenuItem(
                       value: runtime.id,
-                      child: Text('${runtime.name}（${runtime.description}）'),
+                      child: Text(
+                        '${runtime.name}（${runtime.description}）',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                 ],
                 onChanged: (value) {
@@ -598,13 +621,18 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 initialValue: _mirror,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: '镜像内包管理器镜像源'),
                 items: [
                   const DropdownMenuItem(value: '', child: Text('不配置')),
                   for (final mirror in widget.catalog.mirrors)
                     DropdownMenuItem(
                       value: mirror.id,
-                      child: Text(mirror.label),
+                      child: Text(
+                        mirror.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                 ],
                 onChanged: (value) => setState(() => _mirror = value ?? ''),
@@ -1158,6 +1186,532 @@ class _DockerSettingsDialogState extends State<_DockerSettingsDialog> {
         FilledButton(
           onPressed: _busy ? null : _save,
           child: Text(_busy ? '保存中…' : '保存'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 运行环境详情：日志 / 配置 / 扩展 / 进程统一用标签页切换。
+class _EnvironmentDetailDialog extends StatelessWidget {
+  const _EnvironmentDetailDialog({
+    required this.api,
+    required this.env,
+    required this.preset,
+    required this.onChanged,
+  });
+
+  final ApiClient api;
+  final RuntimeEnvironment env;
+  final RuntimePreset? preset;
+  final Future<void> Function() onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 4,
+      child: AlertDialog(
+        title: Text('${env.name} · 运行环境'),
+        content: SizedBox(
+          width: 920,
+          height: 580,
+          child: Column(
+            children: [
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: TabBar(
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  tabs: [
+                    Tab(text: '日志'),
+                    Tab(text: '配置'),
+                    Tab(text: '扩展'),
+                    Tab(text: '进程'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    _RuntimeLogsTab(api: api, env: env),
+                    _RuntimeConfigTab(api: api, env: env),
+                    _RuntimeExtensionsTab(
+                      api: api,
+                      env: env,
+                      preset: preset,
+                      onChanged: onChanged,
+                    ),
+                    _RuntimeProcessesTab(api: api, env: env),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RuntimeLogsTab extends StatefulWidget {
+  const _RuntimeLogsTab({required this.api, required this.env});
+
+  final ApiClient api;
+  final RuntimeEnvironment env;
+
+  @override
+  State<_RuntimeLogsTab> createState() => _RuntimeLogsTabState();
+}
+
+class _RuntimeLogsTabState extends State<_RuntimeLogsTab> {
+  String? _text;
+  String? _error;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final json = await widget.api.getJson(
+        '/api/v1/runtimes/${widget.env.id}/logs',
+        query: {'lines': '300'},
+      );
+      if (!mounted) return;
+      setState(() {
+        _text = (json as Map<String, dynamic>)['output'] as String? ?? '';
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = describeError(error);
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const LoadingView();
+    if (_error != null) return ErrorBanner(message: _error!, onRetry: _load);
+    return Column(
+      children: [
+        Row(
+          children: [
+            const Spacer(),
+            OutlinedButton.icon(
+              onPressed: _load,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('刷新'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: hampanelSurfaceAlt,
+              border: Border.all(color: hampanelBorder),
+            ),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                (_text ?? '').isEmpty ? '暂无日志' : _text!,
+                style: monospace.copyWith(fontSize: 11.5),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RuntimeConfigTab extends StatefulWidget {
+  const _RuntimeConfigTab({required this.api, required this.env});
+
+  final ApiClient api;
+  final RuntimeEnvironment env;
+
+  @override
+  State<_RuntimeConfigTab> createState() => _RuntimeConfigTabState();
+}
+
+class _RuntimeConfigTabState extends State<_RuntimeConfigTab> {
+  final _content = TextEditingController();
+  List<RuntimeConfigFile> _files = const [];
+  String? _selected;
+  String? _error;
+  bool _loading = true;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _content.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final json = await widget.api.getJson(
+        '/api/v1/runtimes/${widget.env.id}/config',
+      );
+      final files =
+          (((json as Map<String, dynamic>)['files'] as List<dynamic>?) ??
+                  const [])
+              .whereType<Map<String, dynamic>>()
+              .map(RuntimeConfigFile.fromJson)
+              .toList();
+      if (!mounted) return;
+      setState(() {
+        _files = files;
+        _selected = files.isEmpty ? null : files.first.path;
+        _content.text = files.isEmpty ? '' : files.first.content;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = describeError(error);
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    final file = _selected;
+    if (file == null) return;
+    setState(() => _busy = true);
+    try {
+      final json = await widget.api.putJson(
+        '/api/v1/runtimes/${widget.env.id}/config',
+        {'file': file, 'content': _content.text},
+      );
+      final map = json as Map<String, dynamic>? ?? const {};
+      if (!mounted) return;
+      if (map['ok'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('配置已保存并应用')),
+        );
+        await _load();
+      } else {
+        await showOutputDialog(
+          context,
+          '保存失败',
+          map['output'] as String? ?? '',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(describeError(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const LoadingView();
+    if (_error != null) return ErrorBanner(message: _error!, onRetry: _load);
+    if (_files.isEmpty) {
+      return const EmptyState(
+        icon: Icons.description_outlined,
+        title: '没有可编辑的配置文件',
+      );
+    }
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: DropdownButtonFormField<String>(
+                initialValue: _selected,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: '配置文件',
+                  isDense: true,
+                ),
+                items: [
+                  for (final file in _files)
+                    DropdownMenuItem(
+                      value: file.path,
+                      child: Text(
+                        file.path,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (value) {
+                  final file = _files.firstWhere((item) => item.path == value);
+                  setState(() {
+                    _selected = value;
+                    _content.text = file.content;
+                  });
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            FilledButton(
+              onPressed: _busy ? null : _save,
+              child: Text(_busy ? '保存中…' : '保存并应用'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: TextField(
+            controller: _content,
+            expands: true,
+            maxLines: null,
+            style: monospace.copyWith(fontSize: 12),
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              alignLabelWithHint: true,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _RuntimeExtensionsTab extends StatefulWidget {
+  const _RuntimeExtensionsTab({
+    required this.api,
+    required this.env,
+    required this.preset,
+    required this.onChanged,
+  });
+
+  final ApiClient api;
+  final RuntimeEnvironment env;
+  final RuntimePreset? preset;
+  final Future<void> Function() onChanged;
+
+  @override
+  State<_RuntimeExtensionsTab> createState() => _RuntimeExtensionsTabState();
+}
+
+class _RuntimeExtensionsTabState extends State<_RuntimeExtensionsTab> {
+  Set<String> _selected = {};
+  String? _error;
+  bool _loading = true;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final json = await widget.api.getJson(
+        '/api/v1/runtimes/${widget.env.id}/extensions',
+      );
+      final list =
+          ((json as Map<String, dynamic>)['extensions'] as List<dynamic>?) ??
+          const [];
+      if (!mounted) return;
+      setState(() {
+        _selected = list.whereType<String>().toSet();
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = describeError(error);
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() => _busy = true);
+    try {
+      final json = await widget.api.putJson(
+        '/api/v1/runtimes/${widget.env.id}/extensions',
+        {'extensions': _selected.toList()..sort()},
+      );
+      final map = json as Map<String, dynamic>? ?? const {};
+      if (!mounted) return;
+      if (map['ok'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('扩展已保存，正在重建镜像')),
+        );
+        await widget.onChanged();
+      } else {
+        await showOutputDialog(
+          context,
+          '保存失败',
+          map['output'] as String? ?? '',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(describeError(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const LoadingView();
+    if (_error != null) return ErrorBanner(message: _error!, onRetry: _load);
+    final extensions = widget.preset?.extensions ?? const [];
+    if (extensions.isEmpty) {
+      return const EmptyState(
+        icon: Icons.extension_outlined,
+        title: '该运行时没有可选的扩展',
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '勾选后保存会重建镜像并重启环境。',
+          style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final extension in extensions)
+              FilterChip(
+                label: Text(extension.label),
+                selected: _selected.contains(extension.id),
+                onSelected: (value) => setState(() {
+                  if (value) {
+                    _selected.add(extension.id);
+                  } else {
+                    _selected.remove(extension.id);
+                  }
+                }),
+              ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        FilledButton(
+          onPressed: _busy ? null : _save,
+          child: Text(_busy ? '重建中…' : '保存并重建'),
+        ),
+      ],
+    );
+  }
+}
+
+class _RuntimeProcessesTab extends StatefulWidget {
+  const _RuntimeProcessesTab({required this.api, required this.env});
+
+  final ApiClient api;
+  final RuntimeEnvironment env;
+
+  @override
+  State<_RuntimeProcessesTab> createState() => _RuntimeProcessesTabState();
+}
+
+class _RuntimeProcessesTabState extends State<_RuntimeProcessesTab> {
+  String? _output;
+  String? _error;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final json = await widget.api.getJson(
+        '/api/v1/runtimes/${widget.env.id}/processes',
+      );
+      if (!mounted) return;
+      setState(() {
+        _output = (json as Map<String, dynamic>)['output'] as String? ?? '';
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = describeError(error);
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const LoadingView();
+    if (_error != null) return ErrorBanner(message: _error!, onRetry: _load);
+    return Column(
+      children: [
+        Row(
+          children: [
+            const Spacer(),
+            OutlinedButton.icon(
+              onPressed: _load,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('刷新'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: hampanelSurfaceAlt,
+              border: Border.all(color: hampanelBorder),
+            ),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                (_output ?? '').isEmpty ? '没有进程信息' : _output!,
+                style: monospace.copyWith(fontSize: 11.5),
+              ),
+            ),
+          ),
         ),
       ],
     );

@@ -90,11 +90,6 @@ class _PanelShellState extends State<PanelShell> {
     ),
     _Destination('运行环境', Icons.hub_outlined, (_, _) => const RuntimesPage()),
     _Destination(
-      '主机管理',
-      Icons.dns_outlined,
-      (_, _) => HostsPage(onSwitchHost: widget.onSwitchHost),
-    ),
-    _Destination(
       '软件',
       Icons.inventory_2_outlined,
       (_, _) => const SoftwarePage(),
@@ -107,12 +102,7 @@ class _PanelShellState extends State<PanelShell> {
     _Destination('设置', Icons.tune_outlined, (_, _) => const SettingsPage()),
   ];
 
-  int _hostIndex() {
-    for (var i = 0; i < _destinations.length; i++) {
-      if (_destinations[i].label == '主机管理') return i;
-    }
-    return 0;
-  }
+  bool _hostsOpen = false;
 
   @override
   Widget build(BuildContext context) {
@@ -194,7 +184,10 @@ class _PanelShellState extends State<PanelShell> {
                           borderRadius: BorderRadius.circular(2),
                           child: InkWell(
                             borderRadius: BorderRadius.circular(2),
-                            onTap: () => setState(() => _index = index),
+                            onTap: () => setState(() {
+                              _index = index;
+                              _hostsOpen = false;
+                            }),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
@@ -252,9 +245,9 @@ class _PanelShellState extends State<PanelShell> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _HostSwitcher(
-                        hosts: session.hosts,
+                        session: session,
                         onSwitchHost: widget.onSwitchHost,
-                        onManage: () => setState(() => _index = _hostIndex()),
+                        onManage: () => setState(() => _hostsOpen = true),
                       ),
                       const SizedBox(height: 8),
                       SizedBox(
@@ -288,8 +281,16 @@ class _PanelShellState extends State<PanelShell> {
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Row(
                     children: [
+                      if (_hostsOpen) ...[
+                        IconButton(
+                          tooltip: '返回',
+                          onPressed: () => setState(() => _hostsOpen = false),
+                          icon: const Icon(Icons.arrow_back, size: 18),
+                        ),
+                        const SizedBox(width: 2),
+                      ],
                       Text(
-                        _destinations[_index].label,
+                        _hostsOpen ? '主机管理' : _destinations[_index].label,
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -330,14 +331,20 @@ class _PanelShellState extends State<PanelShell> {
                   ),
                 ),
                 Expanded(
-                  child: IndexedStack(
-                    key: ValueKey('pages-${widget.sessionKey}'),
-                    index: _index,
-                    children: [
-                      for (final (index, destination) in _destinations.indexed)
-                        destination.builder(context, index == _index),
-                    ],
-                  ),
+                  child: _hostsOpen
+                      ? HostsPage(
+                          key: ValueKey('hosts-${widget.sessionKey}'),
+                          onSwitchHost: widget.onSwitchHost,
+                        )
+                      : IndexedStack(
+                          key: ValueKey('pages-${widget.sessionKey}'),
+                          index: _index,
+                          children: [
+                            for (final (index, destination)
+                                in _destinations.indexed)
+                              destination.builder(context, index == _index),
+                          ],
+                        ),
                 ),
               ],
             ),
@@ -348,34 +355,69 @@ class _PanelShellState extends State<PanelShell> {
   }
 }
 
-class _HostSwitcher extends StatelessWidget {
+class _HostSwitcher extends StatefulWidget {
   const _HostSwitcher({
-    required this.hosts,
+    required this.session,
     required this.onSwitchHost,
     required this.onManage,
   });
 
-  final HostStore hosts;
+  final PanelSession session;
   final Future<void> Function(HostRecord host) onSwitchHost;
   final VoidCallback onManage;
 
   @override
+  State<_HostSwitcher> createState() => _HostSwitcherState();
+}
+
+class _HostSwitcherState extends State<_HostSwitcher> {
+  String? _version;
+  String? _versionFor;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HostSwitcher oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session != widget.session) _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final id = widget.session.hosts.activeId;
+    _versionFor = id;
+    setState(() => _version = null);
+    try {
+      final data = await widget.session.api.getJson('/api/v1/health');
+      if (!mounted || _versionFor != id) return;
+      final version = data is Map ? data['version'] : null;
+      setState(() => _version = version is String ? version : null);
+    } catch (_) {
+      // Version is decorative; connection errors are surfaced elsewhere.
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final records = hosts.list();
-    final active = hosts.active();
+    final records = widget.session.hosts.list();
+    final active = widget.session.hosts.active();
     final alias = active?.alias ?? '未选择主机';
     final endpoint = active?.enrollment.endpoint ?? '-';
+    final version = _version == null ? endpoint : '$endpoint · v$_version';
     return PopupMenuButton<String>(
       tooltip: '切换主机',
       position: PopupMenuPosition.over,
       onSelected: (value) {
         if (value == '__manage__') {
-          onManage();
+          widget.onManage();
           return;
         }
         for (final record in records) {
           if (record.id != value) continue;
-          onSwitchHost(record);
+          widget.onSwitchHost(record);
         }
       },
       itemBuilder: (context) => [
@@ -451,7 +493,7 @@ class _HostSwitcher extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    endpoint,
+                    version,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontFamily: 'monospace',

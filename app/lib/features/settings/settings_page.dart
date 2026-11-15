@@ -12,6 +12,9 @@ import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../ai/ai_tools.dart';
+import 'host_settings_section.dart';
+
+enum _SettingsTab { general, ai, host, about }
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -21,6 +24,7 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  _SettingsTab _tab = _SettingsTab.general;
   String? _health;
   String? _serverVersion;
   bool _checking = false;
@@ -255,17 +259,34 @@ class _SettingsPageState extends State<SettingsPage> {
     final checkedAt = (_update?['checked_at'] as num?)?.toInt() ?? 0;
     return Column(
       children: [
-        const PageHeader(title: '设置', subtitle: '连接、凭据与客户端信息'),
+        PageHeader(
+          title: '设置',
+          subtitle: '常规、AI、主机与关于',
+          actions: [
+            SegmentedButton<_SettingsTab>(
+              segments: const [
+                ButtonSegment(value: _SettingsTab.general, label: Text('常规')),
+                ButtonSegment(value: _SettingsTab.ai, label: Text('AI')),
+                ButtonSegment(value: _SettingsTab.host, label: Text('主机')),
+                ButtonSegment(value: _SettingsTab.about, label: Text('关于')),
+              ],
+              selected: {_tab},
+              onSelectionChanged: (value) =>
+                  setState(() => _tab = value.first),
+            ),
+          ],
+        ),
         Expanded(
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(
-                  width: 720,
-                  child: PanelCard(
-                    title: '连接',
+                if (_tab == _SettingsTab.general)
+                  SizedBox(
+                    width: 720,
+                    child: PanelCard(
+                      title: '连接',
                     trailing: StatusPill(
                       text: _checking
                           ? '检测中'
@@ -331,10 +352,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                SizedBox(
-                  width: 720,
-                  child: PanelCard(
-                    title: '更新',
+                if (_tab == _SettingsTab.general)
+                  SizedBox(
+                    width: 720,
+                    child: PanelCard(
+                      title: '更新',
                     trailing: _update == null
                         ? null
                         : StatusPill(
@@ -438,10 +460,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                SizedBox(
-                  width: 720,
-                  child: PanelCard(
-                    title: '证书指纹',
+                if (_tab == _SettingsTab.general)
+                  SizedBox(
+                    width: 720,
+                    child: PanelCard(
+                      title: '证书指纹',
                     child: Column(
                       children: [
                         _row('CA SHA-256', enrollment.caSha256),
@@ -463,10 +486,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                SizedBox(
-                  width: 720,
-                  child: PanelCard(
-                    title: 'AI 工具权限',
+                if (_tab == _SettingsTab.ai)
+                  SizedBox(
+                    width: 720,
+                    child: PanelCard(
+                      title: 'AI 工具权限',
                     trailing: _aiLoading
                         ? null
                         : StatusPill(
@@ -543,10 +567,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                SizedBox(
-                  width: 720,
-                  child: PanelCard(
-                    title: 'AI 敏感文件路径',
+                if (_tab == _SettingsTab.ai)
+                  SizedBox(
+                    width: 720,
+                    child: PanelCard(
+                      title: 'AI 敏感文件路径',
                     child: _aiLoading
                         ? const LoadingView()
                         : Column(
@@ -639,10 +664,12 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
                 const SizedBox(height: 14),
-                SizedBox(
-                  width: 720,
-                  child: PanelCard(
-                    title: '关于',
+                if (_tab == _SettingsTab.host) const HostSettingsSection(),
+                if (_tab == _SettingsTab.about)
+                  SizedBox(
+                    width: 720,
+                    child: PanelCard(
+                      title: '关于',
                     child: Column(
                       children: [
                         _row('产品', 'Hampanel $fullClientVersion'),
@@ -659,6 +686,20 @@ class _SettingsPageState extends State<SettingsPage> {
                               fontSize: 11,
                               color: hampanelMuted,
                             ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: OutlinedButton.icon(
+                            onPressed: () => showLicensePage(
+                              context: context,
+                              applicationName: 'Hampanel',
+                              applicationVersion: fullClientVersion,
+                              applicationLegalese: 'GPL-3.0-or-later',
+                            ),
+                            icon: const Icon(Icons.gavel_outlined, size: 16),
+                            label: const Text('开源许可'),
                           ),
                         ),
                       ],

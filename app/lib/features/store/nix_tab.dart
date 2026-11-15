@@ -19,6 +19,13 @@ class _NixTabState extends State<NixTab> {
   bool _loading = true;
   String? _error;
   String? _busy;
+  final _custom = TextEditingController();
+
+  @override
+  void dispose() {
+    _custom.dispose();
+    super.dispose();
+  }
 
   ApiClient get _api => PanelScope.of(context).api;
 
@@ -104,6 +111,17 @@ class _NixTabState extends State<NixTab> {
     }
   }
 
+  Future<void> _runCustom(bool build) async {
+    final target = _custom.text.trim();
+    if (target.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入 nixpkgs 属性名')),
+      );
+      return;
+    }
+    await _run(target, build);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return LoadingView();
@@ -162,6 +180,55 @@ class _NixTabState extends State<NixTab> {
                     onPressed: _busy == null ? _load : null,
                     icon: const Icon(Icons.refresh, size: 16),
                     label: const Text('重新检测'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        PanelCard(
+          title: '自定义 Nix 属性',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '输入 nixpkgs 属性名（例如 hello、nodejs_22、python311Packages.requests）。'
+                '不接受 URL、flake 引用或 shell 元字符。',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: hampanelMuted,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _custom,
+                      style: monospace,
+                      decoration: const InputDecoration(
+                        labelText: 'nixpkgs#属性',
+                        hintText: 'nodejs_22',
+                        isDense: true,
+                      ),
+                      onSubmitted: (_) => _runCustom(true),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  OutlinedButton(
+                    onPressed: status.available && _busy == null
+                        ? () => _runCustom(true)
+                        : null,
+                    child: const Text('构建'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: status.available && _busy == null
+                        ? () => _runCustom(false)
+                        : null,
+                    child: const Text('运行'),
                   ),
                 ],
               ),

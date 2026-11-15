@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
@@ -78,26 +79,9 @@ class _ServicesPageState extends State<ServicesPage> {
       if (!mounted) return;
       await showDialog<void>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Text('${service.unit} 日志'),
-          content: SizedBox(
-            width: 860,
-            height: 520,
-            child: SingleChildScrollView(
-              child: SelectableText(
-                (map['lines'] as String? ?? '').isEmpty
-                    ? '暂无日志输出'
-                    : map['lines'] as String,
-                style: monospace,
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('关闭'),
-            ),
-          ],
+        builder: (context) => _ServiceLogsDialog(
+          unit: service.unit,
+          text: map['lines'] as String? ?? '',
         ),
       );
     } catch (error) {
@@ -269,6 +253,128 @@ class _ServicesPageState extends State<ServicesPage> {
                     ),
                   ),
                 ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ServiceLogsDialog extends StatefulWidget {
+  const _ServiceLogsDialog({required this.unit, required this.text});
+
+  final String unit;
+  final String text;
+
+  @override
+  State<_ServiceLogsDialog> createState() => _ServiceLogsDialogState();
+}
+
+class _ServiceLogsDialogState extends State<_ServiceLogsDialog> {
+  final _search = TextEditingController();
+  String _query = '';
+  int _limit = 500;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  List<String> get _allLines {
+    if (widget.text.trim().isEmpty) return const [];
+    return widget.text.split('\n');
+  }
+
+  List<String> get _visibleLines {
+    final all = _allLines;
+    final windowed = _limit > 0 && all.length > _limit
+        ? all.sublist(all.length - _limit)
+        : all;
+    if (_query.trim().isEmpty) return windowed;
+    final needle = _query.toLowerCase();
+    return windowed.where((line) => line.toLowerCase().contains(needle)).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final all = _allLines;
+    final visible = _visibleLines;
+    return AlertDialog(
+      title: Text('${widget.unit} 日志'),
+      content: SizedBox(
+        width: 960,
+        height: 560,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _search,
+                    decoration: const InputDecoration(
+                      hintText: '搜索日志内容',
+                      prefixIcon: Icon(Icons.search, size: 17),
+                      isDense: true,
+                    ),
+                    onChanged: (value) => setState(() => _query = value),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                DropdownButton<int>(
+                  value: _limit,
+                  underline: const SizedBox.shrink(),
+                  items: const [
+                    DropdownMenuItem(value: 200, child: Text('最后 200 行')),
+                    DropdownMenuItem(value: 500, child: Text('最后 500 行')),
+                    DropdownMenuItem(value: 1000, child: Text('最后 1000 行')),
+                    DropdownMenuItem(value: 5000, child: Text('最后 5000 行')),
+                    DropdownMenuItem(value: 0, child: Text('全部')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _limit = value);
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              all.isEmpty
+                  ? '暂无日志输出'
+                  : '共 ${all.length} 行 · 显示 ${visible.length} 行',
+              style: TextStyle(fontSize: 11, color: hampanelMuted),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: hampanelSurfaceAlt,
+                  border: Border.all(color: hampanelBorder),
+                ),
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    visible.isEmpty ? '没有匹配的日志行' : visible.join('\n'),
+                    style: monospace,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: visible.isEmpty
+              ? null
+              : () => Clipboard.setData(ClipboardData(text: visible.join('\n'))),
+          child: const Text('复制显示内容'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
         ),
       ],
     );

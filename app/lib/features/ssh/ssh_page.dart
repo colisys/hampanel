@@ -439,6 +439,7 @@ class _SshPageState extends State<SshPage> {
             underline: const SizedBox.shrink(),
             items: const [
               DropdownMenuItem(value: 100, child: Text('100 行')),
+              DropdownMenuItem(value: 200, child: Text('200 行')),
               DropdownMenuItem(value: 300, child: Text('300 行')),
               DropdownMenuItem(value: 1000, child: Text('1000 行')),
               DropdownMenuItem(value: 2000, child: Text('2000 行')),

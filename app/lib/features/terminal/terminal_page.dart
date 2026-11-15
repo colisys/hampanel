@@ -129,38 +129,18 @@ class _TerminalPageState extends State<TerminalPage> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 18, 24, 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '终端',
-                      style: TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'PTY 会话通过 WebSocket + mTLS 传输',
-                      style: TextStyle(fontSize: 12.5, color: hampanelMuted),
-                    ),
-                  ],
-                ),
-              ),
-              StatusPill(text: _status, good: _connected),
-              const SizedBox(width: 10),
-              OutlinedButton.icon(
-                onPressed: _connect,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('重新连接'),
-              ),
-            ],
-          ),
+        PageHeader(
+          title: '终端',
+          subtitle: 'PTY 会话通过 WebSocket + mTLS 传输',
+          actions: [
+            StatusPill(text: _status, good: _connected),
+            const SizedBox(width: 10),
+            OutlinedButton.icon(
+              onPressed: _connect,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('重新连接'),
+            ),
+          ],
         ),
         Expanded(
           child: Padding(

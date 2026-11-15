@@ -295,7 +295,14 @@ ThemeData buildHampanelTheme() {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(3)),
       ),
-      labelStyle: TextStyle(fontSize: 12, color: hampanelInk),
+      labelStyle: TextStyle(
+        fontSize: 12,
+        color: WidgetStateColor.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? hampanelSurface
+              : hampanelInk,
+        ),
+      ),
       secondaryLabelStyle: TextStyle(fontSize: 12, color: hampanelSurface),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     ),
