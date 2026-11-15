@@ -34,3 +34,9 @@ pub fn refresh(allocator: std.mem.Allocator) !Outcome {
     _ = allocator;
     return error.Unsupported;
 }
+
+pub fn installCustom(allocator: std.mem.Allocator, package: []const u8) !Outcome {
+    _ = allocator;
+    _ = package;
+    return error.Unsupported;
+}

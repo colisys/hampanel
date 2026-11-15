@@ -5,6 +5,7 @@ const store = @import("../store/apps.zig");
 const platform = @import("../platform/mod.zig");
 const errutil = @import("../util/errors.zig");
 const log = @import("../log.zig");
+const redact = @import("../util/redact.zig");
 
 const AppView = struct {
     slug: []const u8,
@@ -181,6 +182,29 @@ pub fn installPackage(ctx: *context.Context) anyerror!void {
     };
     if (!outcome.ok) ctx.response.status = 502;
     log.info("store: package install id={s} ok={}", .{ id, outcome.ok });
+    try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+}
+
+pub fn installCustom(ctx: *context.Context) anyerror!void {
+    const Body = struct { name: []const u8 };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected package name");
+        return;
+    };
+    const outcome = platform.packages.installCustom(ctx.arena, body.name) catch |err| {
+        if (errutil.named(err, "InvalidPackage")) {
+            ctx.fail(400, "bad_package", "包名不合法");
+        } else {
+            failPackage(ctx, err);
+        }
+        return;
+    };
+    if (!outcome.ok) ctx.response.status = 502;
+    var name_buf: [96]u8 = undefined;
+    log.info("store: custom package install name={s} ok={}", .{
+        redact.text(&name_buf, body.name),
+        outcome.ok,
+    });
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 

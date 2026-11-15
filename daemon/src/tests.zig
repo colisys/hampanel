@@ -87,6 +87,11 @@ test "validation helpers" {
     try std.testing.expect(validate.isIpOrCidr("10.0.0.0/8"));
     try std.testing.expect(!validate.isIpOrCidr("10.0.0.0/64"));
     try std.testing.expect(validate.isHostname("panel.example.com"));
+    try std.testing.expect(validate.isPackageName("nodejs"));
+    try std.testing.expect(validate.isPackageName("python3.12-dev"));
+    try std.testing.expect(validate.isPackageName("pkg=1:2.0+git"));
+    try std.testing.expect(!validate.isPackageName("rm -rf /"));
+    try std.testing.expect(!validate.isPackageName("a/b"));
     try std.testing.expect(validate.isEntryPrefix("/a1b2c3d4"));
     try std.testing.expect(validate.isEntryPrefix(""));
     try std.testing.expect(!validate.isEntryPrefix("a1b2"));

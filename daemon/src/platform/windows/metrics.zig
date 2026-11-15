@@ -30,11 +30,20 @@ pub const DiskMetrics = struct {
     percent: f64,
 };
 
+pub const InterfaceMetrics = struct {
+    name: []const u8,
+    rx_bytes: u64,
+    tx_bytes: u64,
+    rx_rate_bps: f64,
+    tx_rate_bps: f64,
+};
+
 pub const NetworkMetrics = struct {
     rx_bytes: u64,
     tx_bytes: u64,
     rx_rate_bps: f64,
     tx_rate_bps: f64,
+    interfaces: []InterfaceMetrics,
 };
 
 pub const Metrics = struct {
@@ -107,6 +116,7 @@ pub fn sample(allocator: std.mem.Allocator, state: *State) !Metrics {
             .tx_bytes = network.tx,
             .rx_rate_bps = rx_rate,
             .tx_rate_bps = tx_rate,
+            .interfaces = &.{},
         },
     };
 }

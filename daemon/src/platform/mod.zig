@@ -22,6 +22,7 @@ pub const software = backend.software;
 pub const fail2ban = backend.fail2ban;
 pub const waf = backend.waf;
 pub const terminal = backend.terminal;
+pub const host_settings = backend.host_settings;
 
 pub const MetricsState = backend.metrics.State;
 pub const Terminal = backend.terminal.Terminal;

@@ -56,8 +56,8 @@ pub fn status(allocator: std.mem.Allocator) !Status {
 }
 
 pub fn build(allocator: std.mem.Allocator, target: []const u8) !Outcome {
-    const found = findTarget(target) orelse return error.InvalidTarget;
-    const flake = try std.fmt.allocPrint(allocator, "nixpkgs#{s}", .{found.id});
+    const attribute = try resolveAttribute(target);
+    const flake = try std.fmt.allocPrint(allocator, "nixpkgs#{s}", .{attribute});
 
     var result = exec.run(allocator, &.{
         "nix",   experimental, "nix-command flakes",
@@ -69,7 +69,7 @@ pub fn build(allocator: std.mem.Allocator, target: []const u8) !Outcome {
 }
 
 pub fn run(allocator: std.mem.Allocator, target: []const u8, args: []const []const u8) !Outcome {
-    const found = findTarget(target) orelse return error.InvalidTarget;
+    const attribute = try resolveAttribute(target);
     if (args.len > 32) return error.InvalidTarget;
     for (args) |arg| {
         if (arg.len > 256) return error.InvalidTarget;
@@ -78,7 +78,7 @@ pub fn run(allocator: std.mem.Allocator, target: []const u8, args: []const []con
         }
     }
 
-    const flake = try std.fmt.allocPrint(allocator, "nixpkgs#{s}", .{found.id});
+    const flake = try std.fmt.allocPrint(allocator, "nixpkgs#{s}", .{attribute});
     var argv = std.array_list.Managed([]const u8).init(allocator);
     try argv.appendSlice(&.{
         "nix", experimental, "nix-command flakes",
@@ -88,6 +88,19 @@ pub fn run(allocator: std.mem.Allocator, target: []const u8, args: []const []con
 
     var result = exec.run(allocator, argv.items, 8 * 1024 * 1024) catch return error.NixUnavailable;
     return .{ .ok = result.ok(), .output = textOf(result) };
+}
+
+/// 精选列表之外允许安装任意 nixpkgs 属性名；属性语法受限，不接受
+/// URL、flake 引用或 shell 元字符。
+fn resolveAttribute(target: []const u8) ![]const u8 {
+    if (findTarget(target)) |found| return found.id;
+    if (target.len == 0 or target.len > 96) return error.InvalidTarget;
+    for (target) |ch| {
+        if (std.ascii.isAlphanumeric(ch)) continue;
+        if (ch == '.' or ch == '_' or ch == '-' or ch == '+') continue;
+        return error.InvalidTarget;
+    }
+    return target;
 }
 
 fn findTarget(id: []const u8) ?Target {

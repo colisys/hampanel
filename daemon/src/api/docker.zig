@@ -7,6 +7,26 @@ const log = @import("../log.zig");
 
 const max_output = 8 * 1024 * 1024;
 
+const Engine = struct {
+    name: []const u8,
+    podman: bool,
+};
+
+/// Prefer Docker, fall back to Podman, whose CLI is Docker-compatible for the
+/// commands this panel runs. The result is cached per request arena.
+fn detectEngine(allocator: std.mem.Allocator) !Engine {
+    const candidates = [_][]const u8{ "docker", "podman" };
+    for (candidates) |name| {
+        const result = exec.run(allocator, &.{ name, "version", "--format", "{{.Client.Version}}" }, 64 * 1024) catch continue;
+        if (result.ok()) return .{ .name = name, .podman = std.mem.eql(u8, name, "podman") };
+    }
+    return error.EngineUnavailable;
+}
+
+fn unavailable(ctx: *context.Context) void {
+    ctx.fail(501, "engine_unavailable", "未检测到 Docker 或 Podman");
+}
+
 const Container = struct {
     id: []const u8,
     name: []const u8,
@@ -26,10 +46,14 @@ const Image = struct {
 };
 
 pub fn containers(ctx: *context.Context) anyerror!void {
+    const engine = detectEngine(ctx.arena) catch {
+        unavailable(ctx);
+        return;
+    };
     const result = exec.run(ctx.arena, &.{
-        "docker", "ps", "-a", "--no-trunc", "--format", "{{json .}}",
+        engine.name, "ps", "-a", "--no-trunc", "--format", "{{json .}}",
     }, max_output) catch {
-        ctx.fail(502, "docker_unavailable", "unable to execute docker");
+        ctx.fail(502, "docker_unavailable", "unable to execute container engine");
         return;
     };
     if (!result.ok()) {
@@ -55,14 +79,23 @@ pub fn containers(ctx: *context.Context) anyerror!void {
         });
     }
 
-    try ctx.json(.{ .available = true, .containers = items.items });
+    try ctx.json(.{
+        .available = true,
+        .engine = engine.name,
+        .podman = engine.podman,
+        .containers = items.items,
+    });
 }
 
 pub fn images(ctx: *context.Context) anyerror!void {
+    const engine = detectEngine(ctx.arena) catch {
+        unavailable(ctx);
+        return;
+    };
     const result = exec.run(ctx.arena, &.{
-        "docker", "images", "--format", "{{json .}}",
+        engine.name, "images", "--format", "{{json .}}",
     }, max_output) catch {
-        ctx.fail(502, "docker_unavailable", "unable to execute docker");
+        ctx.fail(502, "docker_unavailable", "unable to execute container engine");
         return;
     };
     if (!result.ok()) {
@@ -86,7 +119,12 @@ pub fn images(ctx: *context.Context) anyerror!void {
         });
     }
 
-    try ctx.json(.{ .available = true, .images = items.items });
+    try ctx.json(.{
+        .available = true,
+        .engine = engine.name,
+        .podman = engine.podman,
+        .images = items.items,
+    });
 }
 
 pub fn action(ctx: *context.Context) anyerror!void {
@@ -113,13 +151,17 @@ pub fn action(ctx: *context.Context) anyerror!void {
         return;
     }
 
+    const engine = detectEngine(ctx.arena) catch {
+        unavailable(ctx);
+        return;
+    };
     const argv = if (std.mem.eql(u8, action_name, "rm"))
-        &[_][]const u8{ "docker", "rm", "-f", id }
+        &[_][]const u8{ engine.name, "rm", "-f", id }
     else
-        &[_][]const u8{ "docker", action_name, id };
+        &[_][]const u8{ engine.name, action_name, id };
 
     const result = exec.run(ctx.arena, argv, 1024 * 1024) catch {
-        ctx.fail(502, "docker_unavailable", "unable to execute docker");
+        ctx.fail(502, "docker_unavailable", "unable to execute container engine");
         return;
     };
 
@@ -159,8 +201,12 @@ pub fn logs(ctx: *context.Context) anyerror!void {
     }
     const tail = try std.fmt.allocPrint(ctx.arena, "{d}", .{lines});
 
-    const result = exec.run(ctx.arena, &.{ "docker", "logs", "--tail", tail, id }, max_output) catch {
-        ctx.fail(502, "docker_unavailable", "unable to execute docker");
+    const engine = detectEngine(ctx.arena) catch {
+        unavailable(ctx);
+        return;
+    };
+    const result = exec.run(ctx.arena, &.{ engine.name, "logs", "--tail", tail, id }, max_output) catch {
+        ctx.fail(502, "docker_unavailable", "unable to execute container engine");
         return;
     };
 

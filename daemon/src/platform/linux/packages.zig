@@ -61,6 +61,8 @@ const tools = [_]Tool{
     .{ .id = "fail2ban", .name = "Fail2ban", .description = "SSH 等服务防暴力破解", .package = "fail2ban", .binary = "fail2ban-client" },
     .{ .id = "rsyslog", .name = "rsyslog", .description = "传统文件日志服务（SSH 文件模式）", .package = "rsyslog", .binary = "rsyslogd" },
     .{ .id = "nix", .name = "Nix", .description = "可复现构建与运行环境（本面板使用精选属性）", .package = "nix", .binary = "nix", .apt_package = "nix-bin" },
+    .{ .id = "docker", .name = "Docker", .description = "容器运行时与 CLI（容器页面依赖）", .package = "docker", .binary = "docker", .apt_package = "docker.io" },
+    .{ .id = "podman", .name = "Podman", .description = "无守护进程容器运行时（兼容 Docker CLI）", .package = "podman", .binary = "podman" },
 };
 
 pub fn list(allocator: std.mem.Allocator) !Status {
@@ -86,9 +88,19 @@ pub fn install(allocator: std.mem.Allocator, id: []const u8) !Outcome {
     const tool = findTool(id) orelse return error.UnknownTool;
     const manager = detect(allocator);
     if (manager == .none) return error.ManagerUnavailable;
+    return installPackage(allocator, manager, packageFor(tool, manager));
+}
 
+pub fn installCustom(allocator: std.mem.Allocator, package: []const u8) !Outcome {
+    const validate = @import("shared").validate;
+    if (!validate.isPackageName(package)) return error.InvalidPackage;
+    const manager = detect(allocator);
+    if (manager == .none) return error.ManagerUnavailable;
+    return installPackage(allocator, manager, package);
+}
+
+fn installPackage(allocator: std.mem.Allocator, manager: Manager, package: []const u8) !Outcome {
     var argv = std.array_list.Managed([]const u8).init(allocator);
-    const package = packageFor(tool, manager);
     switch (manager) {
         .apt => try argv.appendSlice(&.{
             "apt-get", "-y",

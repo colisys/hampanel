@@ -8,6 +8,7 @@ pub const firewall = @import("firewall.zig");
 pub const cron = @import("cron.zig");
 pub const logs = @import("logs.zig");
 pub const terminal = @import("terminal.zig");
+pub const host_settings = @import("host_settings.zig");
 pub const packages = @import("packages.zig");
 pub const nix = @import("nix.zig");
 pub const ssh = @import("ssh.zig");

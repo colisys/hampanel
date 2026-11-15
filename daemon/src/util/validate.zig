@@ -83,3 +83,13 @@ pub fn isEntryPrefix(value: []const u8) bool {
     }
     return true;
 }
+
+pub fn isPackageName(value: []const u8) bool {
+    if (value.len == 0 or value.len > 128) return false;
+    for (value) |ch| {
+        if (std.ascii.isAlphanumeric(ch)) continue;
+        if (ch == '.' or ch == '_' or ch == '-' or ch == '+' or ch == '=' or ch == ':') continue;
+        return false;
+    }
+    return true;
+}

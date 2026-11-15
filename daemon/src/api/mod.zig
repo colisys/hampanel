@@ -23,6 +23,7 @@ const waf = @import("waf.zig");
 const update = @import("update.zig");
 const notifications = @import("notifications.zig");
 const runtimes = @import("runtimes.zig");
+const host = @import("host.zig");
 
 pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/health", .handler = health.index },
@@ -55,9 +56,17 @@ pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/docker/settings", .handler = runtimes.dockerSettings },
     .{ .method = .PUT, .pattern = "/api/v1/docker/settings", .handler = runtimes.dockerSettingsSave },
 
+    .{ .method = .GET, .pattern = "/api/v1/host/settings", .handler = host.settings },
+    .{ .method = .POST, .pattern = "/api/v1/host/swap", .handler = host.swap },
+    .{ .method = .POST, .pattern = "/api/v1/host/ntp", .handler = host.ntp },
+    .{ .method = .PUT, .pattern = "/api/v1/host/hosts", .handler = host.hosts },
+    .{ .method = .POST, .pattern = "/api/v1/host/grub", .handler = host.grub },
+
     .{ .method = .GET, .pattern = "/api/v1/system", .handler = system.index },
     .{ .method = .GET, .pattern = "/api/v1/metrics", .handler = metrics.index },
     .{ .method = .GET, .pattern = "/api/v1/processes", .handler = processes.index },
+    .{ .method = .GET, .pattern = "/api/v1/processes/:pid", .handler = processes.detail },
+    .{ .method = .POST, .pattern = "/api/v1/processes/:pid/kill", .handler = processes.terminate },
 
     .{ .method = .GET, .pattern = "/api/v1/files", .handler = files.list },
     .{ .method = .GET, .pattern = "/api/v1/files/content", .handler = files.content },
@@ -107,6 +116,7 @@ pub const routes = [_]router.Route{
 
     .{ .method = .GET, .pattern = "/api/v1/store/packages", .handler = store.packages },
     .{ .method = .POST, .pattern = "/api/v1/store/packages/refresh", .handler = store.refreshPackages },
+    .{ .method = .POST, .pattern = "/api/v1/store/packages/custom", .handler = store.installCustom },
     .{ .method = .POST, .pattern = "/api/v1/store/packages/:id/install", .handler = store.installPackage },
 
     .{ .method = .GET, .pattern = "/api/v1/store/nix", .handler = store.nixStatus },

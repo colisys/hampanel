@@ -90,3 +90,34 @@ fn readProcess(allocator: std.mem.Allocator, pid: u32, name_wide: []const u16) !
         .command = command,
     };
 }
+
+pub const Port = struct {
+    protocol: []const u8,
+    local_port: u16,
+    state: []const u8,
+};
+
+pub const Detail = struct {
+    pid: u32,
+    ppid: u32,
+    name: []const u8,
+    state: []const u8,
+    command: []const u8,
+    exe: []const u8,
+    cwd: []const u8,
+    uid: u32,
+    gid: u32,
+    threads: u32,
+    rss_bytes: u64,
+    cpu_ticks: u64,
+    open_files: []const []const u8,
+    ports: []const Port,
+};
+
+pub fn detail(_: std.mem.Allocator, _: u32) !Detail {
+    return error.Unsupported;
+}
+
+pub fn terminate(_: u32, _: []const u8) !void {
+    return error.Unsupported;
+}

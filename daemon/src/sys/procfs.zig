@@ -50,11 +50,20 @@ pub const DiskMetrics = struct {
     percent: f64,
 };
 
+pub const InterfaceMetrics = struct {
+    name: []const u8,
+    rx_bytes: u64,
+    tx_bytes: u64,
+    rx_rate_bps: f64,
+    tx_rate_bps: f64,
+};
+
 pub const NetworkMetrics = struct {
     rx_bytes: u64,
     tx_bytes: u64,
     rx_rate_bps: f64,
     tx_rate_bps: f64,
+    interfaces: []InterfaceMetrics,
 };
 
 pub const Metrics = struct {
@@ -65,6 +74,13 @@ pub const Metrics = struct {
     network: NetworkMetrics,
 };
 
+const PrevInterface = struct {
+    name: [32]u8 = @splat(0),
+    name_len: u8 = 0,
+    rx: u64 = 0,
+    tx: u64 = 0,
+};
+
 pub const Sampler = struct {
     mutex: std.Io.Mutex = .init,
     prev_cpu_total: u64 = 0,
@@ -72,6 +88,7 @@ pub const Sampler = struct {
     prev_rx: u64 = 0,
     prev_tx: u64 = 0,
     prev_at_ms: i64 = 0,
+    prev_interfaces: [24]PrevInterface = @splat(.{}),
 };
 
 pub fn sample(allocator: std.mem.Allocator, sampler: *Sampler) !Metrics {
@@ -108,8 +125,9 @@ pub fn sample(allocator: std.mem.Allocator, sampler: *Sampler) !Metrics {
     const now = compat.milliTimestamp();
     var rx_rate: f64 = 0;
     var tx_rate: f64 = 0;
+    var elapsed: f64 = 0;
     if (sampler.prev_at_ms > 0) {
-        const elapsed = @as(f64, @floatFromInt(now - sampler.prev_at_ms)) / 1000.0;
+        elapsed = @as(f64, @floatFromInt(now - sampler.prev_at_ms)) / 1000.0;
         if (elapsed > 0 and net.rx >= sampler.prev_rx and net.tx >= sampler.prev_tx) {
             rx_rate = @as(f64, @floatFromInt(net.rx - sampler.prev_rx)) / elapsed;
             tx_rate = @as(f64, @floatFromInt(net.tx - sampler.prev_tx)) / elapsed;
@@ -118,6 +136,8 @@ pub fn sample(allocator: std.mem.Allocator, sampler: *Sampler) !Metrics {
     sampler.prev_rx = net.rx;
     sampler.prev_tx = net.tx;
     sampler.prev_at_ms = now;
+
+    const interfaces = try buildInterfaces(allocator, sampler, net.interfaces, elapsed);
 
     return .{
         .cpu = .{
@@ -135,8 +155,49 @@ pub fn sample(allocator: std.mem.Allocator, sampler: *Sampler) !Metrics {
             .tx_bytes = net.tx,
             .rx_rate_bps = rx_rate,
             .tx_rate_bps = tx_rate,
+            .interfaces = interfaces,
         },
     };
+}
+
+fn buildInterfaces(
+    allocator: std.mem.Allocator,
+    sampler: *Sampler,
+    counters: []const IfaceCounters,
+    elapsed: f64,
+) ![]InterfaceMetrics {
+    var items = std.array_list.Managed(InterfaceMetrics).init(allocator);
+    var next_prev: [24]PrevInterface = @splat(.{});
+    var next_count: usize = 0;
+
+    for (counters) |iface| {
+        var rx_rate: f64 = 0;
+        var tx_rate: f64 = 0;
+        for (sampler.prev_interfaces) |prev| {
+            if (prev.name_len == 0) continue;
+            if (!std.mem.eql(u8, prev.name[0..prev.name_len], iface.name)) continue;
+            if (elapsed > 0 and iface.rx >= prev.rx and iface.tx >= prev.tx) {
+                rx_rate = @as(f64, @floatFromInt(iface.rx - prev.rx)) / elapsed;
+                tx_rate = @as(f64, @floatFromInt(iface.tx - prev.tx)) / elapsed;
+            }
+            break;
+        }
+        try items.append(.{
+            .name = try allocator.dupe(u8, iface.name),
+            .rx_bytes = iface.rx,
+            .tx_bytes = iface.tx,
+            .rx_rate_bps = rx_rate,
+            .tx_rate_bps = tx_rate,
+        });
+        if (next_count < next_prev.len and iface.name.len <= 32) {
+            var entry = PrevInterface{ .name_len = @intCast(iface.name.len), .rx = iface.rx, .tx = iface.tx };
+            @memcpy(entry.name[0..iface.name.len], iface.name);
+            next_prev[next_count] = entry;
+            next_count += 1;
+        }
+    }
+    sampler.prev_interfaces = next_prev;
+    return items.items;
 }
 
 fn clampPercent(value: f64) f64 {
@@ -323,14 +384,19 @@ fn decodeMount(allocator: std.mem.Allocator, raw: []const u8) ![]u8 {
     return out.toOwnedSlice();
 }
 
-const NetCounters = struct { rx: u64, tx: u64 };
+const IfaceCounters = struct { name: []const u8, rx: u64, tx: u64 };
 
-fn parseNetwork(allocator: std.mem.Allocator) !NetCounters {
+fn parseNetwork(allocator: std.mem.Allocator) !struct {
+    rx: u64,
+    tx: u64,
+    interfaces: []IfaceCounters,
+} {
     const raw = try readFile(allocator, "/proc/net/dev");
     defer allocator.free(raw);
 
     var rx: u64 = 0;
     var tx: u64 = 0;
+    var interfaces = std.array_list.Managed(IfaceCounters).init(allocator);
     var lines = std.mem.splitScalar(u8, raw, '\n');
     while (lines.next()) |line| {
         const colon = std.mem.indexOfScalar(u8, line, ':') orelse continue;
@@ -345,6 +411,11 @@ fn parseNetwork(allocator: std.mem.Allocator) !NetCounters {
         }
         rx += values[0];
         tx += values[8];
+        try interfaces.append(.{
+            .name = try allocator.dupe(u8, iface),
+            .rx = values[0],
+            .tx = values[8],
+        });
     }
-    return .{ .rx = rx, .tx = tx };
+    return .{ .rx = rx, .tx = tx, .interfaces = interfaces.items };
 }
