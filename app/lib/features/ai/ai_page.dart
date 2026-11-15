@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/ai_config.dart';
+import '../../core/ai_conversations.dart';
 import '../../core/api_client.dart';
 import '../../core/keychain.dart';
 import '../../core/session.dart';
+import '../../ui/markdown.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import 'ai_client.dart';
@@ -35,7 +37,8 @@ class AiPage extends StatefulWidget {
 class _AiPageState extends State<AiPage> {
   final _client = AiClient();
   final _inputController = TextEditingController();
-  final _messages = <_ChatEntry>[];
+  final _conversations = <AiConversation>[];
+  String? _activeId;
   final _tools = buildAiTools();
   final _toolsByName = <String, AiTool>{};
 
@@ -49,6 +52,16 @@ class _AiPageState extends State<AiPage> {
 
   List<Map<String, dynamic>> _chatHistory = [];
   List<Map<String, dynamic>> _responsesInput = [];
+
+  AiConversation? get _active {
+    for (final conversation in _conversations) {
+      if (conversation.id == _activeId) return conversation;
+    }
+    return _conversations.isEmpty ? null : _conversations.first;
+  }
+
+  List<ConversationEntry> get _messages =>
+      _active?.entries ?? const <ConversationEntry>[];
 
   ApiClient get _api => PanelScope.of(context).api;
 
@@ -87,12 +100,29 @@ class _AiPageState extends State<AiPage> {
     } catch (error) {
       keyError = error.toString();
     }
+    final stored = _conversations.isEmpty
+        ? await ConversationStore.load()
+        : const <AiConversation>[];
     if (!mounted) return;
     setState(() {
       _config = config;
       _keyPresent = key != null && key.isNotEmpty;
       _keychainError = keyError;
       _loading = false;
+      if (_conversations.isEmpty) {
+        _conversations.addAll(stored);
+        if (_conversations.isEmpty) {
+          _conversations.add(_newConversation());
+        }
+        final current = _active;
+        _activeId = current?.id;
+        _chatHistory = List<Map<String, dynamic>>.from(
+          current?.chatHistory ?? const [],
+        );
+        _responsesInput = List<Map<String, dynamic>>.from(
+          current?.responsesInput ?? const [],
+        );
+      }
     });
     AiToolPreferences.apply(config, _tools);
   }
@@ -247,37 +277,106 @@ class _AiPageState extends State<AiPage> {
   }
 
   void _resetChat() {
+    _startConversation();
+  }
+
+  AiConversation _newConversation() => AiConversation(
+    id: newConversationId(),
+    title: '新对话',
+    updatedAt: DateTime.now().millisecondsSinceEpoch,
+  );
+
+  void _startConversation() {
+    final conversation = _newConversation();
     setState(() {
-      _messages.clear();
+      _conversations.insert(0, conversation);
+      _activeId = conversation.id;
       _chatHistory = [];
       _responsesInput = [];
       _error = null;
       _status = '';
     });
+    _persist();
+  }
+
+  void _selectConversation(String id) {
+    for (final conversation in _conversations) {
+      if (conversation.id != id) continue;
+      setState(() {
+        _activeId = id;
+        _chatHistory = List<Map<String, dynamic>>.from(
+          conversation.chatHistory,
+        );
+        _responsesInput = List<Map<String, dynamic>>.from(
+          conversation.responsesInput,
+        );
+        _error = null;
+        _status = '';
+      });
+      return;
+    }
+  }
+
+  Future<void> _deleteConversation(String id) async {
+    setState(() {
+      _conversations.removeWhere((conversation) => conversation.id == id);
+      if (_conversations.isEmpty) {
+        _conversations.add(_newConversation());
+      }
+      final current = _active;
+      _activeId = current?.id;
+      _chatHistory = List<Map<String, dynamic>>.from(
+        current?.chatHistory ?? const [],
+      );
+      _responsesInput = List<Map<String, dynamic>>.from(
+        current?.responsesInput ?? const [],
+      );
+    });
+    await _persist();
+  }
+
+  Future<void> _persist() async {
+    final active = _active;
+    if (active != null) {
+      active.chatHistory
+        ..clear()
+        ..addAll(_chatHistory);
+      active.responsesInput
+        ..clear()
+        ..addAll(_responsesInput);
+    }
+    await ConversationStore.save(_conversations);
   }
 
   Future<void> _send() async {
     final text = _inputController.text.trim();
     if (text.isEmpty || _sending) return;
     final config = _config;
+    final conversation = _active;
     if (config == null || !_keyPresent) {
       _toast('请先配置 Base URL、模型和 API Key');
       await _openConfig();
       return;
     }
+    if (conversation == null) return;
 
     final key = await AiKeychain.readKey();
     if (key == null || key.isEmpty) {
       _toast('系统钥匙串中没有 API Key');
       return;
     }
+    if (!mounted) return;
 
     _inputController.clear();
+    if (conversation.title == '新对话') {
+      conversation.title = text.length > 18 ? '${text.substring(0, 18)}…' : text;
+    }
+    conversation.updatedAt = DateTime.now().millisecondsSinceEpoch;
     setState(() {
       _sending = true;
       _error = null;
       _status = 'AI 思考中…';
-      _messages.add(_ChatEntry(role: 'user', text: text));
+      conversation.entries.add(ConversationEntry(role: 'user', text: text));
     });
 
     if (config.protocol == 'responses') {
@@ -298,6 +397,10 @@ class _AiPageState extends State<AiPage> {
       var iterations = 0;
       while (iterations < 6) {
         iterations += 1;
+        final placeholder = ConversationEntry(role: 'assistant', text: '');
+        setState(() => conversation.entries.add(placeholder));
+        var streamed = false;
+
         final reply = config.protocol == 'responses'
             ? await _client.responses(
                 config,
@@ -308,17 +411,29 @@ class _AiPageState extends State<AiPage> {
                     .map((tool) => responsesToolSpec(_toolSchema(tool)))
                     .toList(),
               )
-            : await _client.chatCompletions(
+            : await _client.chatCompletionsStream(
                 config,
                 key,
                 _chatHistory,
                 activeTools
                     .map((tool) => chatToolSpec(_toolSchema(tool)))
                     .toList(),
+                (delta) {
+                  if (!mounted) return;
+                  streamed = true;
+                  setState(() => placeholder.text += delta);
+                },
               );
 
-        if (reply.text != null && reply.text!.isNotEmpty) {
-          _appendAssistant(reply.text!);
+        if (!streamed) {
+          final answer = reply.text;
+          if (answer != null && answer.isNotEmpty) {
+            setState(() => placeholder.text = answer);
+          } else {
+            setState(() => conversation.entries.remove(placeholder));
+          }
+        } else if (placeholder.text.trim().isEmpty) {
+          setState(() => conversation.entries.remove(placeholder));
         }
 
         if (reply.toolCalls.isEmpty) {
@@ -362,8 +477,9 @@ class _AiPageState extends State<AiPage> {
               result = jsonEncode({'ok': false, 'error': '用户拒绝执行该操作'});
               _appendToolNotice('已拒绝：${tool.summary(call.arguments)}');
             } else {
-              result =
-                  await AiRequestContext.run(() => _executeTool(tool, call.arguments));
+              result = await AiRequestContext.run(
+                () => _executeTool(tool, call.arguments),
+              );
               _appendToolNotice('已执行：${tool.summary(call.arguments)}');
             }
           } else {
@@ -396,12 +512,14 @@ class _AiPageState extends State<AiPage> {
       setState(() => _error = error.toString());
       _appendAssistant('请求失败：$error');
     } finally {
+      conversation.updatedAt = DateTime.now().millisecondsSinceEpoch;
       if (mounted) {
         setState(() {
           _sending = false;
           _status = '';
         });
       }
+      await _persist();
     }
   }
 
@@ -472,13 +590,21 @@ class _AiPageState extends State<AiPage> {
   }
 
   void _appendAssistant(String text) {
-    if (!mounted) return;
-    setState(() => _messages.add(_ChatEntry(role: 'assistant', text: text)));
+    final conversation = _active;
+    if (!mounted || conversation == null) return;
+    setState(
+      () => conversation.entries.add(
+        ConversationEntry(role: 'assistant', text: text),
+      ),
+    );
   }
 
   void _appendToolNotice(String text) {
-    if (!mounted) return;
-    setState(() => _messages.add(_ChatEntry(role: 'tool', text: text)));
+    final conversation = _active;
+    if (!mounted || conversation == null) return;
+    setState(
+      () => conversation.entries.add(ConversationEntry(role: 'tool', text: text)),
+    );
   }
 
   Map<String, dynamic> _toolSchema(AiTool tool) => {
@@ -507,7 +633,12 @@ class _AiPageState extends State<AiPage> {
               icon: const Icon(Icons.settings_outlined, size: 20),
             ),
             IconButton(
-              tooltip: '清空对话',
+              tooltip: '新对话',
+              onPressed: _startConversation,
+              icon: const Icon(Icons.add_comment_outlined, size: 20),
+            ),
+            IconButton(
+              tooltip: '清空当前对话',
               onPressed: _resetChat,
               icon: const Icon(Icons.delete_sweep_outlined, size: 20),
             ),
@@ -547,63 +678,89 @@ class _AiPageState extends State<AiPage> {
               ),
             ),
           Expanded(
-            child: _messages.isEmpty
-                ? EmptyState(
-                    icon: Icons.auto_awesome,
-                    title: '用一句话管理服务器',
-                    message:
-                        '例如：“检查磁盘占用，清理 /tmp 下超过 7 天的日志”，'
-                        '或“列出最近失败的 systemd 服务”。\n'
-                        'AI 只能调用系统设置中勾选的白名单工具，无法执行任意 shell；删除只会进入回收站，'
-                        '所有修改操作均由你人工批准。',
-                    action: _config == null
-                        ? null
-                        : TextButton(
-                            onPressed: _openConfig,
-                            child: const Text('配置 AI 服务'),
-                          ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) => _bubble(_messages[index]),
-                  ),
-          ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(
-                _error!,
-                style: TextStyle(fontSize: 11.5, color: hampanelDanger),
-              ),
-            ),
-          Container(
-            padding: const EdgeInsets.fromLTRB(24, 10, 24, 18),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                SizedBox(width: 230, child: _conversationList()),
+                VerticalDivider(width: 1, color: hampanelBorder),
                 Expanded(
-                  child: TextField(
-                    controller: _inputController,
-                    minLines: 1,
-                    maxLines: 5,
-                    onSubmitted: (_) => _send(),
-                    decoration: const InputDecoration(
-                      hintText: '描述你想完成的操作…（Enter 发送）',
-                    ),
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: _messages.isEmpty
+                            ? EmptyState(
+                                icon: Icons.auto_awesome,
+                                title: '用一句话管理服务器',
+                                message:
+                                    '例如：“检查磁盘占用，清理 /tmp 下超过 7 天的日志”，'
+                                    '或“列出最近失败的 systemd 服务”。\n'
+                                    'AI 只能调用系统设置中勾选的白名单工具，无法执行任意 shell；'
+                                    '删除只会进入回收站，所有修改操作均由你人工批准。',
+                                action: _config == null
+                                    ? null
+                                    : TextButton(
+                                        onPressed: _openConfig,
+                                        child: const Text('配置 AI 服务'),
+                                      ),
+                              )
+                            : ListView.builder(
+                                padding: const EdgeInsets.fromLTRB(
+                                  24,
+                                  0,
+                                  24,
+                                  12,
+                                ),
+                                itemCount: _messages.length,
+                                itemBuilder: (context, index) =>
+                                    _bubble(_messages[index]),
+                              ),
+                      ),
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Text(
+                            _error!,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: hampanelDanger,
+                            ),
+                          ),
+                        ),
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(24, 10, 24, 18),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _inputController,
+                                minLines: 1,
+                                maxLines: 5,
+                                onSubmitted: (_) => _send(),
+                                decoration: const InputDecoration(
+                                  hintText: '描述你想完成的操作…（Enter 发送）',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            FilledButton.icon(
+                              onPressed: _sending ? null : _send,
+                              icon: _sending
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.send, size: 16),
+                              label: Text(_sending ? _status : '发送'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 10),
-                FilledButton.icon(
-                  onPressed: _sending ? null : _send,
-                  icon: _sending
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.send, size: 16),
-                  label: Text(_sending ? _status : '发送'),
                 ),
               ],
             ),
@@ -613,7 +770,98 @@ class _AiPageState extends State<AiPage> {
     );
   }
 
-  Widget _bubble(_ChatEntry entry) {
+  Widget _conversationList() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 4, 8, 6),
+          child: Row(
+            children: [
+              Text(
+                '对话',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: hampanelMuted,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                tooltip: '新对话',
+                onPressed: _startConversation,
+                icon: const Icon(Icons.add, size: 16),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            itemCount: _conversations.length,
+            itemBuilder: (context, index) {
+              final conversation = _conversations[index];
+              final selected = conversation.id == _active?.id;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Material(
+                  color: selected ? hampanelSurfaceAlt : Colors.transparent,
+                  borderRadius: BorderRadius.circular(2),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(2),
+                    onTap: () => _selectConversation(conversation.id),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 6, 2, 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  conversation.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: selected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                                Text(
+                                  '${conversation.entries.length} 条消息',
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    color: hampanelMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: '删除对话',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () =>
+                                _deleteConversation(conversation.id),
+                            icon: const Icon(Icons.close, size: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _bubble(ConversationEntry entry) {
     if (entry.role == 'tool') {
       return Padding(
         padding: const EdgeInsets.only(bottom: 6),
@@ -646,21 +894,24 @@ class _AiPageState extends State<AiPage> {
           borderRadius: BorderRadius.circular(3),
           border: Border.all(color: hampanelInk, width: 1.5),
         ),
-        child: SelectableText(
-          entry.text,
-          style: TextStyle(
-            fontSize: 12.5,
-            height: 1.5,
-            color: isUser ? hampanelInk : hampanelInkSoft,
-          ),
-        ),
+        child: isUser
+            ? SelectableText(
+                entry.text,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.5,
+                  color: hampanelInk,
+                ),
+              )
+            : MarkdownText(
+                entry.text,
+                baseStyle: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.5,
+                  color: hampanelInkSoft,
+                ),
+              ),
       ),
     );
   }
-}
-
-class _ChatEntry {
-  _ChatEntry({required this.role, required this.text});
-  final String role;
-  final String text;
 }

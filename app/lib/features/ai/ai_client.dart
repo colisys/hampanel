@@ -163,12 +163,123 @@ class AiClient {
     );
   }
 
-  Future<Map<String, dynamic>> _post(
+  /// Chat Completions 的流式版本：逐段回调文本增量，结束时返回完整的
+  /// tool_calls，调用方可以继续原有的工具循环。
+  Future<AiReply> chatCompletionsStream(
     AiConfig config,
     String apiKey,
-    String suffix,
-    Map<String, dynamic> body,
+    List<Map<String, dynamic>> messages,
+    List<Map<String, dynamic>> tools,
+    void Function(String delta) onDelta,
   ) async {
+    final body = <String, dynamic>{
+      'model': config.model,
+      'messages': messages,
+      if (tools.isNotEmpty) 'tools': tools,
+      if (tools.isNotEmpty) 'tool_choice': 'auto',
+      'stream': true,
+    };
+    final uri = _endpoint(config, 'chat/completions');
+    final client = _client();
+    try {
+      final request = await client.postUrl(uri);
+      request.headers.contentType = ContentType.json;
+      request.headers.set('authorization', 'Bearer $apiKey');
+      request.write(jsonEncode(body));
+      final response = await request.close().timeout(
+        const Duration(seconds: 180),
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final raw = await utf8.decoder.bind(response).join();
+        throw AiException(response.statusCode, raw);
+      }
+
+      final text = StringBuffer();
+      final calls = <int, _PartialCall>{};
+      final lines = response
+          .transform(utf8.decoder)
+          .transform(const LineSplitter());
+      await for (final line in lines) {
+        if (!line.startsWith('data:')) continue;
+        final payload = line.substring(5).trim();
+        if (payload.isEmpty) continue;
+        if (payload == '[DONE]') break;
+        Map<String, dynamic> chunk;
+        try {
+          final decoded = jsonDecode(payload);
+          if (decoded is! Map<String, dynamic>) continue;
+          chunk = decoded;
+        } catch (_) {
+          continue;
+        }
+        final choices = chunk['choices'];
+        if (choices is! List || choices.isEmpty) continue;
+        final choice = choices.first;
+        if (choice is! Map<String, dynamic>) continue;
+        final delta = choice['delta'];
+        if (delta is! Map<String, dynamic>) continue;
+        final content = delta['content'];
+        if (content is String && content.isNotEmpty) {
+          text.write(content);
+          onDelta(content);
+        }
+        final toolDeltas = delta['tool_calls'];
+        if (toolDeltas is List) {
+          for (final raw in toolDeltas.whereType<Map<String, dynamic>>()) {
+            final index = (raw['index'] as num?)?.toInt() ?? calls.length;
+            final call = calls.putIfAbsent(index, _PartialCall.new);
+            final id = raw['id'];
+            if (id is String && id.isNotEmpty) call.id = id;
+            final function = raw['function'];
+            if (function is Map<String, dynamic>) {
+              final name = function['name'];
+              if (name is String && name.isNotEmpty) call.name = name;
+              final arguments = function['arguments'];
+              if (arguments is String) call.arguments.write(arguments);
+            }
+          }
+        }
+      }
+
+      final indexes = calls.keys.toList()..sort();
+      final toolCalls = <AiToolCall>[];
+      final rawCalls = <Map<String, dynamic>>[];
+      for (final index in indexes) {
+        final partial = calls[index]!;
+        if (partial.name.isEmpty) continue;
+        final argumentsRaw = partial.arguments.toString();
+        toolCalls.add(
+          AiToolCall(
+            id: partial.id ?? partial.name,
+            name: partial.name,
+            argumentsRaw: argumentsRaw,
+            arguments: _parseArguments(argumentsRaw),
+          ),
+        );
+        rawCalls.add({
+          'id': partial.id ?? partial.name,
+          'type': 'function',
+          'function': {'name': partial.name, 'arguments': argumentsRaw},
+        });
+      }
+
+      final content = text.toString();
+      return AiReply(
+        text: content.trim().isEmpty ? null : content.trim(),
+        toolCalls: toolCalls,
+        assistantMessage: {
+          'role': 'assistant',
+          'content': content,
+          if (rawCalls.isNotEmpty) 'tool_calls': rawCalls,
+        },
+        outputItems: const [],
+      );
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Uri _endpoint(AiConfig config, String suffix) {
     var base = config.baseUrl.trim();
     while (base.endsWith('/')) {
       base = base.substring(0, base.length - 1);
@@ -177,10 +288,21 @@ class AiClient {
     if (uri.scheme != 'https' && uri.scheme != 'http') {
       throw AiException(0, 'Base URL 必须是 http(s) 地址');
     }
+    return uri;
+  }
 
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 20)
-      ..idleTimeout = const Duration(seconds: 30);
+  HttpClient _client() => HttpClient()
+    ..connectionTimeout = const Duration(seconds: 20)
+    ..idleTimeout = const Duration(seconds: 30);
+
+  Future<Map<String, dynamic>> _post(
+    AiConfig config,
+    String apiKey,
+    String suffix,
+    Map<String, dynamic> body,
+  ) async {
+    final uri = _endpoint(config, suffix);
+    final client = _client();
     try {
       final request = await client.postUrl(uri);
       request.headers.contentType = ContentType.json;
@@ -228,3 +350,9 @@ Map<String, dynamic> responsesToolSpec(Map<String, dynamic> tool) => {
   'description': tool['description'],
   'parameters': tool['parameters'],
 };
+
+class _PartialCall {
+  String? id;
+  String name = '';
+  final StringBuffer arguments = StringBuffer();
+}
