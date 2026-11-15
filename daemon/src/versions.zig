@@ -226,3 +226,35 @@ fn validId(id: []const u8) bool {
     }
     return true;
 }
+
+test "snapshot and restore round-trip an existing file" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const root = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(root);
+    const data_dir = try compat.path.join(allocator, &.{ root, "data" });
+    defer allocator.free(data_dir);
+    const file_path = try compat.path.join(allocator, &.{ root, "app.conf" });
+    defer allocator.free(file_path);
+
+    var file = try compat.createFileAbsolute(file_path, .{ .truncate = true, .mode = 0o644 });
+    try file.writeAll("[sshd]\nenabled = true\n");
+    file.close();
+
+    const first = try snapshot(allocator, data_dir, file_path);
+    try std.testing.expect(first != null);
+
+    var rewritten = try compat.createFileAbsolute(file_path, .{ .truncate = true, .mode = 0o644 });
+    try rewritten.writeAll("[sshd]\nenabled = false\n");
+    rewritten.close();
+    const second = try snapshot(allocator, data_dir, file_path);
+    try std.testing.expect(second != null);
+
+    _ = try restore(allocator, data_dir, file_path, first.?.id);
+    const content = try compat.cwd().readFileAlloc(allocator, file_path, 1024);
+    defer allocator.free(content);
+    try std.testing.expectEqualStrings("[sshd]\nenabled = true\n", content);
+}

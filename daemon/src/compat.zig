@@ -75,7 +75,12 @@ pub const File = struct {
     }
 
     pub fn read(self: File, buf: []u8) !usize {
-        return self.inner.readStreaming(io(), &.{buf});
+        // Zig 0.17 signals EOF with error.EndOfStream; every caller here uses
+        // the old `0 == EOF` contract, so normalize it in one place.
+        return self.inner.readStreaming(io(), &.{buf}) catch |err| switch (err) {
+            error.EndOfStream => 0,
+            else => |e| return e,
+        };
     }
 
     pub fn readAll(self: File, buf: []u8) !usize {
