@@ -104,237 +104,33 @@ class _PanelShellState extends State<PanelShell> {
 
   bool _hostsOpen = false;
 
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+
   @override
   Widget build(BuildContext context) {
     final session = PanelScope.of(context);
+    final compact = MediaQuery.sizeOf(context).width < 900;
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: compact
+          ? Drawer(
+              width: MediaQuery.sizeOf(context).width * 0.82,
+              backgroundColor: hampanelSurface,
+              child: SafeArea(child: _sidebar(session, drawer: true)),
+            )
+          : null,
       body: Row(
         children: [
-          Container(
-            width: 230,
-            decoration: BoxDecoration(
-              color: hampanelSurface,
-              border: Border(right: BorderSide(color: hampanelInk, width: 2)),
-            ),
-            child: Column(
-              children: [
-                SizedBox(
-                  height: 56,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 30,
-                          height: 30,
-                          color: hampanelInk,
-                          child: Icon(
-                            Icons.dns_outlined,
-                            color: hampanelSurface,
-                            size: 18,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text(
-                            'HAMPANEL',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.6,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: hampanelInk, width: 1.2),
-                          ),
-                          child: Text(
-                            'v$fullClientVersion',
-                            style: TextStyle(
-                              fontFamily: 'monospace',
-                              fontSize: 9.5,
-                              color: hampanelMuted,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const Divider(height: 2, thickness: 2),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: _destinations.length,
-                    itemBuilder: (context, index) {
-                      final destination = _destinations[index];
-                      final selected = index == _index;
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 2,
-                        ),
-                        child: Material(
-                          color: selected ? hampanelInk : Colors.transparent,
-                          borderRadius: BorderRadius.circular(2),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(2),
-                            onTap: () => setState(() {
-                              _index = index;
-                              _hostsOpen = false;
-                            }),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 9,
-                              ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 3,
-                                    height: 18,
-                                    color: selected
-                                        ? hampanelAccent
-                                        : Colors.transparent,
-                                  ),
-                                  const SizedBox(width: 9),
-                                  Icon(
-                                    destination.icon,
-                                    size: 18,
-                                    color: selected
-                                        ? hampanelSurface
-                                        : hampanelInkSoft,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      destination.label,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: selected
-                                            ? hampanelSurface
-                                            : hampanelInkSoft,
-                                        fontWeight: selected
-                                            ? FontWeight.w800
-                                            : FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border(
-                      top: BorderSide(color: hampanelInk, width: 2),
-                    ),
-                  ),
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _HostSwitcher(
-                        session: session,
-                        onSwitchHost: widget.onSwitchHost,
-                        onManage: () => setState(() => _hostsOpen = true),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: widget.onLogout,
-                          icon: const Icon(Icons.logout, size: 15),
-                          label: const Text(
-                            '断开连接',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+          if (!compact) _sidebar(session),
           Expanded(
             child: Column(
               children: [
-                Container(
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: hampanelBackground,
-                    border: Border(
-                      bottom: BorderSide(color: hampanelInk, width: 2),
-                    ),
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Row(
-                    children: [
-                      if (_hostsOpen) ...[
-                        IconButton(
-                          tooltip: '返回',
-                          onPressed: () => setState(() => _hostsOpen = false),
-                          icon: const Icon(Icons.arrow_back, size: 18),
-                        ),
-                        const SizedBox(width: 2),
-                      ],
-                      Text(
-                        _hostsOpen ? '主机管理' : _destinations[_index].label,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: hampanelInk, width: 1.5),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.verified_user_outlined,
-                              size: 12,
-                              color: hampanelAccent,
-                            ),
-                            SizedBox(width: 6),
-                            Text(
-                              'mTLS 已加密',
-                              style: TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 10,
-                                color: hampanelInk,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.4,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                _topBar(compact),
                 Expanded(
                   child: _hostsOpen
                       ? HostsPage(
                           key: ValueKey('hosts-${widget.sessionKey}'),
-                          onSwitchHost: widget.onSwitchHost,
+                          onSwitchHost: _switchHost,
                         )
                       : IndexedStack(
                           key: ValueKey('pages-${widget.sessionKey}'),
@@ -345,6 +141,256 @@ class _PanelShellState extends State<PanelShell> {
                               destination.builder(context, index == _index),
                           ],
                         ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sidebar(PanelSession session, {bool drawer = false}) {
+    return Container(
+      width: drawer ? double.infinity : 230,
+      decoration: BoxDecoration(
+        color: hampanelSurface,
+        border: Border(right: BorderSide(color: hampanelInk, width: 2)),
+      ),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 56,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    color: hampanelInk,
+                    child: Icon(
+                      Icons.dns_outlined,
+                      color: hampanelSurface,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'HAMPANEL',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.6,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: hampanelInk, width: 1.2),
+                    ),
+                    child: Text(
+                      'v$fullClientVersion',
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 9.5,
+                        color: hampanelMuted,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Divider(height: 2, thickness: 2),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: _destinations.length,
+              itemBuilder: (context, index) {
+                final destination = _destinations[index];
+                final selected = index == _index;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 2,
+                  ),
+                  child: Material(
+                    color: selected ? hampanelInk : Colors.transparent,
+                    borderRadius: BorderRadius.circular(2),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(2),
+                      onTap: () => _select(index),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 9,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 3,
+                              height: 18,
+                              color: selected
+                                  ? hampanelAccent
+                                  : Colors.transparent,
+                            ),
+                            const SizedBox(width: 9),
+                            Icon(
+                              destination.icon,
+                              size: 18,
+                              color: selected
+                                  ? hampanelSurface
+                                  : hampanelInkSoft,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                destination.label,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: selected
+                                      ? hampanelSurface
+                                      : hampanelInkSoft,
+                                  fontWeight: selected
+                                      ? FontWeight.w800
+                                      : FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: hampanelInk, width: 2)),
+            ),
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _HostSwitcher(
+                  session: session,
+                  onSwitchHost: _switchHost,
+                  onManage: _openHosts,
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _logout,
+                    icon: const Icon(Icons.logout, size: 15),
+                    label: const Text('断开连接', style: TextStyle(fontSize: 12)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _select(int index) {
+    setState(() {
+      _index = index;
+      _hostsOpen = false;
+    });
+    _closeDrawer();
+  }
+
+  void _openHosts() {
+    setState(() => _hostsOpen = true);
+    _closeDrawer();
+  }
+
+  void _closeDrawer() {
+    final scaffold = _scaffoldKey.currentState;
+    if (scaffold != null && scaffold.isDrawerOpen) {
+      scaffold.closeDrawer();
+    }
+  }
+
+  Future<void> _logout() async {
+    _closeDrawer();
+    await widget.onLogout();
+  }
+
+  Future<void> _switchHost(HostRecord host) async {
+    _closeDrawer();
+    await widget.onSwitchHost(host);
+  }
+
+  Widget _topBar(bool compact) {
+    return Container(
+      height: 56,
+      decoration: BoxDecoration(
+        color: hampanelBackground,
+        border: Border(bottom: BorderSide(color: hampanelInk, width: 2)),
+      ),
+      padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 24),
+      child: Row(
+        children: [
+          if (compact)
+            IconButton(
+              tooltip: '打开菜单',
+              onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+              icon: const Icon(Icons.menu, size: 20),
+            ),
+          if (_hostsOpen)
+            IconButton(
+              tooltip: '返回',
+              onPressed: () => setState(() => _hostsOpen = false),
+              icon: const Icon(Icons.arrow_back, size: 18),
+            ),
+          Expanded(
+            child: Text(
+              _hostsOpen ? '主机管理' : _destinations[_index].label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ),
+          Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: compact ? 6 : 8,
+              vertical: 4,
+            ),
+            decoration: BoxDecoration(
+              border: Border.all(color: hampanelInk, width: 1.5),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.verified_user_outlined,
+                  size: 12,
+                  color: hampanelAccent,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  compact ? 'mTLS' : 'mTLS 已加密',
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 10,
+                    color: hampanelInk,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4,
+                  ),
                 ),
               ],
             ),

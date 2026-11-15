@@ -541,12 +541,19 @@ class _SshPageState extends State<SshPage> {
   @override
   Widget build(BuildContext context) {
     final status = _status;
+    final compact = MediaQuery.sizeOf(context).width < 720;
     return Column(
       children: [
         PageHeader(
           title: 'SSH 管理',
           subtitle: 'sshd 状态、安全配置与 authorized_keys',
           actions: [
+            if (compact)
+              SubNavMenu(
+                items: const ['概览', '密钥', '日志'],
+                index: _section,
+                onChanged: (index) => setState(() => _section = index),
+              ),
             IconButton(
               tooltip: '刷新',
               onPressed: _loading ? null : _loadStatus,
@@ -799,18 +806,26 @@ class _SshPageState extends State<SshPage> {
       ),
     ];
     final pages = [overview, keys, logs];
+    final compact = MediaQuery.sizeOf(context).width < 720;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SubNav(
-          items: const ['概览', '密钥', '日志'],
-          index: _section,
-          onChanged: (index) => setState(() => _section = index),
-        ),
-        const VerticalDivider(width: 1),
+        if (!compact) ...[
+          SubNav(
+            items: const ['概览', '密钥', '日志'],
+            index: _section,
+            onChanged: (index) => setState(() => _section = index),
+          ),
+          const VerticalDivider(width: 1),
+        ],
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+            padding: EdgeInsets.fromLTRB(
+              compact ? 12 : 24,
+              4,
+              compact ? 12 : 24,
+              24,
+            ),
             children: pages[_section],
           ),
         ),

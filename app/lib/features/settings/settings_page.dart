@@ -294,29 +294,49 @@ class _SettingsPageState extends State<SettingsPage> {
     final latestVersion = (_update?['latest_version'] as String?) ?? '';
     final updateError = (_update?['error_message'] as String?) ?? '';
     final checkedAt = (_update?['checked_at'] as num?)?.toInt() ?? 0;
+    final compact = MediaQuery.sizeOf(context).width < 720;
     return Column(
       children: [
-        const PageHeader(title: '设置', subtitle: '常规、AI、主机与关于'),
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SubNav(
+        PageHeader(
+          title: '设置',
+          subtitle: '常规、AI、主机与关于',
+          actions: [
+            if (compact)
+              SubNavMenu(
                 items: const ['常规', 'AI', '主机', '关于'],
                 index: _tab.index,
                 onChanged: (index) =>
                     setState(() => _tab = _SettingsTab.values[index]),
               ),
-              const VerticalDivider(width: 1),
+          ],
+        ),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (!compact) ...[
+                SubNav(
+                  items: const ['常规', 'AI', '主机', '关于'],
+                  index: _tab.index,
+                  onChanged: (index) =>
+                      setState(() => _tab = _SettingsTab.values[index]),
+                ),
+                const VerticalDivider(width: 1),
+              ],
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                  padding: EdgeInsets.fromLTRB(
+                    compact ? 12 : 24,
+                    4,
+                    compact ? 12 : 24,
+                    24,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (_tab == _SettingsTab.general)
-                        SizedBox(
-                          width: 720,
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 720),
                           child: PanelCard(
                             title: '连接',
                             trailing: StatusPill(
@@ -388,8 +408,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       const SizedBox(height: 14),
                       if (_tab == _SettingsTab.general)
-                        SizedBox(
-                          width: 720,
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 720),
                           child: PanelCard(
                             title: '更新',
                             trailing: _update == null
@@ -568,8 +588,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       const SizedBox(height: 14),
                       if (_tab == _SettingsTab.general)
-                        SizedBox(
-                          width: 720,
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 720),
                           child: PanelCard(
                             title: '证书指纹',
                             child: Column(
@@ -594,8 +614,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       const SizedBox(height: 14),
                       if (_tab == _SettingsTab.general)
-                        SizedBox(
-                          width: 720,
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 720),
                           child: PanelCard(
                             title: '管理端更新',
                             child: Column(
@@ -769,8 +789,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       const SizedBox(height: 14),
                       if (_tab == _SettingsTab.ai)
-                        SizedBox(
-                          width: 720,
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 720),
                           child: PanelCard(
                             title: 'AI 工具权限',
                             trailing: _aiLoading
@@ -853,8 +873,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       const SizedBox(height: 14),
                       if (_tab == _SettingsTab.ai)
-                        SizedBox(
-                          width: 720,
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 720),
                           child: PanelCard(
                             title: 'AI 敏感文件路径',
                             child: _aiLoading
@@ -961,8 +981,8 @@ class _SettingsPageState extends State<SettingsPage> {
                       if (_tab == _SettingsTab.host)
                         const HostSettingsSection(),
                       if (_tab == _SettingsTab.about)
-                        SizedBox(
-                          width: 720,
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 720),
                           child: PanelCard(
                             title: '关于',
                             child: Column(

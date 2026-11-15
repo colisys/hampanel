@@ -16,8 +16,14 @@ class PageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 720;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+      padding: EdgeInsets.fromLTRB(
+        compact ? 12 : 24,
+        20,
+        compact ? 12 : 24,
+        12,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -512,6 +518,50 @@ class SubNav extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// 窄屏下的二级菜单入口：只占一个小汉堡按钮，点击弹出同级选项。
+class SubNavMenu extends StatelessWidget {
+  const SubNavMenu({
+    super.key,
+    required this.items,
+    required this.index,
+    required this.onChanged,
+  });
+
+  final List<String> items;
+  final int index;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<int>(
+      tooltip: '切换子菜单',
+      onSelected: onChanged,
+      itemBuilder: (context) => [
+        for (var i = 0; i < items.length; i++)
+          PopupMenuItem(value: i, child: Text(items[i])),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border.all(color: hampanelInk, width: 1.5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.menu, size: 15),
+            const SizedBox(width: 6),
+            Text(
+              items[index],
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            const Icon(Icons.arrow_drop_down, size: 18),
+          ],
+        ),
       ),
     );
   }
