@@ -7,6 +7,9 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/api_client.dart';
 import '../../core/ai_config.dart';
 import '../../core/build_info.dart';
+import '../../core/client_settings.dart';
+import '../../core/client_update.dart';
+import '../../core/format.dart';
 import '../../core/enrollment.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
@@ -30,6 +33,13 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _checking = false;
   Map<String, dynamic>? _update;
   bool _updateBusy = false;
+  final _clientMirror = TextEditingController();
+  final _daemonMirror = TextEditingController();
+  String? _daemonChannel;
+  bool _daemonSaving = false;
+  ClientRelease? _clientRelease;
+  bool _clientChecking = false;
+  String? _clientError;
 
   final _aiTools = buildAiTools();
   final _sensitivePathController = TextEditingController();
@@ -45,11 +55,17 @@ class _SettingsPageState extends State<SettingsPage> {
     _check();
     _loadUpdate();
     _loadAiSettings();
+    ClientSettings.instance.load().then((_) {
+      if (!mounted) return;
+      setState(() => _clientMirror.text = ClientSettings.instance.githubMirror);
+    });
   }
 
   @override
   void dispose() {
     _sensitivePathController.dispose();
+    _clientMirror.dispose();
+    _daemonMirror.dispose();
     super.dispose();
   }
 
@@ -144,7 +160,12 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final json = await _api.getJson('/api/v1/update');
       if (!mounted) return;
-      setState(() => _update = json as Map<String, dynamic>?);
+      final map = json as Map<String, dynamic>?;
+      setState(() {
+        _update = map;
+        _daemonChannel = (map?['channel'] as String?) ?? 'stable';
+        _daemonMirror.text = (map?['github_mirror'] as String?) ?? '';
+      });
     } catch (_) {
       // update status is optional
     }
@@ -219,6 +240,22 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _saveDaemonUpdateConfig() async {
+    setState(() => _daemonSaving = true);
+    try {
+      await _api.putJson('/api/v1/update/config', {
+        'channel': _daemonChannel ?? 'stable',
+        'github_mirror': _daemonMirror.text.trim(),
+      });
+      await _loadUpdate();
+      _toast('受控端更新配置已保存');
+    } catch (error) {
+      _toast('保存失败：${describeError(error)}');
+    } finally {
+      if (mounted) setState(() => _daemonSaving = false);
+    }
+  }
+
   Future<void> _copyEnrollment() async {
     final enrollment = PanelScope.of(context).enrollment;
     await Clipboard.setData(
@@ -259,459 +296,795 @@ class _SettingsPageState extends State<SettingsPage> {
     final checkedAt = (_update?['checked_at'] as num?)?.toInt() ?? 0;
     return Column(
       children: [
-        PageHeader(
-          title: '设置',
-          subtitle: '常规、AI、主机与关于',
-          actions: [
-            SegmentedButton<_SettingsTab>(
-              segments: const [
-                ButtonSegment(value: _SettingsTab.general, label: Text('常规')),
-                ButtonSegment(value: _SettingsTab.ai, label: Text('AI')),
-                ButtonSegment(value: _SettingsTab.host, label: Text('主机')),
-                ButtonSegment(value: _SettingsTab.about, label: Text('关于')),
-              ],
-              selected: {_tab},
-              onSelectionChanged: (value) =>
-                  setState(() => _tab = value.first),
-            ),
-          ],
-        ),
+        const PageHeader(title: '设置', subtitle: '常规、AI、主机与关于'),
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_tab == _SettingsTab.general)
-                  SizedBox(
-                    width: 720,
-                    child: PanelCard(
-                      title: '连接',
-                    trailing: StatusPill(
-                      text: _checking
-                          ? '检测中'
-                          : (_health == null ? '未检测' : '已检测'),
-                      good: _health?.startsWith('连接正常') ?? false,
-                    ),
-                    child: Column(
-                      children: [
-                        _row('Endpoint', enrollment.endpoint),
-                        _row(
-                          '入口前缀',
-                          enrollment.entryPrefix.isEmpty
-                              ? '未启用'
-                              : enrollment.entryPrefix,
-                        ),
-                        _row('客户端 CN', enrollment.clientCn),
-                        _row('服务端版本', _serverVersion ?? '检测中'),
-                        _row('创建时间', enrollment.createdAt),
-                        _row('配置目录', Enrollment.configDirectory().path),
-                        if (_health != null) ...[
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              _health!,
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: hampanelMuted,
-                              ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SubNav(
+                items: const ['常规', 'AI', '主机', '关于'],
+                index: _tab.index,
+                onChanged: (index) =>
+                    setState(() => _tab = _SettingsTab.values[index]),
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_tab == _SettingsTab.general)
+                        SizedBox(
+                          width: 720,
+                          child: PanelCard(
+                            title: '连接',
+                            trailing: StatusPill(
+                              text: _checking
+                                  ? '检测中'
+                                  : (_health == null ? '未检测' : '已检测'),
+                              good: _health?.startsWith('连接正常') ?? false,
                             ),
-                          ),
-                        ],
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            FilledButton.icon(
-                              onPressed: _checking ? null : _check,
-                              icon: const Icon(Icons.network_check, size: 16),
-                              label: const Text('测试连接'),
-                            ),
-                            const SizedBox(width: 10),
-                            OutlinedButton.icon(
-                              onPressed: _copyEnrollment,
-                              icon: const Icon(
-                                Icons.copy_all_outlined,
-                                size: 16,
-                              ),
-                              label: const Text('复制注册凭据'),
-                            ),
-                            const SizedBox(width: 10),
-                            OutlinedButton.icon(
-                              onPressed: _openConfigDirectory,
-                              icon: const Icon(
-                                Icons.folder_open_outlined,
-                                size: 16,
-                              ),
-                              label: const Text('打开配置目录'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                if (_tab == _SettingsTab.general)
-                  SizedBox(
-                    width: 720,
-                    child: PanelCard(
-                      title: '更新',
-                    trailing: _update == null
-                        ? null
-                        : StatusPill(
-                            text: updatable
-                                ? (updateAvailable ? '可更新' : '已是最新')
-                                : '源码安装',
-                            good: !updateAvailable,
-                          ),
-                    child: _update == null
-                        ? const LoadingView()
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _row(
-                                '安装方式',
-                                installMode == 'binary' ? '发布二进制' : '源码构建',
-                              ),
-                              _row(
-                                '更新通道',
-                                (_update?['channel'] as String?) ?? '-',
-                              ),
-                              _row(
-                                '当前版本',
-                                (_update?['current_version'] as String?) ?? '-',
-                              ),
-                              _row(
-                                '最新版本',
-                                latestVersion.isEmpty ? '未检查' : latestVersion,
-                              ),
-                              _row(
-                                '上次检查',
-                                checkedAt > 0
-                                    ? DateTime.fromMillisecondsSinceEpoch(
-                                        checkedAt * 1000,
-                                      ).toLocal().toString()
-                                    : '从未',
-                              ),
-                              if (updatable)
-                                _row('每日检查', scheduled ? '已启用（04:17）' : '未启用'),
-                              if (updateError.isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  updateError,
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    color: hampanelDanger,
+                            child: Column(
+                              children: [
+                                _row('Endpoint', enrollment.endpoint),
+                                _row(
+                                  '入口前缀',
+                                  enrollment.entryPrefix.isEmpty
+                                      ? '未启用'
+                                      : enrollment.entryPrefix,
+                                ),
+                                _row('客户端 CN', enrollment.clientCn),
+                                _row('服务端版本', _serverVersion ?? '检测中'),
+                                _row('创建时间', enrollment.createdAt),
+                                _row('配置目录', Enrollment.configDirectory().path),
+                                if (_health != null) ...[
+                                  const SizedBox(height: 8),
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      _health!,
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        color: hampanelMuted,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ],
-                              const SizedBox(height: 8),
-                              Text(
-                                updatable
-                                    ? '发布二进制安装会通过 GitHub Release 检查新版本；更新会替换二进制并重启服务。'
-                                    : '源码安装不启用自动更新检查。需要更新时请用同一方式重新构建部署。',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  color: hampanelMuted,
-                                  height: 1.5,
-                                ),
-                              ),
-                              if (updatable) ...[
+                                ],
                                 const SizedBox(height: 12),
-                                Wrap(
-                                  spacing: 10,
-                                  runSpacing: 8,
+                                Row(
                                   children: [
-                                    OutlinedButton.icon(
-                                      onPressed: _updateBusy
-                                          ? null
-                                          : _checkUpdate,
-                                      icon: const Icon(Icons.refresh, size: 16),
-                                      label: const Text('检查更新'),
-                                    ),
                                     FilledButton.icon(
-                                      onPressed: _updateBusy || !updateAvailable
-                                          ? null
-                                          : _applyUpdate,
+                                      onPressed: _checking ? null : _check,
                                       icon: const Icon(
-                                        Icons.system_update_alt,
+                                        Icons.network_check,
                                         size: 16,
                                       ),
-                                      label: const Text('立即更新'),
+                                      label: const Text('测试连接'),
                                     ),
+                                    const SizedBox(width: 10),
                                     OutlinedButton.icon(
-                                      onPressed: _updateBusy
-                                          ? null
-                                          : _toggleUpdateSchedule,
+                                      onPressed: _copyEnrollment,
                                       icon: const Icon(
-                                        Icons.schedule,
+                                        Icons.copy_all_outlined,
                                         size: 16,
                                       ),
-                                      label: Text(
-                                        scheduled ? '关闭每日检查' : '启用每日检查',
+                                      label: const Text('复制注册凭据'),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    OutlinedButton.icon(
+                                      onPressed: _openConfigDirectory,
+                                      icon: const Icon(
+                                        Icons.folder_open_outlined,
+                                        size: 16,
                                       ),
+                                      label: const Text('打开配置目录'),
                                     ),
                                   ],
                                 ),
                               ],
-                            ],
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                if (_tab == _SettingsTab.general)
-                  SizedBox(
-                    width: 720,
-                    child: PanelCard(
-                      title: '证书指纹',
-                    child: Column(
-                      children: [
-                        _row('CA SHA-256', enrollment.caSha256),
-                        _row('服务端 SHA-256', enrollment.serverSha256),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            '客户端只信任该 CA，并强制要求服务端提供匹配证书；没有有效客户端证书的连接会在 TLS 层被拒绝。',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: hampanelMuted,
-                              height: 1.5,
                             ),
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                if (_tab == _SettingsTab.ai)
-                  SizedBox(
-                    width: 720,
-                    child: PanelCard(
-                      title: 'AI 工具权限',
-                    trailing: _aiLoading
-                        ? null
-                        : StatusPill(
-                            text: '${_enabledTools.length}/${_aiTools.length}',
-                            good: _enabledTools.isNotEmpty,
-                          ),
-                    child: _aiLoading
-                        ? const LoadingView()
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '勾选允许 AI 助手调用的工具。修改类工具每次执行仍需人工批准；'
-                                '计划任务工具默认关闭，勾选后创建任务也同样需要批准。',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  color: hampanelMuted,
-                                  height: 1.5,
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              _toolGroup(
-                                '只读工具',
-                                _aiTools
-                                    .where(
-                                      (tool) =>
-                                          !tool.mutating &&
-                                          tool.name != 'add_cron_job',
-                                    )
-                                    .toList(),
-                              ),
-                              _toolGroup(
-                                '修改类工具（需审批）',
-                                _aiTools
-                                    .where(
-                                      (tool) =>
-                                          tool.mutating &&
-                                          tool.name != 'add_cron_job',
-                                    )
-                                    .toList(),
-                              ),
-                              _toolGroup(
-                                '高风险工具（默认关闭）',
-                                _aiTools
-                                    .where(
-                                      (tool) => tool.name == 'add_cron_job',
-                                    )
-                                    .toList(),
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  FilledButton.icon(
-                                    onPressed: _aiSaving
-                                        ? null
-                                        : _saveAiSettings,
-                                    icon: const Icon(
-                                      Icons.save_outlined,
-                                      size: 16,
-                                    ),
-                                    label: Text(
-                                      _aiSaving ? '保存中…' : '保存 AI 权限',
-                                    ),
+                      const SizedBox(height: 14),
+                      if (_tab == _SettingsTab.general)
+                        SizedBox(
+                          width: 720,
+                          child: PanelCard(
+                            title: '更新',
+                            trailing: _update == null
+                                ? null
+                                : StatusPill(
+                                    text: updatable
+                                        ? (updateAvailable ? '可更新' : '已是最新')
+                                        : '源码安装',
+                                    good: !updateAvailable,
                                   ),
-                                  const SizedBox(width: 10),
-                                  OutlinedButton(
-                                    onPressed: _resetAiDefaults,
-                                    child: const Text('恢复默认'),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                if (_tab == _SettingsTab.ai)
-                  SizedBox(
-                    width: 720,
-                    child: PanelCard(
-                      title: 'AI 敏感文件路径',
-                    child: _aiLoading
-                        ? const LoadingView()
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'AI 读取这些路径或其子路径时必须人工批准；其他文件读取自动执行。'
-                                '修改类操作始终需要批准。',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  color: hampanelMuted,
-                                  height: 1.5,
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-                              if (_sensitivePaths.isEmpty)
-                                Text(
-                                  '未配置敏感路径',
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    color: hampanelMuted,
-                                  ),
-                                )
-                              else
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 6,
-                                  children: [
-                                    for (final path in _sensitivePaths)
-                                      InputChip(
-                                        label: Text(
-                                          path,
-                                          style: monospace.copyWith(
-                                            fontSize: 11,
+                            child: _update == null
+                                ? const LoadingView()
+                                : Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _row(
+                                        '安装方式',
+                                        installMode == 'binary'
+                                            ? '发布二进制'
+                                            : '源码构建',
+                                      ),
+                                      Row(
+                                        children: [
+                                          SizedBox(
+                                            width: 190,
+                                            child:
+                                                DropdownButtonFormField<String>(
+                                                  initialValue:
+                                                      _daemonChannel ??
+                                                      'stable',
+                                                  decoration:
+                                                      const InputDecoration(
+                                                        labelText: '更新通道',
+                                                      ),
+                                                  items: const [
+                                                    DropdownMenuItem(
+                                                      value: 'stable',
+                                                      child: Text('stable'),
+                                                    ),
+                                                    DropdownMenuItem(
+                                                      value: 'nightly',
+                                                      child: Text('nightly'),
+                                                    ),
+                                                  ],
+                                                  onChanged: updatable
+                                                      ? (value) => setState(
+                                                          () => _daemonChannel =
+                                                              value,
+                                                        )
+                                                      : null,
+                                                ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: TextField(
+                                              controller: _daemonMirror,
+                                              enabled: updatable,
+                                              decoration: const InputDecoration(
+                                                labelText: 'GitHub 镜像（可选）',
+                                                hintText:
+                                                    'https://ghproxy.example',
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          OutlinedButton(
+                                            onPressed:
+                                                updatable && !_daemonSaving
+                                                ? _saveDaemonUpdateConfig
+                                                : null,
+                                            child: Text(
+                                              _daemonSaving ? '保存中…' : '保存',
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      Text(
+                                        '镜像用于受控端更新下载；留空表示直连 GitHub。',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: hampanelMuted,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      _row(
+                                        '当前版本',
+                                        (_update?['current_version']
+                                                as String?) ??
+                                            '-',
+                                      ),
+                                      _row(
+                                        '最新版本',
+                                        latestVersion.isEmpty
+                                            ? '未检查'
+                                            : latestVersion,
+                                      ),
+                                      _row(
+                                        '上次检查',
+                                        checkedAt > 0
+                                            ? formatTimestamp(checkedAt)
+                                            : '从未',
+                                      ),
+                                      if (updatable)
+                                        _row(
+                                          '每日检查',
+                                          scheduled ? '已启用（04:17）' : '未启用',
+                                        ),
+                                      if (updateError.isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          updateError,
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            color: hampanelDanger,
                                           ),
                                         ),
-                                        onDeleted: () => setState(
-                                          () => _sensitivePaths.remove(path),
-                                        ),
-                                        deleteIcon: const Icon(
-                                          Icons.close,
-                                          size: 14,
+                                      ],
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        updatable
+                                            ? '发布二进制安装会通过 GitHub Release 检查新版本；更新会替换二进制并重启服务。'
+                                            : '源码安装不启用自动更新检查。需要更新时请用同一方式重新构建部署。',
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          color: hampanelMuted,
+                                          height: 1.5,
                                         ),
                                       ),
+                                      if (updatable) ...[
+                                        const SizedBox(height: 12),
+                                        Wrap(
+                                          spacing: 10,
+                                          runSpacing: 8,
+                                          children: [
+                                            OutlinedButton.icon(
+                                              onPressed: _updateBusy
+                                                  ? null
+                                                  : _checkUpdate,
+                                              icon: const Icon(
+                                                Icons.refresh,
+                                                size: 16,
+                                              ),
+                                              label: const Text('检查更新'),
+                                            ),
+                                            FilledButton.icon(
+                                              onPressed:
+                                                  _updateBusy ||
+                                                      !updateAvailable
+                                                  ? null
+                                                  : _applyUpdate,
+                                              icon: const Icon(
+                                                Icons.system_update_alt,
+                                                size: 16,
+                                              ),
+                                              label: const Text('立即更新'),
+                                            ),
+                                            OutlinedButton.icon(
+                                              onPressed: _updateBusy
+                                                  ? null
+                                                  : _toggleUpdateSchedule,
+                                              icon: const Icon(
+                                                Icons.schedule,
+                                                size: 16,
+                                              ),
+                                              label: Text(
+                                                scheduled ? '关闭每日检查' : '启用每日检查',
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      const SizedBox(height: 14),
+                      if (_tab == _SettingsTab.general)
+                        SizedBox(
+                          width: 720,
+                          child: PanelCard(
+                            title: '证书指纹',
+                            child: Column(
+                              children: [
+                                _row('CA SHA-256', enrollment.caSha256),
+                                _row('服务端 SHA-256', enrollment.serverSha256),
+                                const SizedBox(height: 8),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    '客户端只信任该 CA，并强制要求服务端提供匹配证书；没有有效客户端证书的连接会在 TLS 层被拒绝。',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: hampanelMuted,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 14),
+                      if (_tab == _SettingsTab.general)
+                        SizedBox(
+                          width: 720,
+                          child: PanelCard(
+                            title: '管理端更新',
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 190,
+                                      child: DropdownButtonFormField<String>(
+                                        initialValue: ClientSettings
+                                            .instance
+                                            .updateChannel,
+                                        decoration: const InputDecoration(
+                                          labelText: '更新通道',
+                                          hintText: '请选择通道',
+                                        ),
+                                        items: const [
+                                          DropdownMenuItem(
+                                            value: 'stable',
+                                            child: Text('stable（正式版）'),
+                                          ),
+                                          DropdownMenuItem(
+                                            value: 'nightly',
+                                            child: Text('nightly（每日构建）'),
+                                          ),
+                                        ],
+                                        onChanged: _setClientChannel,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _clientMirror,
+                                        decoration: const InputDecoration(
+                                          labelText: 'GitHub 镜像（可选）',
+                                          hintText: 'https://ghproxy.example',
+                                        ),
+                                        onSubmitted: (_) => _saveClientMirror(),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    OutlinedButton(
+                                      onPressed: _saveClientMirror,
+                                      child: const Text('保存'),
+                                    ),
                                   ],
                                 ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextField(
-                                      controller: _sensitivePathController,
-                                      decoration: const InputDecoration(
-                                        labelText: '添加敏感路径',
-                                        hintText: '/etc/shadow 或 /root/.ssh',
-                                      ),
-                                      onSubmitted: (_) => _addSensitivePath(),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '必须先选择更新通道；通道与镜像只保存在本机，用于管理端自身更新。',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: hampanelMuted,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                _row('当前版本', fullClientVersion),
+                                if (_clientRelease != null) ...[
+                                  _row('最新版本', _clientRelease!.version),
+                                  _row(
+                                    '发布时间',
+                                    formatTimestamp(
+                                      _clientRelease!.publishedAt
+                                          ?.toIso8601String(),
                                     ),
                                   ),
-                                  const SizedBox(width: 10),
-                                  OutlinedButton.icon(
-                                    onPressed: _addSensitivePath,
-                                    icon: const Icon(Icons.add, size: 16),
-                                    label: const Text('添加'),
+                                  _row(
+                                    '状态',
+                                    ClientUpdateService.isNewer(
+                                          channel:
+                                              ClientSettings
+                                                      .instance
+                                                      .updateChannel ==
+                                                  'nightly'
+                                              ? ClientUpdateChannel.nightly
+                                              : ClientUpdateChannel.stable,
+                                          remoteVersion:
+                                              _clientRelease!.version,
+                                          localVersion: buildVersion,
+                                          localCommit: buildCommit,
+                                        )
+                                        ? '有新版本可用'
+                                        : '已是最新',
                                   ),
                                 ],
-                              ),
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  FilledButton.icon(
-                                    onPressed: _aiSaving
-                                        ? null
-                                        : _saveAiSettings,
+                                if (_clientError != null) ...[
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    _clientError!,
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: hampanelDanger,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    FilledButton.icon(
+                                      onPressed: _clientChecking
+                                          ? null
+                                          : _checkClientUpdate,
+                                      icon: _clientChecking
+                                          ? const SizedBox(
+                                              width: 14,
+                                              height: 14,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.system_update_alt,
+                                              size: 16,
+                                            ),
+                                      label: const Text('检查更新'),
+                                    ),
+                                    if (_clientRelease != null) ...[
+                                      const SizedBox(width: 10),
+                                      OutlinedButton.icon(
+                                        onPressed: () => _openExternal(
+                                          _clientDownloadUrl(_clientRelease!),
+                                        ),
+                                        icon: const Icon(
+                                          Icons.download_outlined,
+                                          size: 16,
+                                        ),
+                                        label: const Text('下载客户端'),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
+                                Container(height: 1, color: hampanelBorder),
+                                const SizedBox(height: 14),
+                                Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 190,
+                                      child: DropdownButtonFormField<int>(
+                                        initialValue: ClientSettings
+                                            .instance
+                                            .overviewRefreshSeconds,
+                                        decoration: const InputDecoration(
+                                          labelText: '概览刷新间隔',
+                                        ),
+                                        items: [
+                                          for (final seconds
+                                              in ClientSettings.refreshChoices)
+                                            DropdownMenuItem(
+                                              value: seconds,
+                                              child: Text('$seconds 秒'),
+                                            ),
+                                        ],
+                                        onChanged: _setRefreshSeconds,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      '影响概览指标采样频率。',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: hampanelMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 14),
+                      if (_tab == _SettingsTab.ai)
+                        SizedBox(
+                          width: 720,
+                          child: PanelCard(
+                            title: 'AI 工具权限',
+                            trailing: _aiLoading
+                                ? null
+                                : StatusPill(
+                                    text:
+                                        '${_enabledTools.length}/${_aiTools.length}',
+                                    good: _enabledTools.isNotEmpty,
+                                  ),
+                            child: _aiLoading
+                                ? const LoadingView()
+                                : Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '勾选允许 AI 助手调用的工具。修改类工具每次执行仍需人工批准；'
+                                        '计划任务工具默认关闭，勾选后创建任务也同样需要批准。',
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          color: hampanelMuted,
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      _toolGroup(
+                                        '只读工具',
+                                        _aiTools
+                                            .where(
+                                              (tool) =>
+                                                  !tool.mutating &&
+                                                  tool.name != 'add_cron_job',
+                                            )
+                                            .toList(),
+                                      ),
+                                      _toolGroup(
+                                        '修改类工具（需审批）',
+                                        _aiTools
+                                            .where(
+                                              (tool) =>
+                                                  tool.mutating &&
+                                                  tool.name != 'add_cron_job',
+                                            )
+                                            .toList(),
+                                      ),
+                                      _toolGroup(
+                                        '高风险工具（默认关闭）',
+                                        _aiTools
+                                            .where(
+                                              (tool) =>
+                                                  tool.name == 'add_cron_job',
+                                            )
+                                            .toList(),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          FilledButton.icon(
+                                            onPressed: _aiSaving
+                                                ? null
+                                                : _saveAiSettings,
+                                            icon: const Icon(
+                                              Icons.save_outlined,
+                                              size: 16,
+                                            ),
+                                            label: Text(
+                                              _aiSaving ? '保存中…' : '保存 AI 权限',
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          OutlinedButton(
+                                            onPressed: _resetAiDefaults,
+                                            child: const Text('恢复默认'),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      const SizedBox(height: 14),
+                      if (_tab == _SettingsTab.ai)
+                        SizedBox(
+                          width: 720,
+                          child: PanelCard(
+                            title: 'AI 敏感文件路径',
+                            child: _aiLoading
+                                ? const LoadingView()
+                                : Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'AI 读取这些路径或其子路径时必须人工批准；其他文件读取自动执行。'
+                                        '修改类操作始终需要批准。',
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          color: hampanelMuted,
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 10),
+                                      if (_sensitivePaths.isEmpty)
+                                        Text(
+                                          '未配置敏感路径',
+                                          style: TextStyle(
+                                            fontSize: 11.5,
+                                            color: hampanelMuted,
+                                          ),
+                                        )
+                                      else
+                                        Wrap(
+                                          spacing: 6,
+                                          runSpacing: 6,
+                                          children: [
+                                            for (final path in _sensitivePaths)
+                                              InputChip(
+                                                label: Text(
+                                                  path,
+                                                  style: monospace.copyWith(
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                                onDeleted: () => setState(
+                                                  () => _sensitivePaths.remove(
+                                                    path,
+                                                  ),
+                                                ),
+                                                deleteIcon: const Icon(
+                                                  Icons.close,
+                                                  size: 14,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      const SizedBox(height: 10),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              controller:
+                                                  _sensitivePathController,
+                                              decoration: const InputDecoration(
+                                                labelText: '添加敏感路径',
+                                                hintText:
+                                                    '/etc/shadow 或 /root/.ssh',
+                                              ),
+                                              onSubmitted: (_) =>
+                                                  _addSensitivePath(),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          OutlinedButton.icon(
+                                            onPressed: _addSensitivePath,
+                                            icon: const Icon(
+                                              Icons.add,
+                                              size: 16,
+                                            ),
+                                            label: const Text('添加'),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Row(
+                                        children: [
+                                          FilledButton.icon(
+                                            onPressed: _aiSaving
+                                                ? null
+                                                : _saveAiSettings,
+                                            icon: const Icon(
+                                              Icons.save_outlined,
+                                              size: 16,
+                                            ),
+                                            label: const Text('保存路径配置'),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          OutlinedButton(
+                                            onPressed: _resetAiDefaults,
+                                            child: const Text('恢复默认'),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      const SizedBox(height: 14),
+                      if (_tab == _SettingsTab.host)
+                        const HostSettingsSection(),
+                      if (_tab == _SettingsTab.about)
+                        SizedBox(
+                          width: 720,
+                          child: PanelCard(
+                            title: '关于',
+                            child: Column(
+                              children: [
+                                _row('产品', 'Hampanel $fullClientVersion'),
+                                _row('产品标识', productId),
+                                _row('官网', officialSite),
+                                _row('协议', 'GPL-3.0-or-later'),
+                                _row(
+                                  '传输',
+                                  'HTTP/1.1 + WebSocket over mutual TLS',
+                                ),
+                                const SizedBox(height: 6),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    '本项目为独立 CleanRoom 实现，未复制任何参考面板的代码或算法。',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: hampanelMuted,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => showLicensePage(
+                                      context: context,
+                                      applicationName: 'Hampanel',
+                                      applicationVersion: fullClientVersion,
+                                      applicationLegalese: 'GPL-3.0-or-later',
+                                    ),
                                     icon: const Icon(
-                                      Icons.save_outlined,
+                                      Icons.gavel_outlined,
                                       size: 16,
                                     ),
-                                    label: const Text('保存路径配置'),
+                                    label: const Text('开源许可'),
                                   ),
-                                  const SizedBox(width: 10),
-                                  OutlinedButton(
-                                    onPressed: _resetAiDefaults,
-                                    child: const Text('恢复默认'),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                if (_tab == _SettingsTab.host) const HostSettingsSection(),
-                if (_tab == _SettingsTab.about)
-                  SizedBox(
-                    width: 720,
-                    child: PanelCard(
-                      title: '关于',
-                    child: Column(
-                      children: [
-                        _row('产品', 'Hampanel $fullClientVersion'),
-                        _row('产品标识', productId),
-                        _row('官网', officialSite),
-                        _row('协议', 'GPL-3.0-or-later'),
-                        _row('传输', 'HTTP/1.1 + WebSocket over mutual TLS'),
-                        const SizedBox(height: 6),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            '本项目为独立 CleanRoom 实现，未复制任何参考面板的代码或算法。',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: hampanelMuted,
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: OutlinedButton.icon(
-                            onPressed: () => showLicensePage(
-                              context: context,
-                              applicationName: 'Hampanel',
-                              applicationVersion: fullClientVersion,
-                              applicationLegalese: 'GPL-3.0-or-later',
-                            ),
-                            icon: const Icon(Icons.gavel_outlined, size: 16),
-                            label: const Text('开源许可'),
-                          ),
-                        ),
-                      ],
-                    ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ],
     );
+  }
+
+  Future<void> _setClientChannel(String? value) async {
+    if (value == null) return;
+    ClientSettings.instance.updateChannel = value;
+    await ClientSettings.instance.save();
+    if (!mounted) return;
+    setState(() {
+      _clientRelease = null;
+      _clientError = null;
+    });
+  }
+
+  Future<void> _saveClientMirror() async {
+    ClientSettings.instance.githubMirror = _clientMirror.text.trim();
+    await ClientSettings.instance.save();
+    _toast('GitHub 镜像已保存');
+  }
+
+  Future<void> _setRefreshSeconds(int? value) async {
+    if (value == null) return;
+    ClientSettings.instance.overviewRefreshSeconds = value;
+    await ClientSettings.instance.save();
+    if (mounted) setState(() {});
+  }
+
+  String _clientDownloadUrl(ClientRelease release) =>
+      ClientUpdateService.clientAsset(release) ??
+      'https://github.com/colisys/hampanel/releases/tag/${release.tag}';
+
+  Future<void> _checkClientUpdate() async {
+    final channel = ClientSettings.instance.updateChannel;
+    if (channel == null) {
+      _toast('请先选择更新通道');
+      return;
+    }
+    setState(() {
+      _clientChecking = true;
+      _clientError = null;
+    });
+    try {
+      final release = await const ClientUpdateService().fetch(
+        channel == 'nightly'
+            ? ClientUpdateChannel.nightly
+            : ClientUpdateChannel.stable,
+        mirror: ClientSettings.instance.githubMirror,
+      );
+      if (!mounted) return;
+      setState(() => _clientRelease = release);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _clientError = error.toString());
+    } finally {
+      if (mounted) setState(() => _clientChecking = false);
+    }
+  }
+
+  Future<void> _openExternal(String url) async {
+    try {
+      if (Platform.isMacOS) {
+        await Process.run('open', [url]);
+      } else if (Platform.isWindows) {
+        await Process.run('cmd', ['/c', 'start', '', url]);
+      } else {
+        await Process.run('xdg-open', [url]);
+      }
+    } catch (_) {
+      // 打开外部浏览器失败时保持安静。
+    }
   }
 
   Widget _toolGroup(String title, List<AiTool> tools) {
@@ -777,10 +1150,7 @@ class _SettingsPageState extends State<SettingsPage> {
           Expanded(
             child: SelectableText(
               value,
-              style: monospace.copyWith(
-                fontSize: 11.5,
-                color: hampanelInkSoft,
-              ),
+              style: monospace.copyWith(fontSize: 11.5, color: hampanelInkSoft),
             ),
           ),
         ],
