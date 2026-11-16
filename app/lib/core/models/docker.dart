@@ -401,6 +401,7 @@ class DockerJob {
     required this.output,
     required this.truncated,
     required this.exitCode,
+    this.resultPath = '',
   });
 
   final String id;
@@ -408,6 +409,7 @@ class DockerJob {
   final String output;
   final bool truncated;
   final int? exitCode;
+  final String resultPath;
 
   bool get running => status == 'running';
 
@@ -417,5 +419,108 @@ class DockerJob {
     output: json['output'] as String? ?? '',
     truncated: json['truncated'] as bool? ?? false,
     exitCode: (json['exit_code'] as num?)?.toInt(),
+    resultPath: json['result_path'] as String? ?? '',
+  );
+}
+
+class DockerImage {
+  const DockerImage({
+    required this.id,
+    required this.repository,
+    required this.tag,
+    required this.size,
+    required this.createdAt,
+    this.digest = '',
+    this.dangling = false,
+    this.inUse = false,
+    this.usedBy = const [],
+  });
+
+  final String id;
+  final String repository;
+  final String tag;
+  final String size;
+  final String createdAt;
+  final String digest;
+  final bool dangling;
+  final bool inUse;
+  final List<String> usedBy;
+
+  String get reference => repository == '<none>'
+      ? id
+      : '$repository:${tag == '<none>' ? 'latest' : tag}';
+
+  factory DockerImage.fromJson(Map<String, dynamic> json) => DockerImage(
+    id: json['id'] as String? ?? '',
+    repository: json['repository'] as String? ?? '',
+    tag: json['tag'] as String? ?? '',
+    size: json['size'] as String? ?? '',
+    createdAt: json['created_at'] as String? ?? '',
+    digest: json['digest'] as String? ?? '',
+    dangling: json['dangling'] as bool? ?? false,
+    inUse: json['in_use'] as bool? ?? false,
+    usedBy: ((json['used_by'] as List<dynamic>?) ?? const [])
+        .whereType<String>()
+        .toList(),
+  );
+}
+
+class DockerImageSearchResult {
+  const DockerImageSearchResult({
+    required this.name,
+    required this.description,
+    required this.stars,
+    required this.official,
+  });
+
+  final String name;
+  final String description;
+  final String stars;
+  final bool official;
+
+  factory DockerImageSearchResult.fromJson(Map<String, dynamic> json) =>
+      DockerImageSearchResult(
+        name: json['name'] as String? ?? '',
+        description: json['description'] as String? ?? '',
+        stars: json['stars'] as String? ?? '',
+        official: json['official'] as bool? ?? false,
+      );
+}
+
+class DockerRegistry {
+  const DockerRegistry({
+    required this.id,
+    required this.engine,
+    required this.name,
+    required this.protocol,
+    required this.host,
+    required this.username,
+    required this.hasSecret,
+    required this.lastSyncOk,
+    required this.lastSyncMessage,
+  });
+
+  final String id;
+  final String engine;
+  final String name;
+  final String protocol;
+  final String host;
+  final String username;
+  final bool hasSecret;
+  final bool? lastSyncOk;
+  final String lastSyncMessage;
+
+  String get address => '$protocol://$host';
+
+  factory DockerRegistry.fromJson(Map<String, dynamic> json) => DockerRegistry(
+    id: json['id'] as String? ?? '',
+    engine: json['engine'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    protocol: json['protocol'] as String? ?? '',
+    host: json['host'] as String? ?? '',
+    username: json['username'] as String? ?? '',
+    hasSecret: json['has_secret'] as bool? ?? false,
+    lastSyncOk: json['last_sync_ok'] as bool?,
+    lastSyncMessage: json['last_sync_message'] as String? ?? '',
   );
 }

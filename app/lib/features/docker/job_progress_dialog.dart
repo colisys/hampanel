@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
@@ -69,6 +70,38 @@ class _JobDialogState extends State<_JobDialog> {
   void dispose() {
     _timer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _download() async {
+    final home =
+        Platform.environment['HOME'] ??
+        Platform.environment['USERPROFILE'] ??
+        '';
+    final target = await textInputDialog(
+      context,
+      title: '保存产物',
+      label: '本机路径',
+      initial: home.isEmpty ? 'export.tar' : '$home/Downloads/export.tar',
+    );
+    if (target == null || target.trim().isEmpty) return;
+    try {
+      final bytes = await widget.api.downloadToBytes(
+        '/api/v1/docker/jobs/${widget.jobId}/download',
+        const {},
+      );
+      final file = File(target.trim());
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes(bytes);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('已保存到 ${file.path}')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(describeError(error))));
+    }
   }
 
   @override
@@ -147,6 +180,11 @@ class _JobDialogState extends State<_JobDialog> {
         ),
       ),
       actions: [
+        if (job != null && job.resultPath.isNotEmpty && !job.running)
+          TextButton(
+            onPressed: () => _download(),
+            child: const Text('下载产物'),
+          ),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('关闭'),

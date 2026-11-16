@@ -15,6 +15,8 @@ const docker_jobs = @import("docker_jobs.zig");
 const docker_terminal = @import("docker_terminal.zig");
 const docker_files = @import("docker_files.zig");
 const docker_compose = @import("docker_compose.zig");
+const docker_images = @import("docker_images.zig");
+const docker_registries = @import("docker_registries.zig");
 const firewall = @import("firewall.zig");
 const cron = @import("cron.zig");
 const logs = @import("logs.zig");
@@ -98,6 +100,24 @@ pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/docker/containers", .handler = docker.containers },
     .{ .method = .POST, .pattern = "/api/v1/docker/containers", .handler = docker.create },
     .{ .method = .GET, .pattern = "/api/v1/docker/images", .handler = docker.images },
+    .{ .method = .GET, .pattern = "/api/v1/docker/images/search", .handler = docker_images.search },
+    .{ .method = .POST, .pattern = "/api/v1/docker/images/pull", .handler = docker_images.pull },
+    .{ .method = .POST, .pattern = "/api/v1/docker/images/push", .handler = docker_images.push },
+    .{ .method = .POST, .pattern = "/api/v1/docker/images/update", .handler = docker_images.update },
+    .{ .method = .POST, .pattern = "/api/v1/docker/images/tag", .handler = docker_images.tag },
+    .{ .method = .DELETE, .pattern = "/api/v1/docker/images/:id", .handler = docker_images.remove },
+    .{ .method = .POST, .pattern = "/api/v1/docker/images/prune", .handler = docker_images.prune },
+    .{ .method = .POST, .pattern = "/api/v1/docker/images/export", .handler = docker_images.exportImage },
+    .{ .method = .POST, .pattern = "/api/v1/docker/images/import", .handler = docker_images.importImage },
+    .{ .method = .POST, .pattern = "/api/v1/docker/images/build", .handler = docker_images.build },
+    .{ .method = .POST, .pattern = "/api/v1/docker/images/build/git", .handler = docker_images.buildGit },
+    .{ .method = .POST, .pattern = "/api/v1/docker/images/build/upload", .handler = docker_images.buildUpload },
+    .{ .method = .POST, .pattern = "/api/v1/docker/build-cache/prune", .handler = docker_images.pruneCache },
+    .{ .method = .GET, .pattern = "/api/v1/docker/registries", .handler = docker_registries.index },
+    .{ .method = .POST, .pattern = "/api/v1/docker/registries", .handler = docker_registries.create },
+    .{ .method = .PUT, .pattern = "/api/v1/docker/registries/:id", .handler = docker_registries.update },
+    .{ .method = .DELETE, .pattern = "/api/v1/docker/registries/:id", .handler = docker_registries.destroy },
+    .{ .method = .POST, .pattern = "/api/v1/docker/registries/:id/sync", .handler = docker_registries.sync },
     .{ .method = .GET, .pattern = "/api/v1/docker/overview", .handler = docker.overview },
     .{ .method = .GET, .pattern = "/api/v1/docker/info", .handler = docker.info },
     .{ .method = .POST, .pattern = "/api/v1/docker/test-connection", .handler = docker.testConnection },

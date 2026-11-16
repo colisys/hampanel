@@ -7,6 +7,8 @@ import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import 'compose_section.dart';
 import 'containers_section.dart';
+import 'images_section.dart';
+import 'registries_section.dart';
 
 const _sections = <String>[
   '概览',
@@ -196,6 +198,10 @@ class _DockerPageState extends State<DockerPage> {
         return ContainersSection(engine: _engine);
       case 2:
         return const ComposeSection();
+      case 3:
+        return const ImagesSection();
+      case 6:
+        return const RegistriesSection();
       default:
         return _PlaceholderSection(
           title: _sections[_selected],

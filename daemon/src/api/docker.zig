@@ -62,6 +62,10 @@ const Image = struct {
     tag: []const u8,
     size: []const u8,
     created_at: []const u8,
+    digest: []const u8 = "",
+    dangling: bool = false,
+    in_use: bool = false,
+    used_by: []const []const u8 = &.{},
 };
 
 pub fn overview(ctx: *context.Context) anyerror!void {
@@ -236,7 +240,7 @@ pub fn images(ctx: *context.Context) anyerror!void {
         return;
     };
     const result = engine_mod.run(ctx.arena, engine, socket, &.{
-        engine.name, "images", "--format", "{{json .}}",
+        engine.name, "images", "--no-trunc", "--digests", "--format", "{{json .}}",
     }, .{ .max_output = max_output }) catch {
         ctx.fail(502, "docker_unavailable", "unable to execute container engine");
         return;
@@ -246,6 +250,7 @@ pub fn images(ctx: *context.Context) anyerror!void {
         return;
     }
 
+    const usage = loadImageUsage(ctx, engine, socket) catch &[_]UsageEntry{};
     var items = std.array_list.Managed(Image).init(ctx.arena);
     var lines = std.mem.splitScalar(u8, result.stdout, '\n');
     while (lines.next()) |line| {
@@ -253,12 +258,33 @@ pub fn images(ctx: *context.Context) anyerror!void {
         if (trimmed.len == 0) continue;
         const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, trimmed, .{}) catch continue;
         if (value != .object) continue;
+        const id = stringField(value, "ID");
+        const repository = stringField(value, "Repository");
+        const tag = stringField(value, "Tag");
+        const reference = if (std.mem.eql(u8, tag, "<none>"))
+            repository
+        else if (std.mem.eql(u8, repository, "<none>"))
+            ""
+        else
+            try std.fmt.allocPrint(ctx.arena, "{s}:{s}", .{ repository, tag });
+        var used_by = std.array_list.Managed([]const u8).init(ctx.arena);
+        for (usage) |entry| {
+            if (std.mem.eql(u8, entry.image_id, id) or
+                (reference.len > 0 and std.mem.eql(u8, entry.reference, reference)))
+            {
+                try used_by.append(entry.name);
+            }
+        }
         try items.append(.{
-            .id = stringField(value, "ID"),
-            .repository = stringField(value, "Repository"),
-            .tag = stringField(value, "Tag"),
+            .id = id,
+            .repository = repository,
+            .tag = tag,
             .size = stringField(value, "Size"),
             .created_at = stringField(value, "CreatedSince"),
+            .digest = stringField(value, "Digest"),
+            .dangling = std.mem.eql(u8, repository, "<none>") or std.mem.eql(u8, tag, "<none>"),
+            .in_use = used_by.items.len > 0,
+            .used_by = used_by.items,
         });
     }
 
@@ -1040,6 +1066,50 @@ fn requireContainerId(ctx: *context.Context) ?[]const u8 {
         return null;
     }
     return id;
+}
+
+const UsageEntry = struct {
+    image_id: []const u8,
+    reference: []const u8,
+    name: []const u8,
+};
+
+fn loadImageUsage(
+    ctx: *context.Context,
+    engine: Engine,
+    socket: []const u8,
+) ![]const UsageEntry {
+    const result = engine_mod.run(ctx.arena, engine, socket, &.{
+        engine.name, "ps", "-a", "--no-trunc", "--format", "{{json .}}",
+    }, .{ .max_output = max_output }) catch return &.{};
+    if (!result.ok()) return &.{};
+    var ids = std.array_list.Managed([]const u8).init(ctx.arena);
+    var lines = std.mem.splitScalar(u8, result.stdout, '\n');
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trim(u8, line, " \t\r");
+        if (trimmed.len == 0) continue;
+        const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, trimmed, .{}) catch continue;
+        if (value != .object) continue;
+        const id = stringField(value, "ID");
+        if (id.len > 0) try ids.append(id);
+    }
+    const inspected = inspectAll(ctx, engine, socket, ids.items) catch return &.{};
+    var usage = std.array_list.Managed(UsageEntry).init(ctx.arena);
+    var iterator = inspected.iterator();
+    while (iterator.next()) |entry| {
+        const value = entry.value_ptr.*;
+        const image_id = stringField(value, "Image");
+        const reference = if (value == .object)
+            stringField(value.object.get("Config") orelse std.json.Value{ .null = {} }, "Image")
+        else
+            "";
+        try usage.append(.{
+            .image_id = image_id,
+            .reference = reference,
+            .name = stripSlash(stringField(value, "Name")),
+        });
+    }
+    return usage.items;
 }
 
 fn countLines(
