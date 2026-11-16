@@ -10,6 +10,7 @@ import 'containers_section.dart';
 import 'images_section.dart';
 import 'networks_section.dart';
 import 'registries_section.dart';
+import 'settings_section.dart';
 import 'volumes_section.dart';
 
 const _sections = <String>[
@@ -208,6 +209,8 @@ class _DockerPageState extends State<DockerPage> {
         return const VolumesSection();
       case 6:
         return const RegistriesSection();
+      case 7:
+        return const DockerSettingsSection();
       default:
         return _PlaceholderSection(
           title: _sections[_selected],

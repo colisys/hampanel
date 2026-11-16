@@ -431,13 +431,23 @@ pub fn dockerSettings(ctx: *context.Context) anyerror!void {
         return;
     };
     const stored = ctx.app.db.getSetting(ctx.arena, "docker.settings") catch null;
+    const socket = ctx.app.db.getSetting(ctx.arena, "docker.socket_path") catch null;
     try ctx.json(.{
         .path = docker_settings.configPath(),
         .settings = settings,
         .registry_mirrors = settings.registry_mirrors,
+        .insecure_registries = settings.insecure_registries,
         .ipv6 = settings.ipv6,
         .experimental = settings.experimental,
         .fixed_cidr_v6 = settings.fixed_cidr_v6,
+        .log_driver = settings.log_driver,
+        .log_max_size = settings.log_max_size,
+        .log_max_file = settings.log_max_file,
+        .iptables = settings.iptables,
+        .live_restore = settings.live_restore,
+        .cgroup_driver = settings.cgroup_driver,
+        .nvidia_runtime = settings.nvidia_runtime,
+        .socket_path = socket orelse "",
         .snapshot = stored,
     });
 }
@@ -445,29 +455,55 @@ pub fn dockerSettings(ctx: *context.Context) anyerror!void {
 pub fn dockerSettingsSave(ctx: *context.Context) anyerror!void {
     const Body = struct {
         registry_mirrors: []const []const u8 = &.{},
+        insecure_registries: []const []const u8 = &.{},
         ipv6: bool = false,
         experimental: bool = false,
         fixed_cidr_v6: []const u8 = "",
+        log_driver: []const u8 = "json-file",
+        log_max_size: []const u8 = "10m",
+        log_max_file: []const u8 = "3",
+        iptables: bool = true,
+        live_restore: bool = false,
+        cgroup_driver: []const u8 = "systemd",
+        nvidia_runtime: bool = false,
+        socket_path: []const u8 = "",
         restart: bool = true,
     };
     const body = ctx.requireJson(Body) catch {
         ctx.fail(400, "bad_request", "expected docker settings");
         return;
     };
+    if (body.socket_path.len > 0 and !@import("shared").validate.isSocketPath(body.socket_path)) {
+        ctx.fail(400, "bad_socket", "invalid docker socket path");
+        return;
+    }
     const settings = docker_settings.Settings{
         .registry_mirrors = body.registry_mirrors,
+        .insecure_registries = body.insecure_registries,
         .ipv6 = body.ipv6,
         .experimental = body.experimental,
         .fixed_cidr_v6 = body.fixed_cidr_v6,
+        .log_driver = body.log_driver,
+        .log_max_size = body.log_max_size,
+        .log_max_file = body.log_max_file,
+        .iptables = body.iptables,
+        .live_restore = body.live_restore,
+        .cgroup_driver = body.cgroup_driver,
+        .nvidia_runtime = body.nvidia_runtime,
     };
     const outcome = docker_settings.apply(ctx.arena, settings, body.restart) catch |err| {
-        if (err == error.InvalidMirror or err == error.InvalidCidr) {
+        if (err == error.InvalidMirror or err == error.InvalidCidr or
+            err == error.InvalidRegistry or err == error.InvalidLogDriver or
+            err == error.InvalidLogSize or err == error.InvalidLogFile or
+            err == error.InvalidCgroupDriver)
+        {
             ctx.fail(400, "bad_settings", @errorName(err));
         } else {
             ctx.fail(500, "docker_settings_failed", @errorName(err));
         }
         return;
     };
+    ctx.app.db.setSetting("docker.socket_path", body.socket_path) catch {};
     const snapshot = std.json.Stringify.valueAlloc(ctx.arena, body, .{}) catch "";
     ctx.app.db.setSetting("docker.settings", snapshot) catch {};
     if (!outcome.ok) ctx.response.status = 502;

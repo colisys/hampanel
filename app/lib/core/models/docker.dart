@@ -593,3 +593,58 @@ class DockerVolume {
     createdAt: json['created_at'] as String? ?? '',
   );
 }
+
+class DockerSettings {
+  const DockerSettings({
+    required this.path,
+    required this.registryMirrors,
+    required this.insecureRegistries,
+    required this.ipv6,
+    required this.experimental,
+    required this.fixedCidrV6,
+    required this.logDriver,
+    required this.logMaxSize,
+    required this.logMaxFile,
+    required this.iptables,
+    required this.liveRestore,
+    required this.cgroupDriver,
+    required this.nvidiaRuntime,
+    required this.socketPath,
+  });
+
+  final String path;
+  final List<String> registryMirrors;
+  final List<String> insecureRegistries;
+  final bool ipv6;
+  final bool experimental;
+  final String fixedCidrV6;
+  final String logDriver;
+  final String logMaxSize;
+  final String logMaxFile;
+  final bool iptables;
+  final bool liveRestore;
+  final String cgroupDriver;
+  final bool nvidiaRuntime;
+  final String socketPath;
+
+  factory DockerSettings.fromJson(Map<String, dynamic> json) => DockerSettings(
+    path: json['path'] as String? ?? '',
+    registryMirrors: _strings(json['registry_mirrors']),
+    insecureRegistries: _strings(json['insecure_registries']),
+    ipv6: json['ipv6'] as bool? ?? false,
+    experimental: json['experimental'] as bool? ?? false,
+    fixedCidrV6: json['fixed_cidr_v6'] as String? ?? '',
+    logDriver: json['log_driver'] as String? ?? 'json-file',
+    logMaxSize: json['log_max_size'] as String? ?? '10m',
+    logMaxFile: json['log_max_file'] as String? ?? '3',
+    iptables: json['iptables'] as bool? ?? true,
+    liveRestore: json['live_restore'] as bool? ?? false,
+    cgroupDriver: json['cgroup_driver'] as String? ?? 'systemd',
+    nvidiaRuntime: json['nvidia_runtime'] as bool? ?? false,
+    socketPath: json['socket_path'] as String? ?? '',
+  );
+}
+
+List<String> _strings(dynamic value) => ((value as List<dynamic>?) ?? const [])
+    .whereType<String>()
+    .toList();
