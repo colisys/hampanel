@@ -79,7 +79,7 @@ jobs:
 
       - name: Build daemon
         working-directory: daemon
-        run: zig build -Doptimize=ReleaseSafe -Dcommit=${{ steps.commit.outputs.short }}
+        run: zig build -Doptimize=ReleaseSafe -Dcpu=baseline -Dcommit=${{ steps.commit.outputs.short }}
 
       - name: Test daemon
         working-directory: daemon
@@ -198,7 +198,7 @@ jobs:
         shell: pwsh
         run: |
           $vcpkgRoot = if ($env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_INSTALLATION_ROOT } else { Split-Path (Get-Command vcpkg).Source }
-          zig build -Doptimize=ReleaseSafe "-Dcommit=${{ steps.commit.outputs.short }}" `
+          zig build -Doptimize=ReleaseSafe -Dcpu=baseline "-Dcommit=${{ steps.commit.outputs.short }}" `
             "-Dopenssl-dir=$vcpkgRoot\installed\x64-windows"
 
       - name: Stage package

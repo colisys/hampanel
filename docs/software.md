@@ -37,3 +37,23 @@
 
 初始化会中断服务数秒。生产环境建议先保留一个可用会话，并确认防火墙/安全组
 不会阻断新配置。所有操作仅对已认证的 mTLS 客户端开放。
+
+## 二进制与 CPU 兼容性
+
+发布到 Release 的 `hampaneld` 由 CI 使用 `-Dcpu=baseline` 构建，面向最基础的
+x86-64 指令集，因此可以在不支持 AVX / AVX-512 / POPCNT 等扩展的旧服务器上运行。
+源码构建默认按构建机 CPU 生成指令，如果要分发给其他机器，请显式加上
+`-Dcpu=baseline`。
+
+更新器在替换当前二进制前会先执行新版 `hampaneld version`；如果新二进制无法启动
+（例如 CPU 指令集不兼容），会保留旧版本并返回 `UpstreamBinaryUnusable`，不会把
+服务换成崩溃的版本。
+
+如果不慎安装了会崩溃的旧 nightly，重新运行安装脚本即可恢复：
+
+```sh
+curl -fsSL https://github.com/colisys/hampanel/releases/download/nightly/hampanel-install-linux.sh -o /tmp/hampanel-install.sh
+sudo bash /tmp/hampanel-install.sh --mode binary --channel nightly
+```
+
+安装脚本会保留现有配置与 PKI，只替换程序文件。

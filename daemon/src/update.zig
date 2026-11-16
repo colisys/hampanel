@@ -36,6 +36,7 @@ pub const ApplyError = error{
     ChecksumMismatch,
     ExtractFailed,
     ReplaceFailed,
+    UpstreamBinaryUnusable,
     RestartFailed,
     SpawnFailed,
     OutOfMemory,
@@ -126,7 +127,10 @@ pub fn apply(allocator: std.mem.Allocator, database: *db.Db, cfg: config.Config)
 
     if (builtin.os.tag == .linux) {
         extractLinux(allocator, archive_path, workdir) catch return error.ExtractFailed;
-        replaceLinux(allocator, workdir, cfg) catch return error.ReplaceFailed;
+        replaceLinux(allocator, workdir, cfg) catch |err| return switch (err) {
+            error.UpstreamBinaryUnusable => error.UpstreamBinaryUnusable,
+            else => error.ReplaceFailed,
+        };
         compat.cwd().deleteTree(workdir) catch {};
     } else {
         extractWindows(allocator, archive_path, workdir) catch return error.ExtractFailed;
@@ -355,6 +359,16 @@ fn replaceLinux(allocator: std.mem.Allocator, workdir: []const u8, cfg: config.C
     compat.cwd().deleteFile(staged) catch {};
     compat.cwd().copyFile(new_bin, compat.cwd(), staged, .{}) catch return error.ReplaceFailed;
     setExecutable(staged) catch return error.ReplaceFailed;
+    // Never swap in a binary that cannot even print its version: a native-CPU
+    // build from a newer machine would crash the service with SIGILL.
+    const probe = exec.run(allocator, &.{ staged, "version" }, 64 * 1024) catch {
+        compat.cwd().deleteFile(staged) catch {};
+        return error.UpstreamBinaryUnusable;
+    };
+    if (!probe.ok()) {
+        compat.cwd().deleteFile(staged) catch {};
+        return error.UpstreamBinaryUnusable;
+    }
     compat.cwd().rename(staged, self_exe) catch return error.ReplaceFailed;
 
     const risk_new = compat.path.join(allocator, &.{ workdir, "hampanel-risk" }) catch return;
