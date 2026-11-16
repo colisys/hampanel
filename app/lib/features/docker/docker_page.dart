@@ -5,6 +5,18 @@ import '../../core/models/docker.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
+import 'containers_section.dart';
+
+const _sections = <String>[
+  '概览',
+  '容器列表',
+  '编排管理',
+  '镜像管理',
+  '网络管理',
+  '存储卷',
+  '源管理',
+  'Docker 设置',
+];
 
 class DockerPage extends StatefulWidget {
   const DockerPage({super.key});
@@ -14,64 +26,47 @@ class DockerPage extends StatefulWidget {
 }
 
 class _DockerPageState extends State<DockerPage> {
-  List<DockerContainer> _containers = const [];
-  List<DockerImage> _images = const [];
-  String? _error;
-  bool _loading = true;
+  int _selected = 0;
+  bool _checking = true;
   bool _engineMissing = false;
-  String? _engine;
   bool _installing = false;
+  String? _engine;
+  String? _error;
 
   ApiClient get _api => PanelScope.of(context).api;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _checkConnection();
   }
 
-  Future<void> _load() async {
+  Future<void> _checkConnection() async {
     setState(() {
-      _loading = true;
+      _checking = true;
       _error = null;
-      _engineMissing = false;
     });
     try {
-      final results = await Future.wait([
-        _api.getJson('/api/v1/docker/containers'),
-        _api.getJson('/api/v1/docker/images'),
-      ]);
-      final containerJson = results[0] as Map<String, dynamic>;
-      final imageJson = results[1] as Map<String, dynamic>;
+      final json = await _api.getJson('/api/v1/docker/test-connection');
+      final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       setState(() {
-        _engine = containerJson['engine'] as String?;
-        _containers =
-            ((containerJson['containers'] as List<dynamic>?) ?? const [])
-                .whereType<Map<String, dynamic>>()
-                .map(DockerContainer.fromJson)
-                .toList();
-        _images = ((imageJson['images'] as List<dynamic>?) ?? const [])
-            .whereType<Map<String, dynamic>>()
-            .map(DockerImage.fromJson)
-            .toList();
-        _loading = false;
+        _engine = map['engine'] as String?;
+        _engineMissing = false;
+        _checking = false;
       });
     } on ApiException catch (error) {
       if (!mounted) return;
       setState(() {
-        if (error.code == 'engine_unavailable') {
-          _engineMissing = true;
-        } else {
-          _error = error.message;
-        }
-        _loading = false;
+        _engineMissing = error.code == 'engine_unavailable';
+        _error = _engineMissing ? null : error.message;
+        _checking = false;
       });
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = describeError(error);
-        _loading = false;
+        _checking = false;
       });
     }
   }
@@ -91,7 +86,7 @@ class _DockerPageState extends State<DockerPage> {
       } else {
         _toast('Docker 已安装，正在重新检测');
       }
-      await _load();
+      await _checkConnection();
     } catch (error) {
       _toast(describeError(error));
     } finally {
@@ -99,93 +94,22 @@ class _DockerPageState extends State<DockerPage> {
     }
   }
 
-  Future<void> _action(DockerContainer container, String action) async {
-    if (action == 'rm') {
-      final ok = await confirmDialog(
-        context,
-        title: '删除容器 ${container.name}?',
-        message: '容器会被强制删除，数据卷仍然保留。',
-        confirmLabel: '删除',
-        danger: true,
-      );
-      if (!ok) return;
-    }
-    try {
-      final json = await _api.postJson(
-        '/api/v1/docker/containers/${container.id}/$action',
-        const <String, dynamic>{},
-      );
-      final map = json as Map<String, dynamic>? ?? const {};
-      final output = (map['output'] as String? ?? '').trim();
-      if (output.isNotEmpty) _toast(output);
-      await _load();
-    } catch (error) {
-      _toast(describeError(error));
-    }
-  }
-
-  Future<void> _logs(DockerContainer container) async {
-    try {
-      final json = await _api.getJson(
-        '/api/v1/docker/containers/${container.id}/logs',
-        query: {'lines': '300'},
-      );
-      final map = json as Map<String, dynamic>;
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('${container.name} 日志'),
-          content: DialogBody(
-            maxWidth: 860,
-            maxHeight: 520,
-            child: SingleChildScrollView(
-              child: SelectableText(
-                (map['output'] as String? ?? '').isEmpty
-                    ? '暂无日志'
-                    : map['output'] as String,
-                style: monospace,
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('关闭'),
-            ),
-          ],
-        ),
-      );
-    } catch (error) {
-      _toast(describeError(error));
-    }
-  }
-
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        PageHeader(
-          title: '容器',
-          subtitle: _engineMissing
-              ? '未检测到 Docker 或 Podman'
-              : '${_containers.length} 个容器 · ${_images.length} 个镜像'
-                    '${_engine == null ? '' : ' · $_engine'}',
-          actions: [
-            IconButton(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
-          ],
-        ),
-        if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
-        if (_engineMissing)
+    if (_checking) {
+      return const LoadingView();
+    }
+    if (_engineMissing) {
+      return Column(
+        children: [
+          const PageHeader(title: '容器', subtitle: '未检测到 Docker 或 Podman'),
           Expanded(
             child: EmptyState(
               icon: Icons.widgets_outlined,
@@ -205,191 +129,281 @@ class _DockerPageState extends State<DockerPage> {
                 label: Text(_installing ? '安装中…' : '安装 Docker'),
               ),
             ),
-          )
-        else
+          ),
+        ],
+      );
+    }
+    if (_error != null) {
+      return Column(
+        children: [
+          const PageHeader(title: '容器'),
           Expanded(
-            child: _loading
-                ? const LoadingView()
-                : DefaultTabController(
-                    length: 2,
-                    child: Column(
+            child: ErrorBanner(message: _error!, onRetry: _checkConnection),
+          ),
+        ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 760;
+        final content = _buildSection();
+        if (narrow) {
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: Row(
+                  children: [
+                    SubNavMenu(
+                      items: _sections,
+                      index: _selected,
+                      onChanged: (value) => setState(() => _selected = value),
+                    ),
+                    const Spacer(),
+                    Text(
+                      _engine == null ? '' : _engine!,
+                      style: TextStyle(fontSize: 11, color: hampanelMuted),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(child: content),
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SubNav(
+              items: _sections,
+              index: _selected,
+              onChanged: (value) => setState(() => _selected = value),
+            ),
+            Expanded(child: content),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSection() {
+    switch (_selected) {
+      case 0:
+        return _OverviewSection(engine: _engine);
+      case 1:
+        return ContainersSection(engine: _engine);
+      default:
+        return _PlaceholderSection(
+          title: _sections[_selected],
+          message: '该子菜单正在实现中，稍后开放。',
+        );
+    }
+  }
+}
+
+class _OverviewSection extends StatefulWidget {
+  const _OverviewSection({this.engine});
+
+  final String? engine;
+
+  @override
+  State<_OverviewSection> createState() => _OverviewSectionState();
+}
+
+class _OverviewSectionState extends State<_OverviewSection> {
+  DockerOverview? _overview;
+  String? _error;
+  bool _loading = true;
+
+  ApiClient get _api => PanelScope.of(context).api;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final json = await _api.getJson('/api/v1/docker/overview');
+      if (!mounted) return;
+      setState(() {
+        _overview = DockerOverview.fromJson(json as Map<String, dynamic>);
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = describeError(error);
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final overview = _overview;
+    return Column(
+      children: [
+        PageHeader(
+          title: '概览',
+          subtitle: overview == null
+              ? '容器运行状态汇总'
+              : '${overview.engine} · ${overview.running} 个运行中容器',
+          actions: [
+            IconButton(
+              onPressed: _load,
+              icon: const Icon(Icons.refresh, size: 20),
+            ),
+          ],
+        ),
+        if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
+        Expanded(
+          child: _loading
+              ? const LoadingView()
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                  children: [
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
                       children: [
-                        Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 24),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: TabBar(
-                              isScrollable: true,
-                              tabAlignment: TabAlignment.start,
-                              tabs: [
-                                Tab(text: '容器'),
-                                Tab(text: '镜像'),
-                              ],
-                            ),
-                          ),
+                        _MetricCard(
+                          label: '运行中',
+                          value: overview?.running ?? 0,
+                          icon: Icons.play_circle_outline,
+                          color: hampanelAccent,
                         ),
-                        Expanded(
-                          child: TabBarView(
-                            children: [_containersTab(), _imagesTab()],
-                          ),
+                        _MetricCard(
+                          label: '已停止',
+                          value: overview?.stopped ?? 0,
+                          icon: Icons.stop_circle_outlined,
+                          color: hampanelMuted,
+                        ),
+                        _MetricCard(
+                          label: '重启中',
+                          value: overview?.restarting ?? 0,
+                          icon: Icons.restart_alt,
+                          color: hampanelWarning,
+                        ),
+                        _MetricCard(
+                          label: '错误',
+                          value: overview?.failed ?? 0,
+                          icon: Icons.error_outline,
+                          color: hampanelDanger,
                         ),
                       ],
                     ),
-                  ),
-          ),
+                    const SizedBox(height: 18),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        _MetricCard(
+                          label: '编排',
+                          value: overview?.compose ?? 0,
+                          icon: Icons.account_tree_outlined,
+                        ),
+                        _MetricCard(
+                          label: '镜像',
+                          value: overview?.images ?? 0,
+                          icon: Icons.layers_outlined,
+                        ),
+                        _MetricCard(
+                          label: '网络',
+                          value: overview?.networks ?? 0,
+                          icon: Icons.hub_outlined,
+                        ),
+                        _MetricCard(
+                          label: '存储卷',
+                          value: overview?.volumes ?? 0,
+                          icon: Icons.save_outlined,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+        ),
       ],
     );
   }
+}
 
-  Widget _containersTab() {
-    if (_containers.isEmpty) {
-      return EmptyState(
-        icon: Icons.widgets_outlined,
-        title: '没有容器',
-        message: 'Docker 中还没有容器。',
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-      itemCount: _containers.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final container = _containers[index];
-        final running = container.state == 'running';
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.inventory_2_outlined,
-                  size: 20,
-                  color: running ? hampanelAccent : hampanelMuted,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  flex: 3,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        container.name,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        container.image,
-                        style: TextStyle(fontSize: 11, color: hampanelMuted),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  flex: 3,
-                  child: Text(
-                    container.status,
-                    style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-                  ),
-                ),
-                SizedBox(
-                  width: 190,
-                  child: Text(
-                    container.ports,
-                    overflow: TextOverflow.ellipsis,
-                    style: monospace.copyWith(fontSize: 11),
-                  ),
-                ),
-                StatusPill(text: container.state, good: running),
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: '日志',
-                  onPressed: () => _logs(container),
-                  icon: const Icon(Icons.receipt_long_outlined, size: 17),
-                ),
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_horiz, size: 18),
-                  onSelected: (value) => _action(container, value),
-                  itemBuilder: (context) => [
-                    if (!running)
-                      const PopupMenuItem(value: 'start', child: Text('启动')),
-                    if (running)
-                      const PopupMenuItem(value: 'stop', child: Text('停止')),
-                    if (running)
-                      const PopupMenuItem(value: 'pause', child: Text('暂停')),
-                    if (!running)
-                      const PopupMenuItem(value: 'unpause', child: Text('恢复')),
-                    const PopupMenuItem(value: 'restart', child: Text('重启')),
-                    PopupMenuItem(value: 'rm', child: Text('删除')),
-                  ],
-                ),
-              ],
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.color,
+  });
+
+  final String label;
+  final int value;
+  final IconData icon;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveColor = color ?? hampanelInk;
+    return Container(
+      width: 168,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: hampanelSurface,
+        border: Border.all(color: hampanelBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: effectiveColor),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            '$value',
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
+              color: effectiveColor,
             ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
+}
 
-  Widget _imagesTab() {
-    if (_images.isEmpty) {
-      return EmptyState(
-        icon: Icons.layers_outlined,
-        title: '没有镜像',
-        message: 'Docker 中还没有镜像。',
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-      itemCount: _images.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final image = _images[index];
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Icon(Icons.layers_outlined, size: 20, color: hampanelMuted),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    '${image.repository}:${image.tag}',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  width: 180,
-                  child: Text(
-                    image.id,
-                    overflow: TextOverflow.ellipsis,
-                    style: monospace,
-                  ),
-                ),
-                SizedBox(
-                  width: 90,
-                  child: Text(
-                    image.size,
-                    style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-                  ),
-                ),
-                SizedBox(
-                  width: 110,
-                  child: Text(
-                    image.createdAt,
-                    style: TextStyle(fontSize: 11, color: hampanelMuted),
-                  ),
-                ),
-              ],
-            ),
+class _PlaceholderSection extends StatelessWidget {
+  const _PlaceholderSection({required this.title, required this.message});
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        PageHeader(title: title),
+        Expanded(
+          child: EmptyState(
+            icon: Icons.construction_outlined,
+            title: '正在实现',
+            message: message,
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 }

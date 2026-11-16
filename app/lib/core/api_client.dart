@@ -223,6 +223,11 @@ class ApiClient {
     return WebSocket.connect(url.toString(), customClient: _http);
   }
 
+  Future<WebSocket> openSocket(String path, Map<String, String> query) {
+    final url = uri(path, query, 'wss');
+    return WebSocket.connect(url.toString(), customClient: _http);
+  }
+
   ApiException _errorFrom(int status, String text) {
     try {
       final decoded = jsonDecode(text);

@@ -12,6 +12,8 @@ const services = @import("services.zig");
 const sites = @import("sites.zig");
 const docker = @import("docker.zig");
 const docker_jobs = @import("docker_jobs.zig");
+const docker_terminal = @import("docker_terminal.zig");
+const docker_files = @import("docker_files.zig");
 const firewall = @import("firewall.zig");
 const cron = @import("cron.zig");
 const logs = @import("logs.zig");
@@ -93,12 +95,27 @@ pub const routes = [_]router.Route{
     .{ .method = .DELETE, .pattern = "/api/v1/sites/:name", .handler = sites.destroy },
 
     .{ .method = .GET, .pattern = "/api/v1/docker/containers", .handler = docker.containers },
+    .{ .method = .POST, .pattern = "/api/v1/docker/containers", .handler = docker.create },
     .{ .method = .GET, .pattern = "/api/v1/docker/images", .handler = docker.images },
     .{ .method = .GET, .pattern = "/api/v1/docker/overview", .handler = docker.overview },
     .{ .method = .GET, .pattern = "/api/v1/docker/info", .handler = docker.info },
     .{ .method = .POST, .pattern = "/api/v1/docker/test-connection", .handler = docker.testConnection },
+    .{ .method = .GET, .pattern = "/api/v1/docker/notes", .handler = docker.notes },
+    .{ .method = .PUT, .pattern = "/api/v1/docker/notes/:name", .handler = docker.noteSave },
+    .{ .method = .GET, .pattern = "/api/v1/docker/containers/:id", .handler = docker.detail },
+    .{ .method = .POST, .pattern = "/api/v1/docker/containers/:id/recreate", .handler = docker.recreate },
+    .{ .method = .POST, .pattern = "/api/v1/docker/containers/:id/commit", .handler = docker.commit },
     .{ .method = .POST, .pattern = "/api/v1/docker/containers/:id/:action", .handler = docker.action },
     .{ .method = .GET, .pattern = "/api/v1/docker/containers/:id/logs", .handler = docker.logs },
+    .{ .method = .GET, .pattern = "/api/v1/docker/containers/:id/terminal/ws", .handler = docker_terminal.ws },
+    .{ .method = .GET, .pattern = "/api/v1/docker/containers/:id/files", .handler = docker_files.list },
+    .{ .method = .GET, .pattern = "/api/v1/docker/containers/:id/files/content", .handler = docker_files.content },
+    .{ .method = .PUT, .pattern = "/api/v1/docker/containers/:id/files/content", .handler = docker_files.write },
+    .{ .method = .POST, .pattern = "/api/v1/docker/containers/:id/files/mkdir", .handler = docker_files.mkdir },
+    .{ .method = .POST, .pattern = "/api/v1/docker/containers/:id/files/rename", .handler = docker_files.rename },
+    .{ .method = .POST, .pattern = "/api/v1/docker/containers/:id/files/delete", .handler = docker_files.delete },
+    .{ .method = .POST, .pattern = "/api/v1/docker/containers/:id/files/upload", .handler = docker_files.upload },
+    .{ .method = .GET, .pattern = "/api/v1/docker/containers/:id/files/download", .handler = docker_files.download },
     .{ .method = .GET, .pattern = "/api/v1/docker/jobs/:id", .handler = docker_jobs.index },
     .{ .method = .DELETE, .pattern = "/api/v1/docker/jobs/:id", .handler = docker_jobs.cancel },
     .{ .method = .GET, .pattern = "/api/v1/docker/jobs/:id/download", .handler = docker_jobs.download },
