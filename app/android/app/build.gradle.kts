@@ -73,7 +73,9 @@ android {
                 keyPassword = releaseKeyPassword
                 storeFile = releaseStoreFile
                 storePassword = releaseStorePassword
-                enableV1Signing = true
+                // minSdk 24 needs only the modern schemes; v2/v3 cover every
+                // supported Android release and keep verification deterministic.
+                enableV1Signing = false
                 enableV2Signing = true
                 enableV3Signing = true
             }

@@ -123,7 +123,7 @@ CI 在 `v*` tag 上发布正式版，在 `nightly` 分支上维护滚动预发�
 | `hampanel-client-linux-x86_64.AppImage` | Linux 客户端，单文件；`chmod +x` 后直接运行 |
 | `hampanel-client-windows-x86_64.exe` | Windows 客户端，单文件绿色版；双击运行 |
 | `hampanel-client-macos-<arch>.dmg` | macOS 客户端（仅控制 Linux / Windows） |
-| `hampanel-client-android-universal.apk` | Android 客户端，CI 使用内置发布密钥签名；未配置密钥时退化为 `-unsigned.apk` |
+| `hampanel-client-android-universal.apk` | Android 客户端，CI 使用发布密钥签名（v2 + v3）；未配置密钥时退化为 `-unsigned.apk` |
 | `hampanel-client-ios-unsigned.ipa` | iOS 客户端，未签名，需自行签名后安装 |
 | `hampanel-daemon-linux-x86_64.tar.gz` | `hampaneld`、风险网关、`bootstrap.sh`、`install.sh` |
 | `hampanel-daemon-windows-x86_64.zip` | `hampaneld.exe`、OpenSSL DLL、`install.ps1` |
@@ -136,10 +136,14 @@ Windows 绿色版首次运行时会解压到用户临时目录并启动客户端
 `%APPDATA%\Hampanel`，不写入安装目录。macOS 客户端未签名，首次打开需右键「打开」。
 iOS 的 IPA 同样未签名，需要用自己的证书和描述文件重新签名后侧载。
 
-Android 签名使用仓库 secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、
-`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。本地构建时也可以提供
+Android 签名使用仓库 secrets：`ANDROID_KEYSTORE_BASE64`（PKCS#12 的 base64）、
+`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。本地构建时也可以提供
 `app/android/key.properties`（`storeFile` / `storePassword` / `keyAlias` / `keyPassword`），
 或设置同名环境变量 `HAMPANEL_ANDROID_KEYSTORE*`。缺少密钥时 APK 不会被签名。
+
+签名证书为自签名，`CN=Dawncall`，有效期 30 年；`apksigner verify --print-certs` 可核对
+指纹 `c0:e1:e4:2f:…:98:85`。请务必离线备份该 keystore：Android 只允许用同一把密钥
+升级已安装的应用，丢失后就只能卸载重装。
 
 ### 安装方式与更新
 

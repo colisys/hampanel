@@ -668,6 +668,16 @@ jobs:
 
           files=(dist/*)
 
+          # Drop assets from a previous build of the same tag that are no longer
+          # produced (for example the old unsigned APK).
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            while IFS= read -r stale; do
+              [[ -z "$stale" ]] && continue
+              gh release delete-asset "$TAG" "$stale" --yes >/dev/null 2>&1 || true
+            done < <(gh release view "$TAG" --json assets \
+              --jq '.assets[].name' | grep -vxF -f <(printf '%s\n' "${files[@]##*/}"))
+          fi
+
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${files[@]}" --clobber
             gh release edit "$TAG" --title "$TITLE" --notes "$notes"
