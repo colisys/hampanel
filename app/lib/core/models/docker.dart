@@ -524,3 +524,72 @@ class DockerRegistry {
     lastSyncMessage: json['last_sync_message'] as String? ?? '',
   );
 }
+
+class DockerNetwork {
+  const DockerNetwork({
+    required this.id,
+    required this.name,
+    required this.driver,
+    required this.scope,
+    required this.subnet,
+    required this.gateway,
+    required this.labels,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String name;
+  final String driver;
+  final String scope;
+  final String subnet;
+  final String gateway;
+  final List<String> labels;
+  final String createdAt;
+
+  factory DockerNetwork.fromJson(Map<String, dynamic> json) => DockerNetwork(
+    id: json['id'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    driver: json['driver'] as String? ?? '',
+    scope: json['scope'] as String? ?? '',
+    subnet: json['subnet'] as String? ?? '',
+    gateway: json['gateway'] as String? ?? '',
+    labels: ((json['labels'] as List<dynamic>?) ?? const [])
+        .whereType<String>()
+        .toList(),
+    createdAt: json['created_at'] as String? ?? '',
+  );
+}
+
+class DockerVolume {
+  const DockerVolume({
+    required this.name,
+    required this.driver,
+    required this.scope,
+    required this.mountpoint,
+    required this.labels,
+    required this.options,
+    required this.createdAt,
+  });
+
+  final String name;
+  final String driver;
+  final String scope;
+  final String mountpoint;
+  final List<String> labels;
+  final List<String> options;
+  final String createdAt;
+
+  factory DockerVolume.fromJson(Map<String, dynamic> json) => DockerVolume(
+    name: json['name'] as String? ?? '',
+    driver: json['driver'] as String? ?? '',
+    scope: json['scope'] as String? ?? '',
+    mountpoint: json['mountpoint'] as String? ?? '',
+    labels: ((json['labels'] as List<dynamic>?) ?? const [])
+        .whereType<String>()
+        .toList(),
+    options: ((json['options'] as List<dynamic>?) ?? const [])
+        .whereType<String>()
+        .toList(),
+    createdAt: json['created_at'] as String? ?? '',
+  );
+}

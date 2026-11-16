@@ -17,6 +17,8 @@ const docker_files = @import("docker_files.zig");
 const docker_compose = @import("docker_compose.zig");
 const docker_images = @import("docker_images.zig");
 const docker_registries = @import("docker_registries.zig");
+const docker_networks = @import("docker_networks.zig");
+const docker_volumes = @import("docker_volumes.zig");
 const firewall = @import("firewall.zig");
 const cron = @import("cron.zig");
 const logs = @import("logs.zig");
@@ -118,6 +120,14 @@ pub const routes = [_]router.Route{
     .{ .method = .PUT, .pattern = "/api/v1/docker/registries/:id", .handler = docker_registries.update },
     .{ .method = .DELETE, .pattern = "/api/v1/docker/registries/:id", .handler = docker_registries.destroy },
     .{ .method = .POST, .pattern = "/api/v1/docker/registries/:id/sync", .handler = docker_registries.sync },
+    .{ .method = .GET, .pattern = "/api/v1/docker/networks", .handler = docker_networks.index },
+    .{ .method = .POST, .pattern = "/api/v1/docker/networks", .handler = docker_networks.create },
+    .{ .method = .POST, .pattern = "/api/v1/docker/networks/prune", .handler = docker_networks.prune },
+    .{ .method = .DELETE, .pattern = "/api/v1/docker/networks/:name", .handler = docker_networks.destroy },
+    .{ .method = .GET, .pattern = "/api/v1/docker/volumes", .handler = docker_volumes.index },
+    .{ .method = .POST, .pattern = "/api/v1/docker/volumes", .handler = docker_volumes.create },
+    .{ .method = .POST, .pattern = "/api/v1/docker/volumes/prune", .handler = docker_volumes.prune },
+    .{ .method = .DELETE, .pattern = "/api/v1/docker/volumes/:name", .handler = docker_volumes.destroy },
     .{ .method = .GET, .pattern = "/api/v1/docker/overview", .handler = docker.overview },
     .{ .method = .GET, .pattern = "/api/v1/docker/info", .handler = docker.info },
     .{ .method = .POST, .pattern = "/api/v1/docker/test-connection", .handler = docker.testConnection },

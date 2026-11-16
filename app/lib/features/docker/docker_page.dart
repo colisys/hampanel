@@ -8,7 +8,9 @@ import '../../ui/widgets.dart';
 import 'compose_section.dart';
 import 'containers_section.dart';
 import 'images_section.dart';
+import 'networks_section.dart';
 import 'registries_section.dart';
+import 'volumes_section.dart';
 
 const _sections = <String>[
   '概览',
@@ -200,6 +202,10 @@ class _DockerPageState extends State<DockerPage> {
         return const ComposeSection();
       case 3:
         return const ImagesSection();
+      case 4:
+        return const NetworksSection();
+      case 5:
+        return const VolumesSection();
       case 6:
         return const RegistriesSection();
       default:
