@@ -128,6 +128,24 @@ class _PackagesTabState extends State<PackagesTab> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
+  List<Widget> _storeActions(PackageStatus status) => [
+    StatusPill(text: status.manager, good: true),
+    Text(
+      '${status.tools.length} 个精选工具',
+      style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+    ),
+    OutlinedButton.icon(
+      onPressed: _busyId == null ? _installCustom : null,
+      icon: const Icon(Icons.add_box_outlined, size: 16),
+      label: const Text('自定义安装'),
+    ),
+    OutlinedButton.icon(
+      onPressed: _refresh,
+      icon: const Icon(Icons.sync, size: 16),
+      label: const Text('刷新软件源'),
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const LoadingView();
@@ -157,28 +175,25 @@ class _PackagesTabState extends State<PackagesTab> {
             MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
             10,
           ),
-          child: Wrap(
-            spacing: 10,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              StatusPill(text: status.manager, good: true),
-              Text(
-                '${status.tools.length} 个精选工具',
-                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-              ),
-              OutlinedButton.icon(
-                onPressed: _busyId == null ? _installCustom : null,
-                icon: const Icon(Icons.add_box_outlined, size: 16),
-                label: const Text('自定义安装'),
-              ),
-              OutlinedButton.icon(
-                onPressed: _refresh,
-                icon: const Icon(Icons.sync, size: 16),
-                label: const Text('刷新软件源'),
-              ),
-            ],
-          ),
+          child: MediaQuery.sizeOf(context).width < 720
+              ? Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: _storeActions(status),
+                )
+              : Row(
+                  children: [
+                    StatusPill(text: status.manager, good: true),
+                    const SizedBox(width: 10),
+                    Text(
+                      '${status.tools.length} 个精选工具',
+                      style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+                    ),
+                    const Spacer(),
+                    ..._storeActions(status).skip(2),
+                  ],
+                ),
         ),
         Expanded(
           child: ListView.separated(
