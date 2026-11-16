@@ -468,33 +468,24 @@ class _WafPageState extends State<WafPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
+                FormRow(
+                  flex: const [3, 2],
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: name,
-                        decoration: const InputDecoration(labelText: '策略名称'),
-                      ),
+                    TextField(
+                      controller: name,
+                      decoration: const InputDecoration(labelText: '策略名称'),
                     ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      width: 180,
-                      child: DropdownButtonFormField<String>(
-                        initialValue: routeMode,
-                        decoration: const InputDecoration(labelText: 'WAF 模式'),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'inherit',
-                            child: Text('继承全局'),
-                          ),
-                          DropdownMenuItem(value: 'off', child: Text('关闭')),
-                          DropdownMenuItem(value: 'detect', child: Text('检测')),
-                          DropdownMenuItem(value: 'enforce', child: Text('拦截')),
-                        ],
-                        onChanged: (value) => setDialogState(
-                          () => routeMode = value ?? 'inherit',
-                        ),
-                      ),
+                    DropdownButtonFormField<String>(
+                      initialValue: routeMode,
+                      decoration: const InputDecoration(labelText: 'WAF 模式'),
+                      items: const [
+                        DropdownMenuItem(value: 'inherit', child: Text('继承全局')),
+                        DropdownMenuItem(value: 'off', child: Text('关闭')),
+                        DropdownMenuItem(value: 'detect', child: Text('检测')),
+                        DropdownMenuItem(value: 'enforce', child: Text('拦截')),
+                      ],
+                      onChanged: (value) =>
+                          setDialogState(() => routeMode = value ?? 'inherit'),
                     ),
                   ],
                 ),
@@ -506,22 +497,17 @@ class _WafPageState extends State<WafPage> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
+                FormRow(
+                  flex: const [3, 2],
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: upstreamHost,
-                        decoration: const InputDecoration(labelText: '上游主机'),
-                      ),
+                    TextField(
+                      controller: upstreamHost,
+                      decoration: const InputDecoration(labelText: '上游主机'),
                     ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      width: 160,
-                      child: TextField(
-                        controller: upstreamPort,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: '上游端口'),
-                      ),
+                    TextField(
+                      controller: upstreamPort,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: '上游端口'),
                     ),
                   ],
                 ),
@@ -753,72 +739,58 @@ class _WafPageState extends State<WafPage> {
                     },
             ),
             const SizedBox(height: 10),
-            Row(
+            FormRow(
+              flex: const [3, 2],
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _listenHost,
-                    decoration: const InputDecoration(
-                      labelText: '监听地址',
-                      hintText: '0.0.0.0',
-                    ),
+                TextField(
+                  controller: _listenHost,
+                  decoration: const InputDecoration(
+                    labelText: '监听地址',
+                    hintText: '0.0.0.0',
                   ),
                 ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  width: 150,
-                  child: TextField(
-                    controller: _listenPort,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: '监听端口'),
-                  ),
+                TextField(
+                  controller: _listenPort,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: '监听端口'),
                 ),
               ],
             ),
             const SizedBox(height: 10),
-            Row(
+            FormRow(
+              flex: const [3, 2],
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _upstreamHost,
-                    decoration: const InputDecoration(
-                      labelText: '上游 Web 引擎地址',
-                      hintText: '127.0.0.1',
-                    ),
+                TextField(
+                  controller: _upstreamHost,
+                  decoration: const InputDecoration(
+                    labelText: '上游 Web 引擎地址',
+                    hintText: '127.0.0.1',
                   ),
                 ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  width: 150,
-                  child: TextField(
-                    controller: _upstreamPort,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: '上游端口'),
-                  ),
+                TextField(
+                  controller: _upstreamPort,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: '上游端口'),
                 ),
               ],
             ),
             const SizedBox(height: 10),
-            Row(
+            FormRow(
+              flex: const [3, 1],
               children: [
-                Expanded(
-                  child: SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('启用 risk gateway'),
-                    subtitle: const Text('TypeSafe 与 Geo 规则在独立 Go 网关上执行'),
-                    value: _riskEnabled,
-                    onChanged: _busy
-                        ? null
-                        : (value) => setState(() => _riskEnabled = value),
-                  ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('启用 risk gateway'),
+                  subtitle: const Text('TypeSafe 与 Geo 规则在独立 Go 网关上执行'),
+                  value: _riskEnabled,
+                  onChanged: _busy
+                      ? null
+                      : (value) => setState(() => _riskEnabled = value),
                 ),
-                SizedBox(
-                  width: 150,
-                  child: TextField(
-                    controller: _riskPort,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Risk 端口'),
-                  ),
+                TextField(
+                  controller: _riskPort,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Risk 端口'),
                 ),
               ],
             ),
@@ -860,35 +832,46 @@ class _WafPageState extends State<WafPage> {
                   : (value) => setState(() => _tlsEnabled = value),
             ),
             if (_tlsEnabled)
-              Row(
-                children: [
-                  SizedBox(
-                    width: 180,
-                    child: DropdownButtonFormField<String>(
-                      key: ValueKey(_tlsMode),
-                      initialValue: _tlsMode,
-                      decoration: const InputDecoration(labelText: '证书模式'),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'internal',
-                          child: Text('internal'),
-                        ),
-                        DropdownMenuItem(value: 'acme', child: Text('ACME')),
-                      ],
-                      onChanged: (value) =>
-                          setState(() => _tlsMode = value ?? 'internal'),
-                    ),
-                  ),
-                  if (_tlsMode == 'acme') ...[
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: _tlsEmail,
-                        decoration: const InputDecoration(labelText: 'ACME 邮箱'),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final mode = DropdownButtonFormField<String>(
+                    key: ValueKey(_tlsMode),
+                    initialValue: _tlsMode,
+                    decoration: const InputDecoration(labelText: '证书模式'),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'internal',
+                        child: Text('internal'),
                       ),
-                    ),
-                  ],
-                ],
+                      DropdownMenuItem(value: 'acme', child: Text('ACME')),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _tlsMode = value ?? 'internal'),
+                  );
+                  if (_tlsMode != 'acme') {
+                    return Align(
+                      alignment: Alignment.centerLeft,
+                      child: SizedBox(width: 180, child: mode),
+                    );
+                  }
+                  final email = TextField(
+                    controller: _tlsEmail,
+                    decoration: const InputDecoration(labelText: 'ACME 邮箱'),
+                  );
+                  if (constraints.maxWidth < 600) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [mode, const SizedBox(height: 10), email],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      SizedBox(width: 180, child: mode),
+                      const SizedBox(width: 10),
+                      Expanded(child: email),
+                    ],
+                  );
+                },
               ),
             const SizedBox(height: 8),
             Row(
@@ -973,31 +956,22 @@ class _WafPageState extends State<WafPage> {
               decoration: const InputDecoration(labelText: 'TypeSafe Endpoint'),
             ),
             const SizedBox(height: 8),
-            Row(
+            FormRow(
+              flex: const [3, 1, 1],
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _typesafeModel,
-                    decoration: const InputDecoration(labelText: '模型'),
-                  ),
+                TextField(
+                  controller: _typesafeModel,
+                  decoration: const InputDecoration(labelText: '模型'),
                 ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  width: 120,
-                  child: TextField(
-                    controller: _typesafeThreshold,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: '阈值'),
-                  ),
+                TextField(
+                  controller: _typesafeThreshold,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: '阈值'),
                 ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  width: 140,
-                  child: TextField(
-                    controller: _typesafeTimeout,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: '超时 ms'),
-                  ),
+                TextField(
+                  controller: _typesafeTimeout,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: '超时 ms'),
                 ),
               ],
             ),
@@ -1010,24 +984,20 @@ class _WafPageState extends State<WafPage> {
                   ? null
                   : (value) => setState(() => _failOpen = value),
             ),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _typesafeKey,
-                    obscureText: true,
-                    decoration: InputDecoration(
-                      labelText: 'API Key（仅写入，不会回显）',
-                      hintText: _keyConfigured ? '已保存，可留空' : 'sk-...',
-                    ),
-                  ),
+            FieldWithActions(
+              field: TextField(
+                controller: _typesafeKey,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'API Key（仅写入，不会回显）',
+                  hintText: _keyConfigured ? '已保存，可留空' : 'sk-...',
                 ),
-                const SizedBox(width: 8),
+              ),
+              actions: [
                 FilledButton(
                   onPressed: _busy ? null : _saveKey,
                   child: const Text('加密保存'),
                 ),
-                const SizedBox(width: 8),
                 OutlinedButton(
                   onPressed: _busy || !_keyConfigured ? null : _clearKey,
                   child: const Text('删除'),

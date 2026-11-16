@@ -562,21 +562,16 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
                 ),
               ),
               const SizedBox(height: 10),
-              Row(
+              FormRow(
+                flex: const [3, 2],
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _image,
-                      decoration: const InputDecoration(labelText: '镜像'),
-                    ),
+                  TextField(
+                    controller: _image,
+                    decoration: const InputDecoration(labelText: '镜像'),
                   ),
-                  const SizedBox(width: 10),
-                  SizedBox(
-                    width: 200,
-                    child: TextField(
-                      controller: _tag,
-                      decoration: const InputDecoration(labelText: 'Tag / 版本'),
-                    ),
+                  TextField(
+                    controller: _tag,
+                    decoration: const InputDecoration(labelText: 'Tag / 版本'),
                   ),
                 ],
               ),
@@ -598,32 +593,24 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
                 ),
               ],
               const SizedBox(height: 10),
-              Row(
+              FormRow(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _port,
-                      decoration: const InputDecoration(labelText: '宿主端口'),
+                  TextField(
+                    controller: _port,
+                    decoration: const InputDecoration(labelText: '宿主端口'),
+                  ),
+                  TextField(
+                    controller: _cpu,
+                    decoration: const InputDecoration(
+                      labelText: 'CPU 限额（可选）',
+                      hintText: '1.0',
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _cpu,
-                      decoration: const InputDecoration(
-                        labelText: 'CPU 限额（可选）',
-                        hintText: '1.0',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _memory,
-                      decoration: const InputDecoration(
-                        labelText: '内存 MB（可选）',
-                        hintText: '512',
-                      ),
+                  TextField(
+                    controller: _memory,
+                    decoration: const InputDecoration(
+                      labelText: '内存 MB（可选）',
+                      hintText: '512',
                     ),
                   ),
                 ],
@@ -982,25 +969,20 @@ class _ProcessesDialogState extends State<_ProcessesDialog> {
         maxHeight: 420,
         child: Column(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _process,
-                    decoration: const InputDecoration(labelText: '进程名'),
-                  ),
-                ),
-                const SizedBox(width: 10),
+            FieldWithActions(
+              field: TextField(
+                controller: _process,
+                decoration: const InputDecoration(labelText: '进程名'),
+              ),
+              actions: [
                 OutlinedButton(
                   onPressed: _busy ? null : () => _act('start'),
                   child: const Text('启动'),
                 ),
-                const SizedBox(width: 6),
                 OutlinedButton(
                   onPressed: _busy ? null : () => _act('stop'),
                   child: const Text('停止'),
                 ),
-                const SizedBox(width: 6),
                 OutlinedButton(
                   onPressed: _busy ? null : () => _act('restart'),
                   child: const Text('重启'),
@@ -1436,33 +1418,27 @@ class _RuntimeConfigTabState extends State<_RuntimeConfigTab> {
     }
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                initialValue: _selected,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: '配置文件',
-                  isDense: true,
+        FieldWithActions(
+          field: DropdownButtonFormField<String>(
+            initialValue: _selected,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: '配置文件', isDense: true),
+            items: [
+              for (final file in _files)
+                DropdownMenuItem(
+                  value: file.path,
+                  child: Text(file.path, overflow: TextOverflow.ellipsis),
                 ),
-                items: [
-                  for (final file in _files)
-                    DropdownMenuItem(
-                      value: file.path,
-                      child: Text(file.path, overflow: TextOverflow.ellipsis),
-                    ),
-                ],
-                onChanged: (value) {
-                  final file = _files.firstWhere((item) => item.path == value);
-                  setState(() {
-                    _selected = value;
-                    _content.text = file.content;
-                  });
-                },
-              ),
-            ),
-            const SizedBox(width: 10),
+            ],
+            onChanged: (value) {
+              final file = _files.firstWhere((item) => item.path == value);
+              setState(() {
+                _selected = value;
+                _content.text = file.content;
+              });
+            },
+          ),
+          actions: [
             FilledButton(
               onPressed: _busy ? null : _save,
               child: Text(_busy ? '保存中…' : '保存并应用'),

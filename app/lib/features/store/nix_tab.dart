@@ -201,28 +201,24 @@ class _NixTabState extends State<NixTab> {
                 ),
               ),
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _custom,
-                      style: monospace,
-                      decoration: const InputDecoration(
-                        labelText: 'nixpkgs#属性',
-                        hintText: 'nodejs_22',
-                        isDense: true,
-                      ),
-                      onSubmitted: (_) => _runCustom(true),
-                    ),
+              FieldWithActions(
+                field: TextField(
+                  controller: _custom,
+                  style: monospace,
+                  decoration: const InputDecoration(
+                    labelText: 'nixpkgs#属性',
+                    hintText: 'nodejs_22',
+                    isDense: true,
                   ),
-                  const SizedBox(width: 10),
+                  onSubmitted: (_) => _runCustom(true),
+                ),
+                actions: [
                   OutlinedButton(
                     onPressed: status.available && _busy == null
                         ? () => _runCustom(true)
                         : null,
                     child: const Text('构建'),
                   ),
-                  const SizedBox(width: 8),
                   FilledButton(
                     onPressed: status.available && _busy == null
                         ? () => _runCustom(false)

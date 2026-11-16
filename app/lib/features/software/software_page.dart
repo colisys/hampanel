@@ -523,30 +523,22 @@ class _SoftwarePageState extends State<SoftwarePage> {
           ],
         ),
         const SizedBox(height: 8),
-        Row(
+        FormRow(
           children: [
-            Expanded(
-              child: TextField(
-                controller: _maxretryController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'maxretry'),
-              ),
+            TextField(
+              controller: _maxretryController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'maxretry'),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: TextField(
-                controller: _bantimeController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'bantime（秒）'),
-              ),
+            TextField(
+              controller: _bantimeController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'bantime（秒）'),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: TextField(
-                controller: _findtimeController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'findtime（秒）'),
-              ),
+            TextField(
+              controller: _findtimeController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'findtime（秒）'),
             ),
           ],
         ),

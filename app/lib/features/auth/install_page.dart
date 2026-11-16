@@ -5,6 +5,7 @@ import '../../core/api_client.dart';
 import '../../core/enrollment.dart';
 import '../../core/ssh_installer.dart';
 import '../../ui/enrollment_trust.dart';
+import '../../ui/widgets.dart';
 import '../../ui/theme.dart';
 
 /// Onboarding wizard: install hampaneld on a remote host over SSH, choosing
@@ -192,34 +193,26 @@ class _InstallPageState extends State<InstallPage> {
                 ),
                 const SizedBox(height: 18),
                 _section('01', 'SSH 连接', [
-                  _row([
-                    Expanded(
-                      flex: 3,
-                      child: TextField(
+                  FormRow(
+                    flex: const [4, 1, 2],
+                    children: [
+                      TextField(
                         controller: _host,
                         decoration: const InputDecoration(
                           labelText: '主机',
                           hintText: '203.0.113.10 或 panel.example.com',
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      width: 110,
-                      child: TextField(
+                      TextField(
                         controller: _port,
                         decoration: const InputDecoration(labelText: 'SSH 端口'),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      width: 170,
-                      child: TextField(
+                      TextField(
                         controller: _user,
                         decoration: const InputDecoration(labelText: '用户名'),
                       ),
-                    ),
-                  ]),
+                    ],
+                  ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                     initialValue: _auth,
@@ -239,22 +232,24 @@ class _InstallPageState extends State<InstallPage> {
                       decoration: const InputDecoration(labelText: 'SSH 密码'),
                     )
                   else ...[
-                    _row([
-                      Expanded(
-                        child: TextField(
-                          controller: _keyPath,
-                          decoration: const InputDecoration(
-                            labelText: '私钥路径',
-                            hintText: '/home/me/.ssh/id_ed25519',
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _keyPath,
+                            decoration: const InputDecoration(
+                              labelText: '私钥路径',
+                              hintText: '/home/me/.ssh/id_ed25519',
+                            ),
                           ),
                         ),
-                      ),
-                      IconButton(
-                        onPressed: _pasteKeyPath,
-                        tooltip: '从剪贴板粘贴',
-                        icon: const Icon(Icons.content_paste, size: 18),
-                      ),
-                    ]),
+                        IconButton(
+                          onPressed: _pasteKeyPath,
+                          tooltip: '从剪贴板粘贴',
+                          icon: const Icon(Icons.content_paste, size: 18),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 10),
                     TextField(
                       controller: _keyPassphrase,
@@ -367,9 +362,10 @@ class _InstallPageState extends State<InstallPage> {
                     style: TextStyle(fontSize: 11, color: hampanelMuted),
                   ),
                   const SizedBox(height: 10),
-                  _row([
-                    Expanded(
-                      child: TextField(
+                  FormRow(
+                    flex: const [3, 1],
+                    children: [
+                      TextField(
                         controller: _endpoint,
                         decoration: InputDecoration(
                           labelText: '面板地址（可选）',
@@ -377,18 +373,14 @@ class _InstallPageState extends State<InstallPage> {
                               '留空则使用 SSH 主机：${_host.text.isEmpty ? 'host' : _host.text}',
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      width: 140,
-                      child: TextField(
+                      TextField(
                         controller: _panelPort,
                         decoration: const InputDecoration(
                           labelText: '面板端口（可选）',
                         ),
                       ),
-                    ),
-                  ]),
+                    ],
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     '面板地址用于证书 SAN。通过 NAT 或域名访问时请填写公网地址；端口留空会自动选择。',
@@ -501,7 +493,4 @@ class _InstallPageState extends State<InstallPage> {
       ),
     );
   }
-
-  Widget _row(List<Widget> children) =>
-      Row(crossAxisAlignment: CrossAxisAlignment.start, children: children);
 }

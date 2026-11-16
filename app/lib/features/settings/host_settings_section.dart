@@ -164,25 +164,20 @@ class _HostSettingsSectionState extends State<HostSettingsSection> {
                       : '未启用',
                 ),
                 const SizedBox(height: 10),
-                Row(
-                  children: [
-                    SizedBox(
-                      width: 180,
-                      child: TextField(
-                        controller: _swapMb,
-                        decoration: const InputDecoration(
-                          labelText: '大小 (MiB)',
-                          hintText: '2048',
-                          isDense: true,
-                        ),
-                      ),
+                FieldWithActions(
+                  field: TextField(
+                    controller: _swapMb,
+                    decoration: const InputDecoration(
+                      labelText: '大小 (MiB)',
+                      hintText: '2048',
+                      isDense: true,
                     ),
-                    const SizedBox(width: 10),
+                  ),
+                  actions: [
                     FilledButton(
                       onPressed: _busy ? null : _enableSwap,
                       child: const Text('启用 / 调整'),
                     ),
-                    const SizedBox(width: 8),
                     OutlinedButton(
                       onPressed: _busy || !swapfileActive ? null : _disableSwap,
                       child: const Text('关闭'),

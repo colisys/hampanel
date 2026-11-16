@@ -690,23 +690,18 @@ class _ContainerEditorDialogState extends State<ContainerEditorDialog> {
                 ),
               ),
               const SizedBox(height: 10),
-              Row(
+              FormRow(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _restart,
-                      decoration: const InputDecoration(
-                        labelText: '重启策略',
-                        hintText: 'no / always / on-failure:3',
-                      ),
+                  TextField(
+                    controller: _restart,
+                    decoration: const InputDecoration(
+                      labelText: '重启策略',
+                      hintText: 'no / always / on-failure:3',
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _network,
-                      decoration: const InputDecoration(labelText: '网络（可选）'),
-                    ),
+                  TextField(
+                    controller: _network,
+                    decoration: const InputDecoration(labelText: '网络（可选）'),
                   ),
                 ],
               ),
@@ -720,24 +715,17 @@ class _ContainerEditorDialogState extends State<ContainerEditorDialog> {
                 ),
               ),
               const SizedBox(height: 10),
-              Row(
+              FormRow(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _cpus,
-                      decoration: const InputDecoration(
-                        labelText: 'CPU 限制（核，可选）',
-                      ),
+                  TextField(
+                    controller: _cpus,
+                    decoration: const InputDecoration(
+                      labelText: 'CPU 限制（核，可选）',
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _memory,
-                      decoration: const InputDecoration(
-                        labelText: '内存限制（MB，可选）',
-                      ),
-                    ),
+                  TextField(
+                    controller: _memory,
+                    decoration: const InputDecoration(labelText: '内存限制（MB，可选）'),
                   ),
                 ],
               ),

@@ -591,20 +591,18 @@ class _SearchDialogState extends State<_SearchDialog> {
         maxHeight: 560,
         child: Column(
           children: [
-            Row(
+            FormRow(
+              flex: const [3, 2],
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _term,
-                    autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: '关键词',
-                      hintText: 'nginx',
-                    ),
-                    onSubmitted: (_) => _search(),
+                TextField(
+                  controller: _term,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: '关键词',
+                    hintText: 'nginx',
                   ),
+                  onSubmitted: (_) => _search(),
                 ),
-                const SizedBox(width: 8),
                 DropdownButtonFormField<String>(
                   initialValue: _registryId,
                   decoration: const InputDecoration(labelText: '检索源'),
@@ -622,7 +620,6 @@ class _SearchDialogState extends State<_SearchDialog> {
                   onChanged: (value) =>
                       setState(() => _registryId = value ?? ''),
                 ),
-                const SizedBox(width: 8),
                 IconButton(
                   onPressed: _loading ? null : _search,
                   icon: const Icon(Icons.search),
@@ -790,22 +787,17 @@ class _BuildDialogState extends State<_BuildDialog> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Row(
+                FormRow(
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _gitRef,
-                        decoration: const InputDecoration(
-                          labelText: '分支 / 标签（可选）',
-                        ),
+                    TextField(
+                      controller: _gitRef,
+                      decoration: const InputDecoration(
+                        labelText: '分支 / 标签（可选）',
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: _subdir,
-                        decoration: const InputDecoration(labelText: '子目录（可选）'),
-                      ),
+                    TextField(
+                      controller: _subdir,
+                      decoration: const InputDecoration(labelText: '子目录（可选）'),
                     ),
                   ],
                 ),

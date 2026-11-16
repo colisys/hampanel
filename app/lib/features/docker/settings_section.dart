@@ -252,25 +252,20 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          Row(
+                          FormRow(
                             children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _logSize,
-                                  decoration: const InputDecoration(
-                                    labelText: '单文件上限',
-                                    hintText: '10m',
-                                  ),
+                              TextField(
+                                controller: _logSize,
+                                decoration: const InputDecoration(
+                                  labelText: '单文件上限',
+                                  hintText: '10m',
                                 ),
                               ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: TextField(
-                                  controller: _logFile,
-                                  decoration: const InputDecoration(
-                                    labelText: '保留文件数',
-                                    hintText: '3',
-                                  ),
+                              TextField(
+                                controller: _logFile,
+                                decoration: const InputDecoration(
+                                  labelText: '保留文件数',
+                                  hintText: '3',
                                 ),
                               ),
                             ],

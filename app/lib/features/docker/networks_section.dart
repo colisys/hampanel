@@ -308,25 +308,20 @@ class _NetworkDialogState extends State<_NetworkDialog> {
                     setState(() => _driver = value ?? 'bridge'),
               ),
               const SizedBox(height: 10),
-              Row(
+              FormRow(
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _subnet,
-                      decoration: const InputDecoration(
-                        labelText: '子网（可选）',
-                        hintText: '172.20.0.0/16',
-                      ),
+                  TextField(
+                    controller: _subnet,
+                    decoration: const InputDecoration(
+                      labelText: '子网（可选）',
+                      hintText: '172.20.0.0/16',
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _gateway,
-                      decoration: const InputDecoration(
-                        labelText: '网关（可选）',
-                        hintText: '172.20.0.1',
-                      ),
+                  TextField(
+                    controller: _gateway,
+                    decoration: const InputDecoration(
+                      labelText: '网关（可选）',
+                      hintText: '172.20.0.1',
                     ),
                   ),
                 ],

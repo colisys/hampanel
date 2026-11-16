@@ -331,42 +331,31 @@ class _RegistryDialogState extends State<_RegistryDialog> {
         child: SingleChildScrollView(
           child: Column(
             children: [
-              Row(
+              FormRow(
                 children: [
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _engine,
-                      decoration: const InputDecoration(labelText: '引擎'),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'docker',
-                          child: Text('Docker'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'podman',
-                          child: Text('Podman'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'both',
-                          child: Text('Docker + Podman'),
-                        ),
-                      ],
-                      onChanged: (value) =>
-                          setState(() => _engine = value ?? 'docker'),
-                    ),
+                  DropdownButtonFormField<String>(
+                    initialValue: _engine,
+                    decoration: const InputDecoration(labelText: '引擎'),
+                    items: const [
+                      DropdownMenuItem(value: 'docker', child: Text('Docker')),
+                      DropdownMenuItem(value: 'podman', child: Text('Podman')),
+                      DropdownMenuItem(
+                        value: 'both',
+                        child: Text('Docker + Podman'),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _engine = value ?? 'docker'),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _protocol,
-                      decoration: const InputDecoration(labelText: '协议'),
-                      items: const [
-                        DropdownMenuItem(value: 'https', child: Text('https')),
-                        DropdownMenuItem(value: 'http', child: Text('http')),
-                      ],
-                      onChanged: (value) =>
-                          setState(() => _protocol = value ?? 'https'),
-                    ),
+                  DropdownButtonFormField<String>(
+                    initialValue: _protocol,
+                    decoration: const InputDecoration(labelText: '协议'),
+                    items: const [
+                      DropdownMenuItem(value: 'https', child: Text('https')),
+                      DropdownMenuItem(value: 'http', child: Text('http')),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _protocol = value ?? 'https'),
                   ),
                 ],
               ),

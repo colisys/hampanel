@@ -608,3 +608,92 @@ class DialogBody extends StatelessWidget {
     return SizedBox(width: width, height: height, child: child);
   }
 }
+
+/// Lays form controls side by side on wide layouts and one per line on
+/// phones. Side-by-side text fields become unusably narrow on a phone.
+class FormRow extends StatelessWidget {
+  const FormRow({
+    super.key,
+    required this.children,
+    this.flex,
+    this.spacing = 10,
+    this.breakpoint = 720,
+  });
+
+  final List<Widget> children;
+  final List<int>? flex;
+  final double spacing;
+  final double breakpoint;
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < breakpoint;
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) SizedBox(height: spacing),
+            children[i],
+          ],
+        ],
+      );
+    }
+    final widths = flex;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        for (var i = 0; i < children.length; i++) ...[
+          if (i > 0) SizedBox(width: spacing),
+          Expanded(
+            flex: widths != null && i < widths.length ? widths[i] : 1,
+            child: children[i],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A field followed by trailing buttons: full-width field with wrapped
+/// actions below on phones, a single row on desktop.
+class FieldWithActions extends StatelessWidget {
+  const FieldWithActions({
+    super.key,
+    required this.field,
+    required this.actions,
+    this.spacing = 10,
+    this.breakpoint = 720,
+  });
+
+  final Widget field;
+  final List<Widget> actions;
+  final double spacing;
+  final double breakpoint;
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < breakpoint;
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          field,
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.end,
+            children: actions,
+          ),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        Expanded(child: field),
+        for (final action in actions) ...[SizedBox(width: spacing), action],
+      ],
+    );
+  }
+}

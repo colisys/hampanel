@@ -736,7 +736,10 @@ class _SettingsPageState extends State<SettingsPage> {
                                 const SizedBox(height: 14),
                                 Container(height: 1, color: hampanelBorder),
                                 const SizedBox(height: 14),
-                                Row(
+                                Wrap(
+                                  spacing: 12,
+                                  runSpacing: 8,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
                                     SizedBox(
                                       width: 190,
@@ -758,7 +761,6 @@ class _SettingsPageState extends State<SettingsPage> {
                                         onChanged: _setRefreshSeconds,
                                       ),
                                     ),
-                                    const SizedBox(width: 12),
                                     Text(
                                       '影响概览指标采样频率。',
                                       style: TextStyle(
@@ -912,22 +914,18 @@ class _SettingsPageState extends State<SettingsPage> {
                                           ],
                                         ),
                                       const SizedBox(height: 10),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: TextField(
-                                              controller:
-                                                  _sensitivePathController,
-                                              decoration: const InputDecoration(
-                                                labelText: '添加敏感路径',
-                                                hintText:
-                                                    '/etc/shadow 或 /root/.ssh',
-                                              ),
-                                              onSubmitted: (_) =>
-                                                  _addSensitivePath(),
-                                            ),
+                                      FieldWithActions(
+                                        field: TextField(
+                                          controller: _sensitivePathController,
+                                          decoration: const InputDecoration(
+                                            labelText: '添加敏感路径',
+                                            hintText:
+                                                '/etc/shadow 或 /root/.ssh',
                                           ),
-                                          const SizedBox(width: 10),
+                                          onSubmitted: (_) =>
+                                              _addSensitivePath(),
+                                        ),
+                                        actions: [
                                           OutlinedButton.icon(
                                             onPressed: _addSensitivePath,
                                             icon: const Icon(

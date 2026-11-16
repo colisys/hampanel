@@ -310,20 +310,18 @@ class _ServiceLogsDialogState extends State<_ServiceLogsDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            FormRow(
+              flex: const [4, 1],
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _search,
-                    decoration: const InputDecoration(
-                      hintText: '搜索日志内容',
-                      prefixIcon: Icon(Icons.search, size: 17),
-                      isDense: true,
-                    ),
-                    onChanged: (value) => setState(() => _query = value),
+                TextField(
+                  controller: _search,
+                  decoration: const InputDecoration(
+                    hintText: '搜索日志内容',
+                    prefixIcon: Icon(Icons.search, size: 17),
+                    isDense: true,
                   ),
+                  onChanged: (value) => setState(() => _query = value),
                 ),
-                const SizedBox(width: 10),
                 DropdownButton<int>(
                   value: _limit,
                   underline: const SizedBox.shrink(),

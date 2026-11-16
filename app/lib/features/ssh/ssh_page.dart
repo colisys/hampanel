@@ -623,39 +623,34 @@ class _SshPageState extends State<SshPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            FormRow(
+              flex: const [2, 3],
               children: [
-                SizedBox(
-                  width: 150,
-                  child: TextField(
-                    controller: _portController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'SSH 端口'),
-                  ),
+                TextField(
+                  controller: _portController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'SSH 端口'),
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _rootLogin,
-                    decoration: const InputDecoration(
-                      labelText: 'PermitRootLogin',
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'prohibit-password',
-                        child: Text('prohibit-password'),
-                      ),
-                      DropdownMenuItem(value: 'yes', child: Text('yes')),
-                      DropdownMenuItem(value: 'no', child: Text('no')),
-                      DropdownMenuItem(
-                        value: 'forced-commands-only',
-                        child: Text('forced-commands-only'),
-                      ),
-                    ],
-                    onChanged: (value) {
-                      if (value != null) setState(() => _rootLogin = value);
-                    },
+                DropdownButtonFormField<String>(
+                  initialValue: _rootLogin,
+                  decoration: const InputDecoration(
+                    labelText: 'PermitRootLogin',
                   ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'prohibit-password',
+                      child: Text('prohibit-password'),
+                    ),
+                    DropdownMenuItem(value: 'yes', child: Text('yes')),
+                    DropdownMenuItem(value: 'no', child: Text('no')),
+                    DropdownMenuItem(
+                      value: 'forced-commands-only',
+                      child: Text('forced-commands-only'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setState(() => _rootLogin = value);
+                  },
                 ),
               ],
             ),

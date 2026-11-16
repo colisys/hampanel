@@ -349,7 +349,8 @@ class _PanelShellState extends State<PanelShell> {
 
   Widget _topBar(bool compact) {
     return Container(
-      height: 56,
+      // 56px header + 2px divider on the sidebar; keep both rules aligned.
+      height: 58,
       decoration: BoxDecoration(
         color: hampanelBackground,
         border: Border(bottom: BorderSide(color: hampanelInk, width: 2)),
