@@ -5,6 +5,7 @@ import '../../core/models/docker.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
+import 'compose_section.dart';
 import 'containers_section.dart';
 
 const _sections = <String>[
@@ -193,6 +194,8 @@ class _DockerPageState extends State<DockerPage> {
         return _OverviewSection(engine: _engine);
       case 1:
         return ContainersSection(engine: _engine);
+      case 2:
+        return const ComposeSection();
       default:
         return _PlaceholderSection(
           title: _sections[_selected],

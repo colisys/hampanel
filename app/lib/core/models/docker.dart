@@ -339,3 +339,83 @@ String formatTimestamp(String raw) {
   return '${local.year}-${two(local.month)}-${two(local.day)} '
       '${two(local.hour)}:${two(local.minute)}';
 }
+
+class DockerComposeProject {
+  const DockerComposeProject({
+    required this.name,
+    required this.managed,
+    required this.adopted,
+    required this.status,
+    required this.dir,
+    required this.sourceDir,
+    required this.files,
+    required this.configFiles,
+  });
+
+  final String name;
+  final bool managed;
+  final bool adopted;
+  final String status;
+  final String dir;
+  final String sourceDir;
+  final List<String> files;
+  final List<String> configFiles;
+
+  factory DockerComposeProject.fromJson(Map<String, dynamic> json) =>
+      DockerComposeProject(
+        name: json['name'] as String? ?? '',
+        managed: json['managed'] as bool? ?? false,
+        adopted: json['adopted'] as bool? ?? false,
+        status: json['status'] as String? ?? '',
+        dir: json['dir'] as String? ?? '',
+        sourceDir: json['source_dir'] as String? ?? '',
+        files: ((json['files'] as List<dynamic>?) ?? const [])
+            .whereType<String>()
+            .toList(),
+        configFiles: ((json['config_files'] as List<dynamic>?) ?? const [])
+            .whereType<String>()
+            .toList(),
+      );
+}
+
+class DockerComposeDetail {
+  const DockerComposeDetail({
+    required this.project,
+    required this.content,
+  });
+
+  final DockerComposeProject project;
+  final String content;
+
+  factory DockerComposeDetail.fromJson(Map<String, dynamic> json) =>
+      DockerComposeDetail(
+        project: DockerComposeProject.fromJson(json),
+        content: json['content'] as String? ?? '',
+      );
+}
+
+class DockerJob {
+  const DockerJob({
+    required this.id,
+    required this.status,
+    required this.output,
+    required this.truncated,
+    required this.exitCode,
+  });
+
+  final String id;
+  final String status;
+  final String output;
+  final bool truncated;
+  final int? exitCode;
+
+  bool get running => status == 'running';
+
+  factory DockerJob.fromJson(Map<String, dynamic> json) => DockerJob(
+    id: json['id'] as String? ?? '',
+    status: json['status'] as String? ?? '',
+    output: json['output'] as String? ?? '',
+    truncated: json['truncated'] as bool? ?? false,
+    exitCode: (json['exit_code'] as num?)?.toInt(),
+  );
+}

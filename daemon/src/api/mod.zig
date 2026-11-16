@@ -14,6 +14,7 @@ const docker = @import("docker.zig");
 const docker_jobs = @import("docker_jobs.zig");
 const docker_terminal = @import("docker_terminal.zig");
 const docker_files = @import("docker_files.zig");
+const docker_compose = @import("docker_compose.zig");
 const firewall = @import("firewall.zig");
 const cron = @import("cron.zig");
 const logs = @import("logs.zig");
@@ -119,6 +120,14 @@ pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/docker/jobs/:id", .handler = docker_jobs.index },
     .{ .method = .DELETE, .pattern = "/api/v1/docker/jobs/:id", .handler = docker_jobs.cancel },
     .{ .method = .GET, .pattern = "/api/v1/docker/jobs/:id/download", .handler = docker_jobs.download },
+    .{ .method = .GET, .pattern = "/api/v1/docker/compose", .handler = docker_compose.index },
+    .{ .method = .POST, .pattern = "/api/v1/docker/compose", .handler = docker_compose.create },
+    .{ .method = .POST, .pattern = "/api/v1/docker/compose/adopt", .handler = docker_compose.adopt },
+    .{ .method = .GET, .pattern = "/api/v1/docker/compose/:name", .handler = docker_compose.detail },
+    .{ .method = .PUT, .pattern = "/api/v1/docker/compose/:name", .handler = docker_compose.update },
+    .{ .method = .DELETE, .pattern = "/api/v1/docker/compose/:name", .handler = docker_compose.destroy },
+    .{ .method = .POST, .pattern = "/api/v1/docker/compose/:name/:action", .handler = docker_compose.action },
+    .{ .method = .GET, .pattern = "/api/v1/docker/compose/:name/logs", .handler = docker_compose.logs },
 
     .{ .method = .GET, .pattern = "/api/v1/firewall", .handler = firewall.index },
     .{ .method = .POST, .pattern = "/api/v1/firewall/rules", .handler = firewall.add },
