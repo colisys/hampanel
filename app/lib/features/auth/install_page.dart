@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/api_client.dart';
 import '../../core/enrollment.dart';
 import '../../core/ssh_installer.dart';
+import '../../ui/enrollment_trust.dart';
 import '../../ui/theme.dart';
 
 /// Onboarding wizard: install hampaneld on a remote host over SSH, choosing
@@ -144,7 +145,13 @@ class _InstallPageState extends State<InstallPage> {
         ),
         onLog: _append,
       );
-      _append('安装完成，正在保存注册凭据 ...');
+      _append('安装完成，请核对服务端证书指纹 ...');
+      if (!mounted) return;
+      final trusted = await confirmEnrollmentTrust(context, enrollment);
+      if (!trusted) {
+        _append('已取消保存注册凭据；可稍后在登录页粘贴凭据并核对指纹。');
+        return;
+      }
       final alias = _alias.text.trim();
       await widget.onEnrolled(enrollment, alias: alias.isEmpty ? null : alias);
       if (!mounted) return;

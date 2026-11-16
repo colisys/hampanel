@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:sqlite3/sqlite3.dart';
 
+import 'app_paths.dart';
 import 'enrollment.dart';
+import 'format.dart';
 
 /// A managed daemon host: alias + full enrollment bundle.
 class HostRecord {
@@ -13,6 +15,8 @@ class HostRecord {
     required this.enrollment,
     required this.createdAt,
     required this.updatedAt,
+    required this.caPin,
+    required this.serverPin,
   });
 
   final String id;
@@ -20,6 +24,8 @@ class HostRecord {
   final Enrollment enrollment;
   final String createdAt;
   final String updatedAt;
+  final String caPin;
+  final String serverPin;
 
   String get identity => '${enrollment.endpoint}|${enrollment.entryPrefix}';
 }
@@ -42,7 +48,14 @@ class HostStore {
     if (instance != null) return instance;
     final dir = directory ?? Enrollment.configDirectory();
     dir.createSync(recursive: true);
-    final db = sqlite3.open('${dir.path}${Platform.pathSeparator}hosts.db');
+    final dbPath = '${dir.path}${Platform.pathSeparator}hosts.db';
+    final db = sqlite3.open(dbPath);
+    // The DB stores client private keys; keep it owner-only on desktop.
+    await restrictToOwner(File(dbPath));
+    for (final suffix in const ['-wal', '-shm']) {
+      final extra = File('$dbPath$suffix');
+      if (extra.existsSync()) await restrictToOwner(extra);
+    }
     final store = HostStore._(db, dir)
       .._migrate()
       .._migrateLegacyEnrollment();
@@ -65,6 +78,8 @@ class HostStore {
       'endpoint TEXT NOT NULL,'
       'entry_prefix TEXT NOT NULL DEFAULT "",'
       'bundle TEXT NOT NULL,'
+      "ca_sha256 TEXT NOT NULL DEFAULT '',"
+      "server_sha256 TEXT NOT NULL DEFAULT '',"
       'created_at TEXT NOT NULL,'
       'updated_at TEXT NOT NULL)',
     );
@@ -72,6 +87,21 @@ class HostStore {
       'CREATE UNIQUE INDEX IF NOT EXISTS hosts_identity '
       'ON hosts (endpoint, entry_prefix)',
     );
+    final columns = _db
+        .select('PRAGMA table_info(hosts)')
+        .map((row) => row['name'] as String)
+        .toSet();
+    if (!columns.contains('ca_sha256')) {
+      _db.execute(
+        "ALTER TABLE hosts ADD COLUMN ca_sha256 TEXT NOT NULL DEFAULT ''",
+      );
+    }
+    if (!columns.contains('server_sha256')) {
+      _db.execute(
+        "ALTER TABLE hosts ADD COLUMN server_sha256 TEXT NOT NULL DEFAULT ''",
+      );
+    }
+    _backfillPins();
     _db.execute(
       'CREATE TABLE IF NOT EXISTS settings ('
       'key TEXT PRIMARY KEY, value TEXT NOT NULL)',
@@ -107,6 +137,33 @@ class HostStore {
     }
   }
 
+  /// Old rows predate fingerprint pinning; seed them from their bundle.
+  void _backfillPins() {
+    final rows = _db.select(
+      'SELECT id, bundle FROM hosts '
+      "WHERE ca_sha256 = '' OR server_sha256 = ''",
+    );
+    for (final row in rows) {
+      try {
+        final enrollment = Enrollment.fromText(row['bundle'] as String);
+        _writePins(row['id'] as String, enrollment);
+      } catch (_) {
+        // Leave unreadable bundles untouched; they fail on activation.
+      }
+    }
+  }
+
+  void _writePins(String id, Enrollment enrollment) {
+    _db.execute(
+      'UPDATE hosts SET ca_sha256 = ?, server_sha256 = ? WHERE id = ?',
+      [
+        normalizeFingerprint(enrollment.caSha256),
+        normalizeFingerprint(enrollment.serverSha256),
+        id,
+      ],
+    );
+  }
+
   String _setting(String key) {
     final rows = _db.select('SELECT value FROM settings WHERE key = ?', [key]);
     return rows.isEmpty ? '' : rows.first['value'] as String;
@@ -126,6 +183,8 @@ class HostStore {
     enrollment: Enrollment.fromText(row['bundle'] as String),
     createdAt: row['created_at'] as String,
     updatedAt: row['updated_at'] as String,
+    caPin: row['ca_sha256'] as String? ?? '',
+    serverPin: row['server_sha256'] as String? ?? '',
   );
 
   List<HostRecord> list() {
@@ -165,14 +224,17 @@ class HostStore {
         ? _defaultAlias(enrollment)
         : alias.trim();
     _db.execute(
-      'INSERT INTO hosts(id, alias, endpoint, entry_prefix, bundle, created_at, updated_at) '
-      'VALUES(?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO hosts(id, alias, endpoint, entry_prefix, bundle, '
+      'ca_sha256, server_sha256, created_at, updated_at) '
+      'VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         id,
         name,
         enrollment.endpoint,
         enrollment.entryPrefix,
         jsonEncode(enrollment.toJson()),
+        normalizeFingerprint(enrollment.caSha256),
+        normalizeFingerprint(enrollment.serverSha256),
         now,
         now,
       ],
@@ -197,6 +259,7 @@ class HostStore {
     }
     final id = rows.first['id'] as String;
     updateEnrollment(id, enrollment, alias: alias);
+    _writePins(id, enrollment);
     if (activate) _setActive(id);
     return byId(id)!;
   }
@@ -224,6 +287,33 @@ class HostStore {
       ],
     );
   }
+
+  /// Returns a human-readable warning when the bundle in the database no
+  /// longer matches the fingerprints pinned when the host was trusted.
+  String? pinMismatch(HostRecord host) {
+    final ca = normalizeFingerprint(host.caPin);
+    final server = normalizeFingerprint(host.serverPin);
+    final wantCa = normalizeFingerprint(host.enrollment.caSha256);
+    final wantServer = normalizeFingerprint(host.enrollment.serverSha256);
+    final changed = <String>[];
+    if (ca.isNotEmpty && wantCa.isNotEmpty && ca != wantCa) {
+      changed.add(
+        'CA 证书\n本机记录：${formatFingerprint(ca)}\n当前凭据：${formatFingerprint(wantCa)}',
+      );
+    }
+    if (server.isNotEmpty && wantServer.isNotEmpty && server != wantServer) {
+      changed.add(
+        '服务端证书\n本机记录：${formatFingerprint(server)}\n当前凭据：${formatFingerprint(wantServer)}',
+      );
+    }
+    if (changed.isEmpty) return null;
+    return '本机保存的注册凭据中的证书指纹与首次信任时不一致。\n\n'
+        '${changed.join('\n\n')}\n\n'
+        '请通过带外渠道核对新指纹；确认无误后再更新本机指纹。';
+  }
+
+  void trustPins(String id, Enrollment enrollment) =>
+      _writePins(id, enrollment);
 
   void delete(String id) {
     _db.execute('DELETE FROM hosts WHERE id = ?', [id]);

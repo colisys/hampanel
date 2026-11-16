@@ -70,8 +70,16 @@ class ApiClient {
     );
   }
 
-  Future<dynamic> getJson(String path, {Map<String, String>? query}) =>
-      _send('GET', path, query: query);
+  Future<dynamic> getJson(
+    String path, {
+    Map<String, String>? query,
+    Duration? timeout,
+  }) => _send(
+    'GET',
+    path,
+    query: query,
+    timeout: timeout ?? const Duration(seconds: 30),
+  );
 
   Future<dynamic> postJson(
     String path,

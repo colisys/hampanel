@@ -104,6 +104,7 @@ class _ProcessesPageState extends State<ProcessesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 720;
     return Column(
       children: [
         PageHeader(
@@ -131,6 +132,8 @@ class _ProcessesPageState extends State<ProcessesPage> {
         Expanded(
           child: _loading
               ? const LoadingView()
+              : compact
+              ? _processCards()
               : Padding(
                   padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
                   child: Card(
@@ -200,42 +203,7 @@ class _ProcessesPageState extends State<ProcessesPage> {
                                         ),
                                       ),
                                     ),
-                                    DataCell(
-                                      _busyPid == process.pid
-                                          ? const SizedBox(
-                                              width: 18,
-                                              height: 18,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                              ),
-                                            )
-                                          : PopupMenuButton<String>(
-                                              tooltip: '进程操作',
-                                              onSelected: (value) {
-                                                if (value == 'detail') {
-                                                  _showDetail(process);
-                                                } else if (value == 'term') {
-                                                  _terminate(process, 'TERM');
-                                                } else if (value == 'kill') {
-                                                  _terminate(process, 'KILL');
-                                                }
-                                              },
-                                              itemBuilder: (context) => const [
-                                                PopupMenuItem(
-                                                  value: 'detail',
-                                                  child: Text('详情'),
-                                                ),
-                                                PopupMenuItem(
-                                                  value: 'term',
-                                                  child: Text('结束进程 (TERM)'),
-                                                ),
-                                                PopupMenuItem(
-                                                  value: 'kill',
-                                                  child: Text('强制结束 (KILL)'),
-                                                ),
-                                              ],
-                                            ),
-                                    ),
+                                    DataCell(_processMenu(process)),
                                   ],
                                 ),
                             ],
@@ -247,6 +215,103 @@ class _ProcessesPageState extends State<ProcessesPage> {
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _processMenu(ProcessInfo process) {
+    if (_busyPid == process.pid) {
+      return const SizedBox(
+        width: 18,
+        height: 18,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+    return PopupMenuButton<String>(
+      tooltip: '进程操作',
+      onSelected: (value) {
+        if (value == 'detail') {
+          _showDetail(process);
+        } else if (value == 'term') {
+          _terminate(process, 'TERM');
+        } else if (value == 'kill') {
+          _terminate(process, 'KILL');
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: 'detail', child: Text('详情')),
+        PopupMenuItem(value: 'term', child: Text('结束进程 (TERM)')),
+        PopupMenuItem(value: 'kill', child: Text('强制结束 (KILL)')),
+      ],
+    );
+  }
+
+  Widget _processCards() {
+    final processes = _filtered;
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(10, 4, 10, 24),
+      itemCount: processes.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final process = processes[index];
+        return Card(
+          child: InkWell(
+            onTap: () => _showDetail(process),
+            borderRadius: BorderRadius.circular(3),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          process.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      StatusPill(
+                        text: process.state,
+                        good: process.state == 'running',
+                      ),
+                      _processMenu(process),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 4,
+                    children: [
+                      Text(
+                        'PID ${process.pid}',
+                        style: monospace.copyWith(fontSize: 11.5),
+                      ),
+                      Text(
+                        formatBytes(process.rssBytes),
+                        style: monospace.copyWith(fontSize: 11.5),
+                      ),
+                      Text(
+                        'CPU ${_cpuTime(process.cpuTicks)}',
+                        style: monospace.copyWith(fontSize: 11.5),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    process.command,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: hampanelMuted),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 

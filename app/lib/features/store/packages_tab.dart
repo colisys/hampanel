@@ -151,22 +151,27 @@ class _PackagesTabState extends State<PackagesTab> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 10),
-          child: Row(
+          padding: EdgeInsets.fromLTRB(
+            MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
+            8,
+            MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
+            10,
+          ),
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               StatusPill(text: status.manager, good: true),
-              const SizedBox(width: 10),
               Text(
                 '${status.tools.length} 个精选工具',
                 style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               ),
-              const Spacer(),
               OutlinedButton.icon(
                 onPressed: _busyId == null ? _installCustom : null,
                 icon: const Icon(Icons.add_box_outlined, size: 16),
                 label: const Text('自定义安装'),
               ),
-              const SizedBox(width: 10),
               OutlinedButton.icon(
                 onPressed: _refresh,
                 icon: const Icon(Icons.sync, size: 16),
@@ -177,75 +182,143 @@ class _PackagesTabState extends State<PackagesTab> {
         ),
         Expanded(
           child: ListView.separated(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            padding: EdgeInsets.fromLTRB(
+              MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
+              0,
+              MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
+              24,
+            ),
             itemCount: status.tools.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
               final tool = status.tools[index];
               final busy = _busyId == tool.id;
+              final installButton = SizedBox(
+                width: 108,
+                child: FilledButton(
+                  onPressed: tool.installed || busy
+                      ? null
+                      : () => _install(tool),
+                  child: busy
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(tool.installed ? '已就绪' : '安装'),
+                ),
+              );
+              final compact = MediaQuery.sizeOf(context).width < 720;
               return Card(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: compact ? 12 : 16,
+                    vertical: compact ? 10 : 12,
                   ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.terminal, size: 18, color: hampanelMuted),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        flex: 3,
-                        child: Column(
+                  child: compact
+                      ? Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              tool.name,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.terminal,
+                                  size: 18,
+                                  color: hampanelMuted,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        tool.name,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        tool.description,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: hampanelMuted,
+                                          height: 1.5,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 2),
-                            Text(
-                              tool.description,
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: hampanelMuted,
-                              ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Text(
+                                  tool.binary,
+                                  style: monospace.copyWith(fontSize: 11.5),
+                                ),
+                                StatusPill(
+                                  text: tool.installed ? '已安装' : '未安装',
+                                  good: tool.installed,
+                                ),
+                                installButton,
+                              ],
                             ),
                           ],
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          tool.binary,
-                          style: monospace.copyWith(fontSize: 11.5),
-                        ),
-                      ),
-                      StatusPill(
-                        text: tool.installed ? '已安装' : '未安装',
-                        good: tool.installed,
-                      ),
-                      const SizedBox(width: 10),
-                      SizedBox(
-                        width: 108,
-                        child: FilledButton(
-                          onPressed: tool.installed || busy
-                              ? null
-                              : () => _install(tool),
-                          child: busy
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
+                        )
+                      : Row(
+                          children: [
+                            Icon(
+                              Icons.terminal,
+                              size: 18,
+                              color: hampanelMuted,
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              flex: 3,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    tool.name,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
-                                )
-                              : Text(tool.installed ? '已就绪' : '安装'),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    tool.description,
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      color: hampanelMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                tool.binary,
+                                style: monospace.copyWith(fontSize: 11.5),
+                              ),
+                            ),
+                            StatusPill(
+                              text: tool.installed ? '已安装' : '未安装',
+                              good: tool.installed,
+                            ),
+                            const SizedBox(width: 10),
+                            installButton,
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
                 ),
               );
             },

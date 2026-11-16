@@ -156,15 +156,19 @@ class _AiPageState extends State<AiPage> {
                 const SizedBox(height: 14),
                 DropdownButtonFormField<String>(
                   initialValue: protocol,
+                  isExpanded: true,
                   decoration: const InputDecoration(labelText: '协议'),
                   items: const [
                     DropdownMenuItem(
                       value: 'chat_completions',
-                      child: Text('Chat Completions (/chat/completions)'),
+                      child: Text(
+                        'Chat Completions',
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     DropdownMenuItem(
                       value: 'responses',
-                      child: Text('Responses (/responses)'),
+                      child: Text('Responses', overflow: TextOverflow.ellipsis),
                     ),
                   ],
                   onChanged: (value) {
@@ -748,7 +752,9 @@ class _AiPageState extends State<AiPage> {
                               child: TextField(
                                 controller: _inputController,
                                 minLines: 1,
-                                maxLines: 5,
+                                maxLines: MediaQuery.sizeOf(context).width < 720
+                                    ? 3
+                                    : 5,
                                 onSubmitted: (_) => _send(),
                                 decoration: const InputDecoration(
                                   hintText: '描述你想完成的操作…（Enter 发送）',

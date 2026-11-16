@@ -194,19 +194,26 @@ class _FirewallPageState extends State<FirewallPage> {
               : Column(
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                      padding: EdgeInsets.fromLTRB(
+                        MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
+                        0,
+                        MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
+                        12,
+                      ),
                       child: Row(
                         children: [
                           StatusPill(
                             text: status.active ? '已启用' : '未启用',
                             good: status.active,
                           ),
-                          SizedBox(width: 10),
-                          Text(
-                            '规则由系统防火墙直接管理',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: hampanelMuted,
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              '规则由系统防火墙直接管理',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: hampanelMuted,
+                              ),
                             ),
                           ),
                         ],
@@ -220,7 +227,16 @@ class _FirewallPageState extends State<FirewallPage> {
                               message: '点击“添加规则”放行或拒绝端口。',
                             )
                           : ListView.separated(
-                              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                              padding: EdgeInsets.fromLTRB(
+                                MediaQuery.sizeOf(context).width < 720
+                                    ? 10
+                                    : 24,
+                                0,
+                                MediaQuery.sizeOf(context).width < 720
+                                    ? 10
+                                    : 24,
+                                24,
+                              ),
                               itemCount: status.rules.length,
                               separatorBuilder: (_, _) =>
                                   const SizedBox(height: 8),
@@ -229,42 +245,94 @@ class _FirewallPageState extends State<FirewallPage> {
                                 final allowed = rule.action
                                     .toUpperCase()
                                     .contains('ALLOW');
+                                final compact =
+                                    MediaQuery.sizeOf(context).width < 720;
+                                final deleteButton = IconButton(
+                                  tooltip: '删除',
+                                  onPressed: () => _deleteRule(rule),
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    size: 18,
+                                  ),
+                                );
                                 return Card(
                                   child: Padding(
-                                    padding: const EdgeInsets.all(14),
-                                    child: Row(
-                                      children: [
-                                        SizedBox(
-                                          width: 200,
-                                          child: Text(
-                                            rule.to,
-                                            style: monospace,
+                                    padding: EdgeInsets.all(compact ? 12 : 14),
+                                    child: compact
+                                        ? Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      rule.to,
+                                                      maxLines: 2,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: monospace,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 8),
+                                                  StatusPill(
+                                                    text: rule.action,
+                                                    good: allowed,
+                                                  ),
+                                                  deleteButton,
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                '来源 ${rule.from}',
+                                                style: TextStyle(
+                                                  fontSize: 11.5,
+                                                  color: hampanelMuted,
+                                                ),
+                                              ),
+                                              if (rule.raw
+                                                  .trim()
+                                                  .isNotEmpty) ...[
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  rule.raw,
+                                                  maxLines: 2,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 10.5,
+                                                    color: hampanelMuted,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          )
+                                        : Row(
+                                            children: [
+                                              SizedBox(
+                                                width: 200,
+                                                child: Text(
+                                                  rule.to,
+                                                  style: monospace,
+                                                ),
+                                              ),
+                                              StatusPill(
+                                                text: rule.action,
+                                                good: allowed,
+                                              ),
+                                              const SizedBox(width: 14),
+                                              Expanded(
+                                                child: Text(
+                                                  '来源 ${rule.from}',
+                                                  style: TextStyle(
+                                                    fontSize: 11.5,
+                                                    color: hampanelMuted,
+                                                  ),
+                                                ),
+                                              ),
+                                              deleteButton,
+                                            ],
                                           ),
-                                        ),
-                                        StatusPill(
-                                          text: rule.action,
-                                          good: allowed,
-                                        ),
-                                        const SizedBox(width: 14),
-                                        Expanded(
-                                          child: Text(
-                                            '来源 ${rule.from}',
-                                            style: TextStyle(
-                                              fontSize: 11.5,
-                                              color: hampanelMuted,
-                                            ),
-                                          ),
-                                        ),
-                                        IconButton(
-                                          tooltip: '删除',
-                                          onPressed: () => _deleteRule(rule),
-                                          icon: const Icon(
-                                            Icons.delete_outline,
-                                            size: 18,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
                                   ),
                                 );
                               },

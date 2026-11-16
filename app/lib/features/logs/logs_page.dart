@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
+import '../../core/format.dart';
 import '../../core/models/log_source.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
@@ -69,8 +70,12 @@ class _LogsPageState extends State<LogsPage> {
       );
       final map = json as Map<String, dynamic>;
       if (!mounted) return;
+      final entries = map['entries'];
+      final content = entries is List
+          ? entries.map(formatAuditEntry).join('\n')
+          : (map['content'] as String? ?? '');
       setState(() {
-        _content = map['content'] as String? ?? '';
+        _content = content;
         _error = null;
         _loadingContent = false;
       });

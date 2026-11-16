@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/enrollment.dart';
+import '../../ui/enrollment_trust.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import 'install_page.dart';
@@ -41,6 +42,9 @@ class _LoginPageState extends State<LoginPage> {
     });
     try {
       final enrollment = Enrollment.fromText(_controller.text);
+      final trusted = await confirmEnrollmentTrust(context, enrollment);
+      if (!trusted) return;
+      if (!mounted) return;
       await widget.onEnrolled(enrollment);
     } catch (error) {
       setState(

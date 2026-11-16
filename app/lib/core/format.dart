@@ -71,3 +71,32 @@ String localizeLogTimestamps(String text) {
   }
   return lines.join('\n');
 }
+
+/// Certificate fingerprints from the daemon are lowercase hex without
+/// separators. Normalize anything a user may have copied (colons, spaces)
+/// before comparing or displaying it.
+String normalizeFingerprint(String value) =>
+    value.replaceAll(RegExp('[^0-9a-fA-F]'), '').toLowerCase();
+
+String formatFingerprint(String value) {
+  final normalized = normalizeFingerprint(value);
+  if (normalized.isEmpty) return '未提供';
+  final chunks = <String>[];
+  for (var i = 0; i < normalized.length; i += 4) {
+    final end = i + 4 > normalized.length ? normalized.length : i + 4;
+    chunks.add(normalized.substring(i, end));
+  }
+  return chunks.join(' ');
+}
+
+/// Renders one audit entry returned by `/api/v1/logs/tail?source=audit`.
+String formatAuditEntry(dynamic entry) {
+  if (entry is! Map) return entry.toString();
+  final at = formatTimestamp(entry['at']);
+  final peer = entry['peer'] ?? '-';
+  final method = entry['method'] ?? '-';
+  final path = entry['path'] ?? '-';
+  final status = entry['status'] ?? '-';
+  final duration = entry['duration_ms'] ?? '-';
+  return '$at  $peer  $method $path -> $status ($duration ms)';
+}

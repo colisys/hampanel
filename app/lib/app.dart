@@ -24,6 +24,9 @@ class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
   PanelSession? _session;
   String? _activeId;
   String? _bootstrapError;
+  String? _trustError;
+  String? _trustHostId;
+  bool _pinMismatch = false;
   bool _bootstrapping = true;
 
   @override
@@ -38,6 +41,8 @@ class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
     setState(() {
       _bootstrapping = true;
       _bootstrapError = null;
+      _trustError = null;
+      _pinMismatch = false;
     });
     try {
       await AppPaths.init();
@@ -49,14 +54,49 @@ class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
       } else {
         active = hosts.active();
       }
-      if (!mounted) return;
-      _hosts?.close();
+      if (active != null) {
+        final pinIssue = hosts.pinMismatch(active);
+        if (pinIssue != null) {
+          if (!mounted) return;
+          setState(() {
+            _hosts = hosts;
+            _activeId = active!.id;
+            _trustHostId = active.id;
+            _session = null;
+            _trustError = pinIssue;
+            _pinMismatch = true;
+            _bootstrapping = false;
+          });
+          return;
+        }
+      }
+      PanelSession? session;
+      if (active != null) {
+        session = PanelSession(active.enrollment, hosts);
+        final identityIssue = await session.verifyIdentity();
+        if (identityIssue != null) {
+          session.dispose();
+          if (!mounted) return;
+          setState(() {
+            _hosts = hosts;
+            _activeId = active!.id;
+            _trustHostId = active.id;
+            _session = null;
+            _trustError = identityIssue;
+            _pinMismatch = false;
+            _bootstrapping = false;
+          });
+          return;
+        }
+      }
+      if (!mounted) {
+        session?.dispose();
+        return;
+      }
       setState(() {
         _hosts = hosts;
         _activeId = active?.id;
-        _session = active == null
-            ? null
-            : PanelSession(active.enrollment, hosts);
+        _session = session;
         _bootstrapping = false;
       });
     } catch (error) {
@@ -99,26 +139,88 @@ class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
       enrollment: enrollment,
       activate: true,
     );
-    _applyHost(host);
+    await _activate(host);
   }
 
   Future<void> _switchHost(HostRecord host) async {
     _hosts?.setActive(host.id);
-    _applyHost(host);
+    await _activate(host);
   }
 
-  void _applyHost(HostRecord host) {
+  Future<void> _activate(HostRecord host) async {
+    final hosts = _hosts;
+    if (hosts == null) return;
+    final pinIssue = hosts.pinMismatch(host);
+    if (pinIssue != null) {
+      setState(() {
+        _activeId = host.id;
+        _trustHostId = host.id;
+        _session?.dispose();
+        _session = null;
+        _trustError = pinIssue;
+        _pinMismatch = true;
+      });
+      return;
+    }
+    final session = PanelSession(host.enrollment, hosts);
+    final identityIssue = await session.verifyIdentity();
+    if (identityIssue != null) {
+      session.dispose();
+      if (!mounted) return;
+      setState(() {
+        _activeId = host.id;
+        _trustHostId = host.id;
+        _session?.dispose();
+        _session = null;
+        _trustError = identityIssue;
+        _pinMismatch = false;
+      });
+      return;
+    }
+    if (!mounted) {
+      session.dispose();
+      return;
+    }
+    setState(() {
+      _trustError = null;
+      _pinMismatch = false;
+      _trustHostId = null;
+      _activeId = host.id;
+      _session?.dispose();
+      _session = session;
+    });
+  }
+
+  void _trustPinnedHost() {
+    final hosts = _hosts;
+    final id = _trustHostId;
+    if (hosts == null || id == null) return;
+    final host = hosts.byId(id);
+    if (host != null) hosts.trustPins(id, host.enrollment);
+    _bootstrap();
+  }
+
+  void _reimportEnrollment() {
+    _hosts?.setActive(null);
     _session?.dispose();
     setState(() {
-      _activeId = host.id;
-      _session = PanelSession(host.enrollment, _hosts!);
+      _session = null;
+      _trustError = null;
+      _pinMismatch = false;
+      _trustHostId = null;
+      _activeId = null;
     });
   }
 
   Future<void> _logout() async {
     _hosts?.setActive(null);
     _session?.dispose();
-    setState(() => _session = null);
+    setState(() {
+      _session = null;
+      _trustError = null;
+      _pinMismatch = false;
+      _trustHostId = null;
+    });
   }
 
   @override
@@ -149,6 +251,21 @@ class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
               directory: AppPaths.configDirectory().path,
               onRetry: _bootstrap,
             )
+          : _trustError != null
+          ? _BootstrapError(
+              title: '服务端身份未通过校验',
+              message: _trustError!,
+              directory: AppPaths.configDirectory().path,
+              onRetry: _bootstrap,
+              hint: _pinMismatch
+                  ? '如果指纹变化来自你自己的证书轮换，请先带外核对，再更新本机指纹。'
+                  : 'TLS 链校验之外还要求服务端报告的证书指纹与注册凭据一致。'
+                        '请从服务器重新导出 enroll.json 并导入。',
+              trustLabel: _pinMismatch ? '更新本机指纹并继续' : null,
+              onTrust: _pinMismatch ? _trustPinnedHost : null,
+              reimportLabel: _pinMismatch ? null : '重新导入注册凭据',
+              onReimport: _pinMismatch ? null : _reimportEnrollment,
+            )
           : _bootstrapping || _hosts == null
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
           : session == null
@@ -171,11 +288,23 @@ class _BootstrapError extends StatelessWidget {
     required this.message,
     required this.directory,
     required this.onRetry,
+    this.title = '本地数据加载失败',
+    this.hint,
+    this.trustLabel,
+    this.onTrust,
+    this.reimportLabel,
+    this.onReimport,
   });
 
   final String message;
   final String directory;
   final VoidCallback onRetry;
+  final String title;
+  final String? hint;
+  final String? trustLabel;
+  final VoidCallback? onTrust;
+  final String? reimportLabel;
+  final VoidCallback? onReimport;
 
   @override
   Widget build(BuildContext context) {
@@ -190,25 +319,63 @@ class _BootstrapError extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '本地数据加载失败',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   SelectableText(
                     message,
-                    style: TextStyle(fontSize: 12, color: hampanelMuted),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: hampanelMuted,
+                      height: 1.6,
+                    ),
                   ),
+                  if (hint != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      hint!,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: hampanelMuted,
+                        height: 1.6,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   SelectableText(
                     '配置目录：$directory',
                     style: TextStyle(fontSize: 11, color: hampanelMuted),
                   ),
                   const SizedBox(height: 16),
-                  FilledButton.icon(
-                    onPressed: onRetry,
-                    icon: const Icon(Icons.refresh, size: 16),
-                    label: const Text('重试'),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: onRetry,
+                        icon: const Icon(Icons.refresh, size: 16),
+                        label: const Text('重试'),
+                      ),
+                      if (onTrust != null)
+                        OutlinedButton.icon(
+                          onPressed: onTrust,
+                          icon: const Icon(
+                            Icons.verified_user_outlined,
+                            size: 16,
+                          ),
+                          label: Text(trustLabel ?? '信任'),
+                        ),
+                      if (onReimport != null)
+                        OutlinedButton(
+                          onPressed: onReimport,
+                          child: Text(reimportLabel ?? '重新导入'),
+                        ),
+                    ],
                   ),
                 ],
               ),

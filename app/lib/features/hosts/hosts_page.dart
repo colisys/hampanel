@@ -7,6 +7,7 @@ import '../../core/enrollment.dart';
 import '../../core/host_store.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
+import '../../ui/enrollment_trust.dart';
 import '../../ui/widgets.dart';
 
 /// 多机管理：本机 SQLite 中的受管主机列表、别名与凭据 CRUD。
@@ -284,6 +285,12 @@ class _HostEditDialogState extends State<_HostEditDialog> {
       final text = _bundle.text.trim();
       if (text.isNotEmpty) {
         enrollment = Enrollment.fromText(text);
+        if (!mounted) return;
+        final trusted = await confirmEnrollmentTrust(context, enrollment);
+        if (!trusted) {
+          if (mounted) setState(() => _busy = false);
+          return;
+        }
       } else if (_isEdit) {
         enrollment = widget.existing!.enrollment;
       } else {
@@ -303,6 +310,9 @@ class _HostEditDialogState extends State<_HostEditDialog> {
           enrollment,
           alias: _alias.text,
         );
+        if (text.isNotEmpty) {
+          widget.store.trustPins(existing.id, enrollment);
+        }
         result = widget.store.byId(existing.id)!;
         if (_activate) {
           widget.store.setActive(existing.id);

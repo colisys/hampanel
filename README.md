@@ -91,7 +91,7 @@ docs/                   架构与接口文档（含 docs/store.md、docs/runtime
 
 应用商店的实现与新增应用方式见 [docs/store.md](docs/store.md)；SSH 管理说明见
 [docs/ssh.md](docs/ssh.md)；软件托管与初始化语义见 [docs/software.md](docs/software.md)；回收站与版本历史见 [docs/recycle.md](docs/recycle.md)，
-AI 助手见 [docs/ai.md](docs/ai.md)；运行环境管理与 SQLite 存储见 [docs/runtimes.md](docs/runtimes.md)。
+AI 助手见 [docs/ai.md](docs/ai.md)；运行环境管理与 SQLite 存储见 [docs/runtimes.md](docs/runtimes.md)，移动端行为见 [docs/mobile.md](docs/mobile.md)，安全模型见 [docs/security.md](docs/security.md)，品牌资产见 [docs/branding.md](docs/branding.md)。
 
 ## 数据存储
 
