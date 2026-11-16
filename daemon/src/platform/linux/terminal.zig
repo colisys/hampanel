@@ -36,25 +36,47 @@ pub const Terminal = struct {
 };
 
 pub fn spawn(cols: u16, rows: u16) !Terminal {
+    return spawnArgv(std.heap.page_allocator, &.{
+        "/usr/bin/env",
+        "TERM=xterm-256color",
+        "COLORTERM=truecolor",
+        "/bin/bash",
+        "-l",
+    }, cols, rows);
+}
+
+pub fn spawnArgv(
+    allocator: std.mem.Allocator,
+    argv: []const []const u8,
+    cols: u16,
+    rows: u16,
+) !Terminal {
+    if (argv.len == 0) return error.ForkFailed;
+
     var winsize = c.struct_winsize{
         .ws_row = rows,
         .ws_col = cols,
         .ws_xpixel = 0,
         .ws_ypixel = 0,
     };
+
+    const args = try allocator.alloc(?[*:0]const u8, argv.len + 1);
+    defer allocator.free(args);
+    const owned = try allocator.alloc([:0]u8, argv.len);
+    defer allocator.free(owned);
+    for (argv, 0..) |arg, index| {
+        owned[index] = try allocator.dupeSentinel(u8, arg, 0);
+        args[index] = owned[index].ptr;
+    }
+    defer for (owned) |arg| allocator.free(arg);
+    args[argv.len] = null;
+
     var master: c_int = -1;
     const pid = c.forkpty(&master, null, null, &winsize);
     if (pid < 0) return error.ForkFailed;
 
     if (pid == 0) {
-        var argv = [_:null]?[*:0]const u8{
-            "/usr/bin/env",
-            "TERM=xterm-256color",
-            "COLORTERM=truecolor",
-            "/bin/bash",
-            "-l",
-        };
-        _ = c.execvp("/usr/bin/env", @ptrCast(&argv));
+        _ = c.execvp(args[0].?, @ptrCast(args.ptr));
         c._exit(127);
     }
 

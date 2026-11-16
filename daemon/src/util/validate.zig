@@ -93,3 +93,106 @@ pub fn isPackageName(value: []const u8) bool {
     }
     return true;
 }
+
+pub fn isContainerName(value: []const u8) bool {
+    if (value.len == 0 or value.len > 128) return false;
+    if (!std.ascii.isAlphanumeric(value[0])) return false;
+    for (value[1..]) |ch| {
+        if (!std.ascii.isAlphanumeric(ch) and ch != '.' and ch != '_' and ch != '-') return false;
+    }
+    return true;
+}
+
+pub fn isNetworkName(value: []const u8) bool {
+    return isContainerName(value);
+}
+
+pub fn isVolumeName(value: []const u8) bool {
+    return isContainerName(value);
+}
+
+pub fn isImageRef(value: []const u8) bool {
+    if (value.len == 0 or value.len > 255) return false;
+    if (value[0] == '-') return false;
+    for (value) |ch| {
+        if (std.ascii.isAlphanumeric(ch)) continue;
+        if (std.mem.indexOfScalar(u8, "._/:@-+", ch) != null) continue;
+        return false;
+    }
+    return true;
+}
+
+pub fn isRegistryHost(value: []const u8) bool {
+    if (value.len == 0 or value.len > 253) return false;
+    for (value) |ch| {
+        if (std.ascii.isAlphanumeric(ch)) continue;
+        if (std.mem.indexOfScalar(u8, ".-:[]_", ch) != null) continue;
+        return false;
+    }
+    return true;
+}
+
+pub fn isEnvKey(value: []const u8) bool {
+    if (value.len == 0 or value.len > 128) return false;
+    if (!std.ascii.isAlphabetic(value[0]) and value[0] != '_') return false;
+    for (value[1..]) |ch| {
+        if (!std.ascii.isAlphanumeric(ch) and ch != '_') return false;
+    }
+    return true;
+}
+
+pub fn isEnvValue(value: []const u8) bool {
+    if (value.len > 4096) return false;
+    for (value) |ch| {
+        if (ch == 0 or ch == '\n' or ch == '\r') return false;
+    }
+    return true;
+}
+
+pub fn isPortMapping(value: []const u8) bool {
+    if (value.len == 0 or value.len > 64) return false;
+    var colons: usize = 0;
+    for (value) |ch| {
+        if (ch == ':') {
+            colons += 1;
+            continue;
+        }
+        if (std.ascii.isDigit(ch) or ch == '.' or ch == '-' or ch == '[' or ch == ']' or ch == '/') continue;
+        if (std.ascii.isAlphabetic(ch) and (ch == 't' or ch == 'c' or ch == 'p' or ch == 'u' or ch == 'd')) continue;
+        return false;
+    }
+    return colons >= 1;
+}
+
+pub fn isMountSpec(value: []const u8) bool {
+    if (value.len == 0 or value.len > 1024) return false;
+    for (value) |ch| {
+        if (ch == 0 or ch == '\n' or ch == '\r' or ch == '\t') return false;
+    }
+    return true;
+}
+
+pub fn isComposeName(value: []const u8) bool {
+    if (value.len == 0 or value.len > 64) return false;
+    if (!std.ascii.isAlphanumeric(value[0]) or std.ascii.isUpper(value[0])) return false;
+    for (value[1..]) |ch| {
+        if (!std.ascii.isAlphanumeric(ch) and ch != '_' and ch != '-') return false;
+        if (std.ascii.isUpper(ch)) return false;
+    }
+    return true;
+}
+
+pub fn isSocketPath(value: []const u8) bool {
+    if (value.len == 0) return true;
+    if (value.len > 256) return false;
+    const prefixes = [_][]const u8{ "unix://", "npipe://", "tcp://", "http://", "https://" };
+    var matched = false;
+    for (prefixes) |prefix| {
+        if (std.mem.startsWith(u8, value, prefix)) matched = true;
+    }
+    if (!matched) return false;
+    for (value) |ch| {
+        if (ch == 0 or ch == '\n' or ch == '\r' or ch == ' ') return false;
+    }
+    return true;
+}

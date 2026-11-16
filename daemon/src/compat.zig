@@ -25,6 +25,15 @@ pub fn getEnv(name: []const u8) ?[]const u8 {
     return map.get(name);
 }
 
+pub fn cloneEnv(allocator: std.mem.Allocator) !std.process.Environ.Map {
+    var map = std.process.Environ.Map.init(allocator);
+    const source = environ_map orelse return map;
+    const keys = source.keys();
+    const values = source.values();
+    for (keys, values) |key, value| try map.put(key, value);
+    return map;
+}
+
 pub fn setIo(value: std.Io) void {
     global_io = value;
     io_initialized = true;

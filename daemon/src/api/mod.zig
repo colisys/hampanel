@@ -11,6 +11,7 @@ const terminal = @import("terminal.zig");
 const services = @import("services.zig");
 const sites = @import("sites.zig");
 const docker = @import("docker.zig");
+const docker_jobs = @import("docker_jobs.zig");
 const firewall = @import("firewall.zig");
 const cron = @import("cron.zig");
 const logs = @import("logs.zig");
@@ -93,8 +94,14 @@ pub const routes = [_]router.Route{
 
     .{ .method = .GET, .pattern = "/api/v1/docker/containers", .handler = docker.containers },
     .{ .method = .GET, .pattern = "/api/v1/docker/images", .handler = docker.images },
+    .{ .method = .GET, .pattern = "/api/v1/docker/overview", .handler = docker.overview },
+    .{ .method = .GET, .pattern = "/api/v1/docker/info", .handler = docker.info },
+    .{ .method = .POST, .pattern = "/api/v1/docker/test-connection", .handler = docker.testConnection },
     .{ .method = .POST, .pattern = "/api/v1/docker/containers/:id/:action", .handler = docker.action },
     .{ .method = .GET, .pattern = "/api/v1/docker/containers/:id/logs", .handler = docker.logs },
+    .{ .method = .GET, .pattern = "/api/v1/docker/jobs/:id", .handler = docker_jobs.index },
+    .{ .method = .DELETE, .pattern = "/api/v1/docker/jobs/:id", .handler = docker_jobs.cancel },
+    .{ .method = .GET, .pattern = "/api/v1/docker/jobs/:id/download", .handler = docker_jobs.download },
 
     .{ .method = .GET, .pattern = "/api/v1/firewall", .handler = firewall.index },
     .{ .method = .POST, .pattern = "/api/v1/firewall/rules", .handler = firewall.add },

@@ -14,6 +14,7 @@ pub const Response = struct {
     body: []const u8 = "",
     extra: []const Header = &.{},
     file_path: ?[]const u8 = null,
+    delete_after_send: bool = false,
     close: bool = false,
 };
 
@@ -82,5 +83,15 @@ pub fn write(conn: *Conn, resp: Response, keep_alive: bool) !void {
         }
     } else if (resp.body.len > 0) {
         try conn.writeAll(resp.body);
+    }
+
+    if (resp.delete_after_send) {
+        if (file) |handle| {
+            handle.close();
+            file = null;
+        }
+        if (resp.file_path) |path| {
+            compat.deleteFileAbsolute(path) catch {};
+        }
     }
 }

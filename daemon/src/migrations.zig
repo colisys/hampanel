@@ -51,9 +51,41 @@ const schema_v1 =
     \\CREATE INDEX IF NOT EXISTS audit_log_id_desc ON audit_log(id DESC);
 ;
 
+const schema_v2 =
+    \\CREATE TABLE IF NOT EXISTS container_notes (
+    \\    name TEXT PRIMARY KEY,
+    \\    note TEXT NOT NULL DEFAULT '',
+    \\    updated_at INTEGER NOT NULL
+    \\);
+    \\CREATE TABLE IF NOT EXISTS docker_registries (
+    \\    id TEXT PRIMARY KEY,
+    \\    engine TEXT NOT NULL,
+    \\    name TEXT NOT NULL,
+    \\    protocol TEXT NOT NULL DEFAULT 'https',
+    \\    host TEXT NOT NULL,
+    \\    username TEXT NOT NULL DEFAULT '',
+    \\    secret TEXT NOT NULL DEFAULT '',
+    \\    last_sync_at INTEGER,
+    \\    last_sync_ok INTEGER,
+    \\    last_sync_message TEXT NOT NULL DEFAULT '',
+    \\    created_at INTEGER NOT NULL,
+    \\    updated_at INTEGER NOT NULL
+    \\);
+    \\CREATE TABLE IF NOT EXISTS compose_projects (
+    \\    name TEXT PRIMARY KEY,
+    \\    dir TEXT NOT NULL,
+    \\    source_dir TEXT NOT NULL DEFAULT '',
+    \\    files TEXT NOT NULL DEFAULT '[]',
+    \\    adopted INTEGER NOT NULL DEFAULT 0,
+    \\    created_at INTEGER NOT NULL,
+    \\    updated_at INTEGER NOT NULL
+    \\);
+;
+
 /// Append-only list: never rewrite an applied migration, only add new ones.
 const migrations = [_]Migration{
     .{ .version = 1, .name = "core tables", .sql = schema_v1 },
+    .{ .version = 2, .name = "docker management", .sql = schema_v2 },
 };
 
 /// `CREATE TABLE IF NOT EXISTS` cannot add columns, so databases created
@@ -257,7 +289,7 @@ test "legacy schema_migrations table gains the name column" {
     try database.exec("INSERT INTO schema_migrations(version, applied_at) VALUES(1, 0)");
 
     try migrate(allocator, &database);
-    try std.testing.expectEqual(@as(i64, 1), try currentVersion(&database));
+    try std.testing.expectEqual(@as(i64, 2), try currentVersion(&database));
 }
 
 test "sqlite core migrations create the schema" {

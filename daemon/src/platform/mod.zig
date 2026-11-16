@@ -1,3 +1,4 @@
+const std = @import("std");
 const builtin = @import("builtin");
 
 pub const types = @import("shared").types;
@@ -29,4 +30,13 @@ pub const Terminal = backend.terminal.Terminal;
 
 pub fn spawnTerminal(cols: u16, rows: u16) !Terminal {
     return backend.terminal.spawn(cols, rows);
+}
+
+pub fn spawnTerminalArgv(
+    allocator: std.mem.Allocator,
+    argv: []const []const u8,
+    cols: u16,
+    rows: u16,
+) !Terminal {
+    return backend.terminal.spawnArgv(allocator, argv, cols, rows);
 }

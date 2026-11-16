@@ -41,3 +41,16 @@ pub fn spawn(cols: u16, rows: u16) !Terminal {
 
     return .{ .child = child };
 }
+
+pub fn spawnArgv(
+    allocator: std.mem.Allocator,
+    argv: []const []const u8,
+    cols: u16,
+    rows: u16,
+) !Terminal {
+    _ = allocator;
+    _ = argv;
+    _ = cols;
+    _ = rows;
+    return error.Unsupported;
+}

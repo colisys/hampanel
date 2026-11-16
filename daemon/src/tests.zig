@@ -9,6 +9,8 @@ test {
     _ = @import("runtime/images.zig");
     _ = @import("runtime/environments.zig");
     _ = @import("runtime/docker_settings.zig");
+    _ = @import("runtime/engine.zig");
+    _ = @import("jobs.zig");
     _ = @import("api/runtimes.zig");
     _ = @import("log.zig");
     _ = @import("openssl.zig");
