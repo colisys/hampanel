@@ -97,6 +97,7 @@ const List<String> _sansFallback = [
   'Microsoft YaHei',
   'DejaVu Sans',
   'sans-serif',
+  'sans-serif',
 ];
 
 const TextStyle monospace = TextStyle(
@@ -104,6 +105,7 @@ const TextStyle monospace = TextStyle(
   fontFamilyFallback: [
     'JetBrains Mono',
     'Noto Sans Mono',
+    'monospace',
     'Liberation Mono',
     'Consolas',
     'Menlo',
@@ -117,6 +119,7 @@ TextStyle get mangaKicker => TextStyle(
   fontFamilyFallback: const [
     'JetBrains Mono',
     'Noto Sans Mono',
+    'monospace',
     'Liberation Mono',
     'Consolas',
     'Menlo',

@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'app_paths.dart';
+
 class KeychainException implements Exception {
   KeychainException(this.message);
   final String message;
@@ -11,10 +13,21 @@ class KeychainException implements Exception {
 /// The key is never written to the panel's JSON configuration.
 class AiKeychain {
   static const _service = 'work.dawncall.hampanel';
+
+  /// Android/iOS have no external keychain CLI; the app sandbox is private to
+  /// this package, so the key never leaves it.
+  static File _sandboxFile() =>
+      File('${AppPaths.configDirectory().path}${Platform.pathSeparator}ai_key');
   static const _account = 'default';
 
   static Future<String?> readKey() async {
     try {
+      if (Platform.isAndroid || Platform.isIOS) {
+        final file = _sandboxFile();
+        if (!file.existsSync()) return null;
+        final value = file.readAsStringSync().trim();
+        return value.isEmpty ? null : value;
+      }
       if (Platform.isLinux) {
         final result = await Process.run('secret-tool', [
           'lookup',
@@ -59,6 +72,13 @@ class AiKeychain {
 
   static Future<void> writeKey(String key) async {
     try {
+      if (Platform.isAndroid || Platform.isIOS) {
+        final file = _sandboxFile();
+        file.parent.createSync(recursive: true);
+        file.writeAsStringSync(key);
+        await restrictToOwner(file);
+        return;
+      }
       if (Platform.isLinux) {
         final process = await Process.start('secret-tool', [
           'store',
@@ -105,6 +125,11 @@ class AiKeychain {
 
   static Future<void> deleteKey() async {
     try {
+      if (Platform.isAndroid || Platform.isIOS) {
+        final file = _sandboxFile();
+        if (file.existsSync()) file.deleteSync();
+        return;
+      }
       if (Platform.isLinux) {
         await Process.run('secret-tool', [
           'clear',

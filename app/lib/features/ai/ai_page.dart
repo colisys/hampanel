@@ -678,7 +678,8 @@ class _AiPageState extends State<AiPage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        _keychainError ?? '尚未保存 API Key。密钥会存入系统钥匙串，不会写入配置文件。',
+                        _keychainError ??
+                            '尚未保存 API Key。密钥保存在本机安全存储中（桌面使用系统钥匙串），不会写入配置文件。',
                         style: const TextStyle(fontSize: 12, height: 1.4),
                       ),
                     ),

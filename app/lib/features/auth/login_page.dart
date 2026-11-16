@@ -53,6 +53,7 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 620;
     return Scaffold(
       body: Stack(
         children: [
@@ -81,9 +82,9 @@ class _LoginPageState extends State<LoginPage> {
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 52,
+                padding: EdgeInsets.symmetric(
+                  horizontal: compact ? 12 : 24,
+                  vertical: compact ? 24 : 52,
                 ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 820),
@@ -94,7 +95,7 @@ class _LoginPageState extends State<LoginPage> {
                       boxShadow: mangaShadow,
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.all(34),
+                      padding: EdgeInsets.all(compact ? 18 : 34),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -102,26 +103,34 @@ class _LoginPageState extends State<LoginPage> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Container(
-                                width: 60,
-                                height: 60,
-                                color: hampanelInk,
-                                child: Icon(
-                                  Icons.dns_outlined,
-                                  color: hampanelSurface,
-                                  size: 32,
+                                width: compact ? 46 : 62,
+                                height: compact ? 46 : 62,
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: hampanelSurfaceAlt,
+                                  border: Border.all(
+                                    color: hampanelInk,
+                                    width: 2,
+                                  ),
+                                ),
+                                child: Image.asset(
+                                  'assets/branding/hampanel-ham.png',
+                                  filterQuality: FilterQuality.none,
                                 ),
                               ),
-                              const SizedBox(width: 16),
+                              SizedBox(width: compact ? 10 : 16),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       'HAMPANEL',
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
-                                        fontSize: 38,
+                                        fontSize: compact ? 26 : 38,
                                         fontWeight: FontWeight.w900,
-                                        letterSpacing: 4,
+                                        letterSpacing: compact ? 2 : 4,
                                         height: 0.95,
                                         color: hampanelInk,
                                       ),
@@ -136,24 +145,25 @@ class _LoginPageState extends State<LoginPage> {
                                   ],
                                 ),
                               ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 5,
-                                ),
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: hampanelInk,
-                                    width: 1.5,
+                              if (!compact)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: hampanelInk,
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'PANEL 01',
+                                    style: mangaKicker.copyWith(
+                                      color: hampanelInk,
+                                    ),
                                   ),
                                 ),
-                                child: Text(
-                                  'PANEL 01',
-                                  style: mangaKicker.copyWith(
-                                    color: hampanelInk,
-                                  ),
-                                ),
-                              ),
                             ],
                           ),
                           const SizedBox(height: 20),

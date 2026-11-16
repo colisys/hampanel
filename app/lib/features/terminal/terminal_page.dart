@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:xterm/xterm.dart';
 
 import '../../core/api_client.dart';
+import '../../core/platform_support.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
@@ -21,6 +22,7 @@ class TerminalPage extends StatefulWidget {
 }
 
 class _TerminalPageState extends State<TerminalPage> {
+  final FocusNode _terminalFocus = FocusNode();
   late final Terminal _terminal;
   WebSocket? _socket;
   StreamSubscription<dynamic>? _subscription;
@@ -67,6 +69,7 @@ class _TerminalPageState extends State<TerminalPage> {
 
   @override
   void dispose() {
+    _terminalFocus.dispose();
     _subscription?.cancel();
     _socket?.close();
     super.dispose();
@@ -127,6 +130,7 @@ class _TerminalPageState extends State<TerminalPage> {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 720;
     return Column(
       children: [
         PageHeader(
@@ -135,6 +139,18 @@ class _TerminalPageState extends State<TerminalPage> {
           actions: [
             StatusPill(text: _status, good: _connected),
             const SizedBox(width: 10),
+            if (PlatformSupport.isMobile)
+              IconButton(
+                tooltip: '切换键盘',
+                onPressed: () {
+                  if (_terminalFocus.hasFocus) {
+                    _terminalFocus.unfocus();
+                  } else {
+                    _terminalFocus.requestFocus();
+                  }
+                },
+                icon: const Icon(Icons.keyboard_outlined, size: 18),
+              ),
             OutlinedButton.icon(
               onPressed: _connect,
               icon: const Icon(Icons.refresh, size: 16),
@@ -144,7 +160,12 @@ class _TerminalPageState extends State<TerminalPage> {
         ),
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            padding: EdgeInsets.fromLTRB(
+              compact ? 10 : 24,
+              0,
+              compact ? 10 : 24,
+              compact ? 10 : 24,
+            ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(3),
               child: Container(
@@ -156,7 +177,8 @@ class _TerminalPageState extends State<TerminalPage> {
                 padding: const EdgeInsets.all(8),
                 child: TerminalView(
                   _terminal,
-                  autofocus: true,
+                  focusNode: _terminalFocus,
+                  autofocus: !PlatformSupport.isMobile,
                   padding: const EdgeInsets.all(4),
                 ),
               ),

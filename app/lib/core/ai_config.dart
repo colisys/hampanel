@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'app_paths.dart';
+
 class AiConfig {
   AiConfig({
     required this.protocol,
@@ -47,15 +49,7 @@ class AiConfig {
     'enabled_tools': enabledTools,
   };
 
-  static Directory _dir() {
-    final env = Platform.environment;
-    if (Platform.isWindows) {
-      final base = env['APPDATA'] ?? env['USERPROFILE'] ?? '.';
-      return Directory('$base\\Hampanel');
-    }
-    final base = env['XDG_CONFIG_HOME'] ?? '${env['HOME'] ?? '.'}/.config';
-    return Directory('$base/hampanel');
-  }
+  static Directory _dir() => AppPaths.configDirectory();
 
   static File get _file =>
       File('${_dir().path}${Platform.pathSeparator}ai_config.json');
@@ -74,7 +68,7 @@ class AiConfig {
     await _dir().create(recursive: true);
     await _file.writeAsString(jsonEncode(toJson()));
     if (!Platform.isWindows) {
-      await Process.run('chmod', ['600', _file.path]);
+      await restrictToOwner(_file);
     }
   }
 

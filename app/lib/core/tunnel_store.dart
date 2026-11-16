@@ -1,19 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'app_paths.dart';
 import 'models/tunnel_profile.dart';
 
 /// Tunnel profiles live on the management side. No secrets are stored.
 class TunnelStore {
-  static Directory _dir() {
-    final env = Platform.environment;
-    if (Platform.isWindows) {
-      final base = env['APPDATA'] ?? env['USERPROFILE'] ?? '.';
-      return Directory('$base\\Hampanel');
-    }
-    final base = env['XDG_CONFIG_HOME'] ?? '${env['HOME'] ?? '.'}/.config';
-    return Directory('$base/hampanel');
-  }
+  static Directory _dir() => AppPaths.configDirectory();
 
   static File get _file =>
       File('${_dir().path}${Platform.pathSeparator}tunnels.json');
@@ -39,7 +32,7 @@ class TunnelStore {
       jsonEncode([for (final profile in profiles) profile.toJson()]),
     );
     if (!Platform.isWindows) {
-      await Process.run('chmod', ['600', _file.path]);
+      await restrictToOwner(_file);
     }
   }
 

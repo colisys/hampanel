@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../core/format.dart';
 import '../../core/models/file_entry.dart';
 import '../../core/models/recycle_entry.dart';
+import '../../core/native_files.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
@@ -353,6 +354,20 @@ class _FilesPageState extends State<FilesPage> {
   }
 
   Future<void> _upload() async {
+    if (NativeFiles.supported) {
+      try {
+        final picked = await NativeFiles.pick();
+        if (picked == null) return;
+        await _api.uploadBytes('/api/v1/files/upload', {
+          'path': _join(picked.name),
+        }, picked.bytes);
+        await _load(_path);
+        _toast('上传完成');
+      } catch (error) {
+        _toast(describeError(error));
+      }
+      return;
+    }
     final localPath = await textInputDialog(
       context,
       title: '上传文件',
@@ -373,6 +388,18 @@ class _FilesPageState extends State<FilesPage> {
   }
 
   Future<void> _download(FileEntry entry) async {
+    if (NativeFiles.supported) {
+      try {
+        final bytes = await _api.downloadToBytes('/api/v1/files/download', {
+          'path': entry.path,
+        });
+        final saved = await NativeFiles.save(entry.name, bytes);
+        _toast(saved ? '已保存' : '已取消保存');
+      } catch (error) {
+        _toast(describeError(error));
+      }
+      return;
+    }
     final target = await textInputDialog(
       context,
       title: '下载 ${entry.name}',

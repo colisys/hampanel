@@ -11,6 +11,8 @@ import '../../core/client_settings.dart';
 import '../../core/client_update.dart';
 import '../../core/format.dart';
 import '../../core/enrollment.dart';
+import '../../core/native_files.dart';
+import '../../core/platform_support.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
@@ -356,7 +358,10 @@ class _SettingsPageState extends State<SettingsPage> {
                                 ),
                                 _row('客户端 CN', enrollment.clientCn),
                                 _row('服务端版本', _serverVersion ?? '检测中'),
-                                _row('创建时间', enrollment.createdAt),
+                                _row(
+                                  '创建时间',
+                                  formatTimestamp(enrollment.createdAt),
+                                ),
                                 _row('配置目录', Enrollment.configDirectory().path),
                                 if (_health != null) ...[
                                   const SizedBox(height: 8),
@@ -391,15 +396,18 @@ class _SettingsPageState extends State<SettingsPage> {
                                       ),
                                       label: const Text('复制注册凭据'),
                                     ),
-                                    const SizedBox(width: 10),
-                                    OutlinedButton.icon(
-                                      onPressed: _openConfigDirectory,
-                                      icon: const Icon(
-                                        Icons.folder_open_outlined,
-                                        size: 16,
+                                    if (PlatformSupport
+                                        .openConfigDirectory) ...[
+                                      const SizedBox(width: 10),
+                                      OutlinedButton.icon(
+                                        onPressed: _openConfigDirectory,
+                                        icon: const Icon(
+                                          Icons.folder_open_outlined,
+                                          size: 16,
+                                        ),
+                                        label: const Text('打开配置目录'),
                                       ),
-                                      label: const Text('打开配置目录'),
-                                    ),
+                                    ],
                                   ],
                                 ),
                               ],
@@ -432,60 +440,47 @@ class _SettingsPageState extends State<SettingsPage> {
                                             ? '发布二进制'
                                             : '源码构建',
                                       ),
-                                      Row(
-                                        children: [
-                                          SizedBox(
-                                            width: 190,
-                                            child:
-                                                DropdownButtonFormField<String>(
-                                                  initialValue:
-                                                      _daemonChannel ??
-                                                      'stable',
-                                                  decoration:
-                                                      const InputDecoration(
-                                                        labelText: '更新通道',
-                                                      ),
-                                                  items: const [
-                                                    DropdownMenuItem(
-                                                      value: 'stable',
-                                                      child: Text('stable'),
-                                                    ),
-                                                    DropdownMenuItem(
-                                                      value: 'nightly',
-                                                      child: Text('nightly'),
-                                                    ),
-                                                  ],
-                                                  onChanged: updatable
-                                                      ? (value) => setState(
-                                                          () => _daemonChannel =
-                                                              value,
-                                                        )
-                                                      : null,
-                                                ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: TextField(
-                                              controller: _daemonMirror,
-                                              enabled: updatable,
+                                      _updateRow(
+                                        channel:
+                                            DropdownButtonFormField<String>(
+                                              initialValue:
+                                                  _daemonChannel ?? 'stable',
                                               decoration: const InputDecoration(
-                                                labelText: 'GitHub 镜像（可选）',
-                                                hintText:
-                                                    'https://ghproxy.example',
+                                                labelText: '更新通道',
                                               ),
+                                              items: const [
+                                                DropdownMenuItem(
+                                                  value: 'stable',
+                                                  child: Text('stable'),
+                                                ),
+                                                DropdownMenuItem(
+                                                  value: 'nightly',
+                                                  child: Text('nightly'),
+                                                ),
+                                              ],
+                                              onChanged: updatable
+                                                  ? (value) => setState(
+                                                      () => _daemonChannel =
+                                                          value,
+                                                    )
+                                                  : null,
                                             ),
+                                        mirror: TextField(
+                                          controller: _daemonMirror,
+                                          enabled: updatable,
+                                          decoration: const InputDecoration(
+                                            labelText: 'GitHub 镜像（可选）',
+                                            hintText: 'https://ghproxy.example',
                                           ),
-                                          const SizedBox(width: 8),
-                                          OutlinedButton(
-                                            onPressed:
-                                                updatable && !_daemonSaving
-                                                ? _saveDaemonUpdateConfig
-                                                : null,
-                                            child: Text(
-                                              _daemonSaving ? '保存中…' : '保存',
-                                            ),
+                                        ),
+                                        save: OutlinedButton(
+                                          onPressed: updatable && !_daemonSaving
+                                              ? _saveDaemonUpdateConfig
+                                              : null,
+                                          child: Text(
+                                            _daemonSaving ? '保存中…' : '保存',
                                           ),
-                                        ],
+                                        ),
                                       ),
                                       Text(
                                         '镜像用于受控端更新下载；留空表示直连 GitHub。',
@@ -621,48 +616,38 @@ class _SettingsPageState extends State<SettingsPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  children: [
-                                    SizedBox(
-                                      width: 190,
-                                      child: DropdownButtonFormField<String>(
-                                        initialValue: ClientSettings
-                                            .instance
-                                            .updateChannel,
-                                        decoration: const InputDecoration(
-                                          labelText: '更新通道',
-                                          hintText: '请选择通道',
-                                        ),
-                                        items: const [
-                                          DropdownMenuItem(
-                                            value: 'stable',
-                                            child: Text('stable（正式版）'),
-                                          ),
-                                          DropdownMenuItem(
-                                            value: 'nightly',
-                                            child: Text('nightly（每日构建）'),
-                                          ),
-                                        ],
-                                        onChanged: _setClientChannel,
+                                _updateRow(
+                                  channel: DropdownButtonFormField<String>(
+                                    initialValue:
+                                        ClientSettings.instance.updateChannel,
+                                    decoration: const InputDecoration(
+                                      labelText: '更新通道',
+                                      hintText: '请选择通道',
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(
+                                        value: 'stable',
+                                        child: Text('stable（正式版）'),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: TextField(
-                                        controller: _clientMirror,
-                                        decoration: const InputDecoration(
-                                          labelText: 'GitHub 镜像（可选）',
-                                          hintText: 'https://ghproxy.example',
-                                        ),
-                                        onSubmitted: (_) => _saveClientMirror(),
+                                      DropdownMenuItem(
+                                        value: 'nightly',
+                                        child: Text('nightly（每日构建）'),
                                       ),
+                                    ],
+                                    onChanged: _setClientChannel,
+                                  ),
+                                  mirror: TextField(
+                                    controller: _clientMirror,
+                                    decoration: const InputDecoration(
+                                      labelText: 'GitHub 镜像（可选）',
+                                      hintText: 'https://ghproxy.example',
                                     ),
-                                    const SizedBox(width: 8),
-                                    OutlinedButton(
-                                      onPressed: _saveClientMirror,
-                                      child: const Text('保存'),
-                                    ),
-                                  ],
+                                    onSubmitted: (_) => _saveClientMirror(),
+                                  ),
+                                  save: OutlinedButton(
+                                    onPressed: _saveClientMirror,
+                                    child: const Text('保存'),
+                                  ),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
@@ -1094,6 +1079,14 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _openExternal(String url) async {
+    if (NativeFiles.supported) {
+      try {
+        await NativeFiles.openUrl(url);
+      } catch (_) {
+        _toast('无法打开链接，请手动复制');
+      }
+      return;
+    }
     try {
       if (Platform.isMacOS) {
         await Process.run('open', [url]);
@@ -1150,6 +1143,35 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(fontSize: 11, color: hampanelMuted),
             ),
           ),
+      ],
+    );
+  }
+
+  Widget _updateRow({
+    required Widget channel,
+    required Widget mirror,
+    required Widget save,
+  }) {
+    final compact = MediaQuery.sizeOf(context).width < 620;
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          channel,
+          const SizedBox(height: 10),
+          mirror,
+          const SizedBox(height: 10),
+          Align(alignment: Alignment.centerRight, child: save),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        SizedBox(width: 190, child: channel),
+        const SizedBox(width: 12),
+        Expanded(child: mirror),
+        const SizedBox(width: 8),
+        save,
       ],
     );
   }

@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/build_info.dart';
 import '../../core/host_store.dart';
+import '../../core/platform_support.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../ai/ai_page.dart';
@@ -71,11 +72,12 @@ class _PanelShellState extends State<PanelShell> {
       Icons.terminal_outlined,
       (_, active) => TerminalPage(autoConnect: active),
     ),
-    _Destination(
-      '端口穿透',
-      Icons.swap_horiz,
-      (_, active) => TunnelsPage(active: active),
-    ),
+    if (PlatformSupport.localTunnels)
+      _Destination(
+        '端口穿透',
+        Icons.swap_horiz,
+        (_, active) => TunnelsPage(active: active),
+      ),
     _Destination(
       '服务',
       Icons.settings_suggest_outlined,
@@ -110,42 +112,52 @@ class _PanelShellState extends State<PanelShell> {
   Widget build(BuildContext context) {
     final session = PanelScope.of(context);
     final compact = MediaQuery.sizeOf(context).width < 900;
-    return Scaffold(
-      key: _scaffoldKey,
-      drawer: compact
-          ? Drawer(
-              width: MediaQuery.sizeOf(context).width * 0.82,
-              backgroundColor: hampanelSurface,
-              child: SafeArea(child: _sidebar(session, drawer: true)),
-            )
-          : null,
-      body: Row(
-        children: [
-          if (!compact) _sidebar(session),
-          Expanded(
-            child: Column(
-              children: [
-                _topBar(compact),
-                Expanded(
-                  child: _hostsOpen
-                      ? HostsPage(
-                          key: ValueKey('hosts-${widget.sessionKey}'),
-                          onSwitchHost: _switchHost,
-                        )
-                      : IndexedStack(
-                          key: ValueKey('pages-${widget.sessionKey}'),
-                          index: _index,
-                          children: [
-                            for (final (index, destination)
-                                in _destinations.indexed)
-                              destination.builder(context, index == _index),
-                          ],
-                        ),
+    return PopScope(
+      canPop: !_hostsOpen,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _hostsOpen) {
+          setState(() => _hostsOpen = false);
+        }
+      },
+      child: Scaffold(
+        key: _scaffoldKey,
+        drawer: compact
+            ? Drawer(
+                width: MediaQuery.sizeOf(context).width * 0.82,
+                backgroundColor: hampanelSurface,
+                child: SafeArea(child: _sidebar(session, drawer: true)),
+              )
+            : null,
+        body: SafeArea(
+          child: Row(
+            children: [
+              if (!compact) _sidebar(session),
+              Expanded(
+                child: Column(
+                  children: [
+                    _topBar(compact),
+                    Expanded(
+                      child: _hostsOpen
+                          ? HostsPage(
+                              key: ValueKey('hosts-${widget.sessionKey}'),
+                              onSwitchHost: _switchHost,
+                            )
+                          : IndexedStack(
+                              key: ValueKey('pages-${widget.sessionKey}'),
+                              index: _index,
+                              children: [
+                                for (final (index, destination)
+                                    in _destinations.indexed)
+                                  destination.builder(context, index == _index),
+                              ],
+                            ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -166,13 +178,16 @@ class _PanelShellState extends State<PanelShell> {
               child: Row(
                 children: [
                   Container(
-                    width: 30,
-                    height: 30,
-                    color: hampanelInk,
-                    child: Icon(
-                      Icons.dns_outlined,
-                      color: hampanelSurface,
-                      size: 18,
+                    width: 34,
+                    height: 34,
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: hampanelSurfaceAlt,
+                      border: Border.all(color: hampanelInk, width: 1.5),
+                    ),
+                    child: Image.asset(
+                      'assets/branding/hampanel-ham.png',
+                      filterQuality: FilterQuality.none,
                     ),
                   ),
                   const SizedBox(width: 10),

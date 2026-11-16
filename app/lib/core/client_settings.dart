@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import 'app_paths.dart';
 import 'enrollment.dart';
 
 /// 管理端本地偏好：更新通道、GitHub 镜像与概览刷新频率。
@@ -52,9 +53,7 @@ class ClientSettings extends ChangeNotifier {
           'github_mirror': githubMirror,
         }),
       );
-      if (!Platform.isWindows) {
-        await Process.run('chmod', ['600', file.path]);
-      }
+      await restrictToOwner(file);
     } catch (_) {
       // 写入失败不影响当前会话。
     }

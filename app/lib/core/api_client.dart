@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:io';
 
 import 'ai_context.dart';
@@ -156,6 +157,40 @@ class ApiClient {
     final sink = file.openWrite();
     await response.pipe(sink);
     return file;
+  }
+
+  Future<List<int>> downloadToBytes(
+    String path,
+    Map<String, String> query,
+  ) async {
+    final request = await _http.getUrl(uri(path, query));
+    final response = await request.close();
+    if (response.statusCode != 200) {
+      final text = await utf8.decodeStream(response);
+      throw _errorFrom(response.statusCode, text);
+    }
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in response) {
+      builder.add(chunk);
+    }
+    return builder.takeBytes();
+  }
+
+  Future<dynamic> uploadBytes(
+    String path,
+    Map<String, String> query,
+    List<int> bytes,
+  ) async {
+    final request = await _http.postUrl(uri(path, query));
+    request.headers.contentType = ContentType.binary;
+    request.contentLength = bytes.length;
+    request.add(bytes);
+    final response = await request.close();
+    final text = await utf8.decodeStream(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _errorFrom(response.statusCode, text);
+    }
+    return text.trim().isEmpty ? null : jsonDecode(text);
   }
 
   Future<dynamic> uploadFromFile(

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'app_paths.dart';
 import 'enrollment.dart';
 
 class ConversationEntry {
@@ -101,7 +102,7 @@ class ConversationStore {
         jsonEncode([for (final item in trimmed) item.toJson()]),
       );
       if (!Platform.isWindows) {
-        await Process.run('chmod', ['600', _file.path]);
+        await restrictToOwner(_file);
       }
     } catch (_) {
       // 会话持久化失败不影响当前对话。

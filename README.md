@@ -75,6 +75,7 @@ daemon/                 Zig 后端（按模块拆分）
   src/pki.zig           证书签发
   src/tls.zig           OpenSSL 封装
 app/                    Flutter 客户端（Linux / Windows / macOS / Android / iOS）
+app/assets/branding/    8-bit 火腿标志（SVG / PNG）
   lib/core/             mTLS 客户端、注册凭据、模型、客户端设置与自更新
   lib/features/         每个页面一个目录
   lib/ui/               主题、通用组件、Markdown 渲染

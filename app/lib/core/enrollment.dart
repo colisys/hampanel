@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'app_paths.dart';
+
 class Enrollment {
   const Enrollment({
     required this.schema,
@@ -79,15 +81,7 @@ class Enrollment {
     'created_at': createdAt,
   };
 
-  static Directory configDirectory() {
-    final env = Platform.environment;
-    if (Platform.isWindows) {
-      final base = env['APPDATA'] ?? env['USERPROFILE'] ?? '.';
-      return Directory('$base\\Hampanel');
-    }
-    final base = env['XDG_CONFIG_HOME'] ?? '${env['HOME'] ?? '.'}/.config';
-    return Directory('$base/hampanel');
-  }
+  static Directory configDirectory() => AppPaths.configDirectory();
 
   static File configFile() => File('${configDirectory().path}/enrollment.json');
 
@@ -108,9 +102,7 @@ class Enrollment {
     await file.writeAsString(
       const JsonEncoder.withIndent('  ').convert(toJson()),
     );
-    if (!Platform.isWindows) {
-      await Process.run('chmod', ['600', file.path]);
-    }
+    await restrictToOwner(file);
   }
 
   static Future<void> clear() async {
