@@ -82,6 +82,9 @@ src/sys/exec.zig        安全 argv 执行（两平台共用）
 src/sys/procfs.zig      Linux /proc 与磁盘指标
 src/recycle.zig         文件回收站（移动/恢复/永久删除）
 src/versions.zig        文件历史版本（面板数据目录、内容寻址）
+src/notify.zig          Bark / ntfy 推送（登录、AI 操作等事件）
+src/audit.zig           请求审计
+src/service_stub.zig    非 Linux 目标的 systemd 占位实现
 src/platform/linux/waf.zig  Caddy+Coraza WAF 边缘（构建/配置/进程/日志）
 src/store/catalog.zig   内嵌 Docker 应用目录
 src/store/apps.zig      参数校验、Compose 渲染与执行
@@ -89,6 +92,7 @@ src/platform/linux/packages.zig  包管理器检测与精选工具安装
 src/platform/linux/nix.zig       Nix 状态、白名单 build / run
 src/platform/linux/ssh.zig       sshd 状态、drop-in 配置校验/回滚、authorized_keys
 src/platform/linux/software.zig  软件安装/托管状态、Nginx/Docker 初始化
+src/platform/linux/host_settings.zig  swap / NTP / GRUB / hosts
 src/platform/linux/fail2ban.zig  Fail2ban 初始化、jail、封禁与阈值
 src/util/*.zig          查询串、校验、错误名、文本工具
 ```
@@ -113,8 +117,10 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 | --- | --- | --- |
 | GET | `/health` | 健康检查 |
 | GET | `/system` | 主机信息 |
-| GET | `/metrics` | CPU / 内存 / 磁盘 / 网络 |
+| GET | `/metrics` | CPU / 内存 / 磁盘 / 网络（含各网卡速率） |
 | GET | `/processes` | 进程列表 |
+| GET | `/processes/:pid` | 进程详情（exe、cwd、UID/GID、线程、打开文件、监听端口） |
+| POST | `/processes/:pid/kill` | 发送 TERM / KILL 信号 |
 | GET | `/files?path=` | 目录列表 |
 | GET | `/files/content?path=` | 读取文本文件 |
 | PUT | `/files/content` | 写入文件 |
@@ -131,6 +137,8 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 | POST | `/waf/config` | 保存/校验 WAF 边缘配置 |
 | POST | `/waf/start` / `/waf/stop` | 启停 WAF 边缘 |
 | GET | `/waf/logs` | WAF 访问日志 |
+| GET | `/waf/geo/catalog` | GeoIP / GeoSite 分类目录 |
+| POST / DELETE | `/waf/typesafe/key` | TypeSafe 风险复检密钥 |
 | GET | `/recycle` | 回收站列表 |
 | POST | `/recycle/restore` / `delete` / `empty` | 恢复 / 永久删除 / 清空 |
 | GET | `/terminal/ws` | 交互终端（WebSocket） |
@@ -163,6 +171,7 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 | GET | `/store/packages` | 包管理器与精选工具状态 |
 | POST | `/store/packages/refresh` | 刷新软件源索引 |
 | POST | `/store/packages/:id/install` | 安装白名单工具 |
+| POST | `/store/packages/custom` | 安装自定义包名（经包管理器白名单校验） |
 | GET | `/store/nix` | Nix 状态与白名单目标 |
 | POST | `/store/nix/build` | `nix build` 白名单属性 |
 | POST | `/store/nix/run` | `nix run` 白名单属性 |
@@ -179,6 +188,18 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 | GET | `/fail2ban` | Fail2ban 状态、jail、封禁 IP |
 | POST | `/fail2ban/ban` / `unban` | 封禁 / 解封 IP |
 | POST | `/fail2ban/config` | 更新 maxretry / bantime / findtime 并重载 |
+| GET / PUT | `/docker/settings` | Docker 守护进程配置（registry-mirrors / ipv6 / experimental） |
+| GET / POST | `/runtimes`、`/runtimes/catalog`、`/runtimes/:id/*` | 运行环境与扩展、配置、进程管理 |
+| GET | `/host/settings` | 主机设置状态（swap / NTP / GRUB / hosts） |
+| POST | `/host/swap`、`/host/swap-device` | 启用交换文件或已有块设备 |
+| POST | `/host/ntp`、`/host/grub` | NTP 同步开关、GRUB2 默认启动项 |
+| PUT | `/host/hosts` | 写入 /etc/hosts |
+| GET / PUT | `/notifications` | Bark / ntfy 推送配置 |
+| POST | `/notifications/test` | 发送测试推送 |
+| GET | `/update` | 更新状态、通道与 GitHub 镜像 |
+| POST | `/update/check`、`/update/apply` | 检查与执行更新 |
+| PUT | `/update/config` | 修改更新通道与 GitHub 镜像 |
+| POST / DELETE | `/update/schedule` | 每日更新检查开关 |
 
 ### 5.1 应用商店
 
@@ -222,7 +243,7 @@ API Key 写入系统钥匙串；SSH/socat 子进程也由管理端启动，daemo
 - 站点配置写入后先执行 `nginx -t`，失败则回滚文件，不触发 reload。
 - 日志源使用固定 allowlist，不接受任意路径读取。
 
-## 7. 远端编译与安装
+## 8. 远端编译与安装
 
 `deploy/bootstrap.sh` 在目标机执行，幂等：
 
@@ -233,10 +254,11 @@ API Key 写入系统钥匙串；SSH/socat 子进程也由管理端启动，daemo
 5. 安装二进制、配置目录、systemd 单元。
 6. 首次运行 `hampaneld init` 生成 PKI 与注册凭据。
 7. 启动服务并等待健康检查。
+8. 二进制安装会写入 `install_mode=binary`，并由客户端安装器选择是否启用每日更新检查。
 
 `hampanelctl` 只负责 SSH / SCP 编排与结果回收，构建逻辑全部在远端脚本中，便于审计和离线复用。
 
-## 8. 客户端设计
+## 9. 客户端设计
 
 Flutter 客户端按 feature 拆分：
 
@@ -248,8 +270,12 @@ Flutter 客户端按 feature 拆分：
 
 WebSocket 通过 `WebSocket.connect(..., customClient: httpClient)` 复用同一 mTLS 上下文。
 
-## 9. 已知边界
+窗口宽度小于 900px 时主侧栏收起为抽屉，小于 720px 时二级导航（设置、SSH、AI 对话列表）
+改为标题栏上的紧凑菜单或底部弹层；所有对话框主体通过 `DialogBody` 限制在当前视口内。
 
-- 仅支持 Linux（systemd、/proc、UFW、Nginx、Docker 均为 Linux 工具）。
+## 10. 已知边界
+
+- 受控端支持 Linux 与 Windows；Docker 能力要求目标机安装 Docker 或 Podman。
+- macOS / Android / iOS 只提供管理端，不能作为受控端。
 - 暂未实现数据库管理、备份、ACME 证书申请和多用户 RBAC。
 - 界面语言为简体中文，代码标识符与 API 为英文。

@@ -18,8 +18,16 @@ AI 助手运行在 Flutter 管理端，daemon 不保存模型配置或密钥。
 
 支持两种 OpenAI 兼容协议：
 
-- `chat_completions`：`POST {base}/chat/completions`
+- `chat_completions`：`POST {base}/chat/completions`，默认使用流式（`stream: true`）逐段
+  渲染文本，结束时再执行工具调用循环。
 - `responses`：`POST {base}/responses`（包含 `function_call` / `function_call_output`）
+
+## 对话与渲染
+
+- 左侧「对话」列表保存多条会话，可新建、切换、删除；窄屏下改由标题栏按钮打开底部弹层。
+- 会话与消息持久化在管理端本地配置文件，随应用重启保留。
+- 回复使用内置 Markdown 渲染：标题、无序/有序列表、引用、分隔线、代码块、
+  行内粗体/斜体/代码，以及**表格**（支持左/中/右对齐与横向滚动）。
 
 ## 工具白名单与审批
 
@@ -30,6 +38,8 @@ Nginx 重载、Fail2ban 封禁/解封）。`add_cron_job` 默认关闭，必须�
 它只能创建计划任务，不能直接执行 shell，且每次创建仍需人工批准。
 
 - 普通只读工具自动执行；`read_file` 命中敏感路径时需要人工批准。
+- 写文件（`write_file`）会先创建历史版本；若目标文件已存在，daemon 的读取循环
+  按 EOF 语义处理（不把正常结束当成错误）。
 - **所有修改类工具**执行前弹出人工审核对话框，展示操作摘要与完整参数；
   用户拒绝时结果会返回给模型，且不会重试。
 - 文件删除只能调用 `delete_path` → daemon 文件删除接口 → 回收站，无法永久删除。

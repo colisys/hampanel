@@ -415,7 +415,7 @@ jobs:
           if-no-files-found: error
 
   flutter-android:
-    name: Flutter Android unsigned (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
+    name: Flutter Android (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -443,24 +443,66 @@ jobs:
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build unsigned Android APK
+      - name: Stage release keystore
+        id: keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KEYSTORE_BASE64:-}" ]]; then
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set; the APK will be unsigned."
+            exit 0
+          fi
+          path="$RUNNER_TEMP/hampanel-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$path"
+          chmod 600 "$path"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+
+      - name: Build signed Android APK
         working-directory: app
+        env:
+          HAMPANEL_ANDROID_KEYSTORE: ${{ steps.keystore.outputs.path }}
+          HAMPANEL_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          HAMPANEL_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          HAMPANEL_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: >
           flutter build apk --release
           --dart-define=HAMPANEL_VERSION=0.1.0
           --dart-define=HAMPANEL_COMMIT=${{ steps.commit.outputs.short }}
 
+      - name: Verify APK signature
+        if: steps.keystore.outputs.signed == 'true'
+        run: |
+          set -euo pipefail
+          apk="$GITHUB_WORKSPACE/app/build/app/outputs/flutter-apk/app-release.apk"
+          sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [[ -z "$sdk_root" ]]; then
+            echo "::warning::Android SDK path is unknown; skipping the signature check."
+            exit 0
+          fi
+          apksigner=$(ls -d "$sdk_root"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          "$apksigner" verify --print-certs "$apk"
+
       - name: Collect APK
+        env:
+          SIGNED: ${{ steps.keystore.outputs.signed }}
         run: |
           set -euo pipefail
           mkdir -p app/build/packaging
+          suffix=""
+          if [[ "$SIGNED" != "true" ]]; then suffix="-unsigned"; fi
           cp app/build/app/outputs/flutter-apk/app-release.apk \
-            app/build/packaging/hampanel-0.1.0-android-universal-unsigned.apk
+            "app/build/packaging/hampanel-0.1.0-android-universal${suffix}.apk"
 
       - name: Upload Android client
         uses: actions/upload-artifact@v4
         with:
-          name: hampanel-client-android-unsigned
+          name: hampanel-client-android
           path: app/build/packaging/*.apk
           if-no-files-found: error
 
@@ -580,7 +622,7 @@ jobs:
             dist/hampanel-client-windows-x86_64.exe
           cp artifacts/hampanel-client-macos-*/*.dmg dist/
 
-          cp artifacts/hampanel-client-android-unsigned/*.apk dist/
+          cp artifacts/hampanel-client-android/*.apk dist/
           cp artifacts/hampanel-client-ios-unsigned/*.ipa dist/
 
           cp deploy/install.sh dist/hampanel-install-linux.sh
@@ -608,7 +650,8 @@ jobs:
           - \`hampanel-client-linux-x86_64.AppImage\` — single-file Linux client (\`chmod +x\` then run)
           - \`hampanel-client-windows-x86_64.exe\` — single-file portable Windows client
           - \`hampanel-client-macos-*.dmg\` — macOS client (controls Linux and Windows daemons)
-          - \`hampanel-client-android-universal-unsigned.apk\` — Android client (unsigned; sign before installing)
+          - Android APK — signed with the Hampanel release key when the Android
+            secrets are configured, otherwise published as \`…-unsigned.apk\`
           - \`hampanel-client-ios-unsigned.ipa\` — iOS client (unsigned; sign with your own provisioning profile)
 
           **Daemons**

@@ -43,14 +43,21 @@
 ## 2. Linux 包管理器
 
 自动检测 `apt` / `dnf` / `yum` / `zypper` / `pacman` / `apk`，提供固定白名单工具：
-Git、cURL、Wget、htop、Vim、tmux、jq、unzip、rsync、tree、ncdu、zstd、ripgrep、fail2ban、rsyslog。
-安装命令由后端根据管理器生成，API 只接受工具 ID，不接受包名。
+Git、cURL、Wget、htop、Vim、tmux、jq、unzip、rsync、tree、ncdu、zstd、ripgrep、
+fail2ban、rsyslog、Docker、Podman 等。安装命令由后端根据管理器生成，API 只接受工具 ID。
 
 - `GET /api/v1/store/packages`
 - `POST /api/v1/store/packages/refresh`
 - `POST /api/v1/store/packages/:id/install`
+- `POST /api/v1/store/packages/custom` `{ "name": "<包名>" }`：安装目录未收录的工具，
+  包名仍需通过字符白名单校验（不接受空格、选项或 shell 元字符）。
 
 Windows 后端返回“不支持”，不会调用任意命令。
+
+### 容器引擎
+
+「容器」页面优先使用 `docker`，未安装时回退到 `podman`（CLI 与 Docker 兼容）；
+两者都不可用时页面给出安装引导，而不是只报错。应用商店提供 Docker 与 Podman 的安装项。
 
 安装后的 Fail2ban 可在「软件」页面完成初始化与托管管理（需用户确认），
 详见 [software.md](software.md)。
@@ -64,7 +71,8 @@ Windows 后端返回“不支持”，不会调用任意命令。
 - `POST /api/v1/store/nix/build` `{ "target": "jq" }` → `nix build --no-link --print-out-paths nixpkgs#jq`
 - `POST /api/v1/store/nix/run` `{ "target": "hello", "args": [] }` → `nix run nixpkgs#hello`
 
-目标必须是内置白名单（hello / jq / ripgrep / fd / bat / htop / tree / cowsay），
+目标可以是内置白名单（hello / jq / ripgrep / fd / bat / htop / tree / cowsay），
+也可以填写自定义 nixpkgs 属性名（只允许包名字符，不含表达式语法），
 避免把面板变成任意表达式执行器。Nix 本身需要管理员在服务器上自行安装。
 
 ### 仓库 flake

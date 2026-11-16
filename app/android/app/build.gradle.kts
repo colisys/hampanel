@@ -9,10 +9,37 @@ plugins {
 
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties()
-val hasReleaseKeystore = keystorePropertiesFile.exists()
-if (hasReleaseKeystore) {
+val hasKeystoreFile = keystorePropertiesFile.exists()
+if (hasKeystoreFile) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
+
+// CI provides the keystore through environment variables so that the secret
+// never has to be written into the checked-out tree.
+val envStorePath = System.getenv("HAMPANEL_ANDROID_KEYSTORE")
+val envStorePassword = System.getenv("HAMPANEL_ANDROID_KEYSTORE_PASSWORD")
+val envKeyAlias = System.getenv("HAMPANEL_ANDROID_KEY_ALIAS")
+val envKeyPassword = System.getenv("HAMPANEL_ANDROID_KEY_PASSWORD")
+val hasEnvKeystore = envStorePath != null && envStorePassword != null &&
+    envKeyAlias != null && envKeyPassword != null && File(envStorePath).exists()
+val hasFileKeystore = hasKeystoreFile &&
+    keystoreProperties["storeFile"] != null &&
+    keystoreProperties["storePassword"] != null &&
+    keystoreProperties["keyAlias"] != null &&
+    keystoreProperties["keyPassword"] != null
+val hasReleaseKeystore = hasFileKeystore || hasEnvKeystore
+
+val releaseStoreFile: File? = if (hasEnvKeystore) {
+    File(envStorePath!!)
+} else {
+    (keystoreProperties["storeFile"] as String?)?.let { file(it) }
+}
+val releaseStorePassword: String? =
+    if (hasEnvKeystore) envStorePassword else keystoreProperties["storePassword"] as String?
+val releaseKeyAlias: String? =
+    if (hasEnvKeystore) envKeyAlias else keystoreProperties["keyAlias"] as String?
+val releaseKeyPassword: String? =
+    if (hasEnvKeystore) envKeyPassword else keystoreProperties["keyPassword"] as String?
 
 android {
     namespace = "work.dawncall.hampanel"
@@ -42,18 +69,21 @@ android {
     signingConfigs {
         if (hasReleaseKeystore) {
             create("release") {
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
 
     buildTypes {
         release {
-            // Release artifacts stay unsigned unless android/key.properties is
-            // provided, so CI can publish an unsigned APK by default.
+            // Signed when a keystore is supplied (android/key.properties locally or
+            // HAMPANEL_ANDROID_KEYSTORE* in CI); otherwise the APK stays unsigned.
             signingConfig = if (hasReleaseKeystore) signingConfigs.getByName("release") else null
         }
     }

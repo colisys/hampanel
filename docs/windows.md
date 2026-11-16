@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `hampaneld.exe` | `%ProgramFiles%\Hampanel` | 用户态服务，mTLS API |
 | `hampanel.sys` | 可选 | 内核伴随驱动，控制设备 `\\.\Hampanel` |
-| 配置 | `%ProgramData%\hampanel\config.json` | 监听地址、端口、路径 |
+| 配置 | `%ProgramData%\hampanel\config.json` | 监听地址、端口、路径、安装方式、更新通道与 GitHub 镜像 |
 | 注册凭据 | `%ProgramData%\hampanel\enroll.json` | 导入 Flutter 客户端 |
 
 ## 前置条件
@@ -78,3 +78,5 @@ Get-Content C:\ProgramData\hampanel\data\audit.jsonl -Tail 20
 - 站点管理（Nginx）在 Windows 上标记为不可用。
 - 计划任务将常见 cron 表达式映射为任务计划程序；复杂表达式会返回 501。
 - 未签名驱动无法在默认配置的 Windows 上加载。
+- 服务端更新与 Linux 共用同一套 Release 逻辑：`--github-mirror` 会写入
+  `config.json`，可在面板「设置 → 常规 → 更新」中修改通道与镜像。
