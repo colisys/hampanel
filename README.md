@@ -27,7 +27,7 @@ Hampanel 是一个 **CleanRoom 实现**、以 **GPL-3.0-or-later** 授权的开�
 | SSH | 二级导航（概览 / 密钥 / 日志）；sshd 状态与生效配置、安全项修改（校验+回滚）、authorized_keys 管理、日志记录方式（syslog/文件）与日志查询 |
 | 软件 | 已安装软件的托管状态、确认后初始化（停止→写入托管配置→启动）、Fail2ban 卡片内合并的 jail/封禁/阈值管理 |
 | 网站 | Nginx 站点生成、启停、配置校验后热重载 |
-| 容器 | Docker（未安装时回退 Podman）容器 / 镜像列表、启停、删除、日志；引擎缺失时给出安装引导 |
+| 容器 | Docker（未安装时回退 Podman）全量管理：概览、容器创建 / 重建 / 终端 / 文件 / 日志 / 备注 / 导出、编排、镜像、网络、存储卷、镜像源与 Docker 设置；引擎缺失时给出安装引导 |
 | 应用商店 | 内嵌 Docker Compose 应用目录、Linux 包管理器精选工具（含 fail2ban、Docker / Podman、rsyslog）、自定义包安装、Nix build / run（含自定义属性） |
 | 运行环境 | 借宿主机 Docker 管理 Node / Python / Java / Go / PHP / Ruby / .NET / 自定义镜像；推荐+开放版本、包管理器镜像源；每环境「管理」页含日志 / 配置 / 扩展 / 进程 |
 | 防火墙 | UFW 规则查看、放行、拒绝、删除 |

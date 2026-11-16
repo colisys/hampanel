@@ -196,3 +196,18 @@ pub fn isSocketPath(value: []const u8) bool {
     }
     return true;
 }
+
+test "docker management validators" {
+    try std.testing.expect(isContainerName("web-1"));
+    try std.testing.expect(!isContainerName("bad name"));
+    try std.testing.expect(isComposeName("my-stack"));
+    try std.testing.expect(!isComposeName("My-Stack"));
+    try std.testing.expect(isSocketPath("unix:///var/run/docker.sock"));
+    try std.testing.expect(!isSocketPath("var/run/docker.sock"));
+    try std.testing.expect(isRegistryHost("registry.example.com:5000"));
+    try std.testing.expect(!isRegistryHost("http://registry"));
+    try std.testing.expect(isPortMapping("8080:80"));
+    try std.testing.expect(isMountSpec("/data:/data:ro"));
+    try std.testing.expect(isImageRef("nginx:alpine"));
+    try std.testing.expect(isImageRef("sha256:abc123"));
+}

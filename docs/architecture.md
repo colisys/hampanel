@@ -149,10 +149,26 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 | POST | `/sites` | 创建 / 更新站点 |
 | POST | `/sites/:name/toggle` | 启用 / 停用 |
 | POST | `/sites/reload` | 校验并重载 Nginx |
-| GET | `/docker/containers` | 容器 |
-| GET | `/docker/images` | 镜像 |
+| GET | `/docker/overview`、`/docker/info`、`/docker/test-connection` | 概览与引擎信息 |
+| GET | `/docker/containers`、`/docker/containers/:id` | 容器列表（含 inspect/统计/备注）与详情 |
+| POST | `/docker/containers`、`/docker/containers/:id/recreate` | 从镜像创建、按配置重建 |
 | POST | `/docker/containers/:id/:action` | 启停 / 重启 / 删除 |
-| GET | `/docker/containers/:id/logs` | 容器日志 |
+| POST | `/docker/containers/:id/commit` | 导出为镜像 |
+| GET | `/docker/containers/:id/logs`、`/terminal/ws`、`/files*` | 日志、终端、容器内文件 |
+| GET / PUT / DELETE | `/docker/notes`、`/docker/notes/:name` | 容器备注 |
+| GET / POST | `/docker/compose`、`/docker/compose/adopt` | 编排列表、创建、接管 |
+| GET / PUT / DELETE | `/docker/compose/:name` | 编排详情、保存、删除 |
+| POST | `/docker/compose/:name/:action` | up / down / restart / pull |
+| GET | `/docker/compose/:name/logs` | 编排日志 |
+| GET | `/docker/images`、`/docker/images/search` | 镜像列表与检索 |
+| POST | `/docker/images/pull`、`push`、`update`、`tag`、`export`、`import`、`build*`、`prune` | 镜像动作（长任务返回 job id） |
+| DELETE | `/docker/images/:id` | 删除镜像 |
+| GET / POST | `/docker/networks`、`/docker/volumes` | 网络 / 存储卷列表与创建 |
+| DELETE | `/docker/networks/:name`、`/docker/volumes/:name` | 删除网络 / 存储卷 |
+| POST | `/docker/networks/prune`、`/docker/volumes/prune` | 清理 |
+| GET / POST | `/docker/registries` | 镜像源列表与添加 |
+| PUT / DELETE | `/docker/registries/:id`、`/docker/registries/:id/sync` | 编辑 / 删除 / 登录同步 |
+| GET | `/docker/jobs/:id`、`/docker/jobs/:id/download` | 异步任务状态与产物下载 |
 | GET | `/firewall` | UFW 状态与规则 |
 | POST | `/firewall/rules` | 新增规则 |
 | POST | `/firewall/rules/delete` | 按规则 id 删除（Linux: 编号，Windows: 规则名） |
@@ -188,7 +204,7 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 | GET | `/fail2ban` | Fail2ban 状态、jail、封禁 IP |
 | POST | `/fail2ban/ban` / `unban` | 封禁 / 解封 IP |
 | POST | `/fail2ban/config` | 更新 maxretry / bantime / findtime 并重载 |
-| GET / PUT | `/docker/settings` | Docker 守护进程配置（registry-mirrors / ipv6 / experimental） |
+| GET / PUT | `/docker/settings` | Docker 守护进程配置（加速、私有仓库、IPv6、日志、iptables、Live Restore、Cgroup、NVIDIA、Socket） |
 | GET / POST | `/runtimes`、`/runtimes/catalog`、`/runtimes/:id/*` | 运行环境与扩展、配置、进程管理 |
 | GET | `/host/settings` | 主机设置状态（swap / NTP / GRUB / hosts） |
 | POST | `/host/swap`、`/host/swap-device` | 启用交换文件或已有块设备 |
