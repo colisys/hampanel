@@ -106,7 +106,7 @@ AI 助手见 [docs/ai.md](docs/ai.md)；运行环境管理与 SQLite 存储见 [
 | --- | --- | --- | --- |
 | Linux（glibc/musl） | 原生 | ✅ | systemd、/proc、ufw、crontab、PTY |
 | Windows 10/11 Server | 原生 Win32 + PowerShell | ✅ | Windows 服务；防火墙、任务计划、进程、磁盘、网络均走系统 API |
-| macOS | — | ✅ | 客户端仅用于控制 Linux / Windows 上的 daemon |
+| macOS | — | ✅ | 需 macOS 13+；客户端仅用于控制 Linux / Windows 上的 daemon |
 | Android | — | ✅ | CI 产出已签名 APK；移动端布局（抽屉式主菜单 + 紧凑二级菜单） |
 | iOS | — | ✅ | 未签名 IPA 由 CI 产出，使用前需自行签名（侧载 / 自签工具） |
 
@@ -134,7 +134,8 @@ CI 在 `v*` tag 上发布正式版，在 `nightly` 分支上维护滚动预发�
 AppImage 依赖系统自带的 GTK3 运行库（主流桌面发行版均已提供）；若系统缺少
 FUSE（`libfuse2`），可用 `./hampanel-*.AppImage --appimage-extract-and-run` 运行。
 Windows 绿色版首次运行时会解压到用户临时目录并启动客户端，凭据与配置仍保存在
-`%APPDATA%\Hampanel`，不写入安装目录。macOS 客户端未签名，首次打开需右键「打开」。
+`%APPDATA%\Hampanel`，不写入安装目录。macOS 客户端未签名，首次打开需右键「打开」；
+需要 macOS 13 或更高版本，并使用 Skia 渲染后端兼容老款 Intel GPU。
 iOS 的 IPA 同样未签名，需要用自己的证书和描述文件重新签名后侧载。
 
 Android 签名使用仓库 secrets：`ANDROID_KEYSTORE_BASE64`（PKCS#12 的 base64）、
