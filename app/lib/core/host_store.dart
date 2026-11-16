@@ -50,15 +50,15 @@ class HostStore {
     dir.createSync(recursive: true);
     final dbPath = '${dir.path}${Platform.pathSeparator}hosts.db';
     final db = sqlite3.open(dbPath);
-    // The DB stores client private keys; keep it owner-only on desktop.
+    final store = HostStore._(db, dir)
+      .._migrate()
+      .._migrateLegacyEnrollment();
+    // The DB stores client private keys; keep it and the WAL owner-only.
     await restrictToOwner(File(dbPath));
     for (final suffix in const ['-wal', '-shm']) {
       final extra = File('$dbPath$suffix');
       if (extra.existsSync()) await restrictToOwner(extra);
     }
-    final store = HostStore._(db, dir)
-      .._migrate()
-      .._migrateLegacyEnrollment();
     _instance = store;
     return store;
   }

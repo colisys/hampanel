@@ -69,17 +69,12 @@ class _ComposeSectionState extends State<ComposeSection> {
       return;
     }
     try {
-      final json = await _api.getJson(
-        '/api/v1/docker/compose/${project.name}',
-      );
-      final detail = DockerComposeDetail.fromJson(
-        json as Map<String, dynamic>,
-      );
+      final json = await _api.getJson('/api/v1/docker/compose/${project.name}');
+      final detail = DockerComposeDetail.fromJson(json as Map<String, dynamic>);
       if (!mounted) return;
       final changed = await showDialog<bool>(
         context: context,
-        builder: (context) =>
-            ComposeEditorDialog(detail: detail),
+        builder: (context) => ComposeEditorDialog(detail: detail),
       );
       if (changed == true) {
         _toast('compose 文件已保存');
@@ -98,7 +93,8 @@ class _ComposeSectionState extends State<ComposeSection> {
     final ok = await confirmDialog(
       context,
       title: '接管 ${project.name}?',
-      message: '会将 compose 文件复制到 hampanel 的编排目录，并保留原项目名。'
+      message:
+          '会将 compose 文件复制到 hampanel 的编排目录，并保留原项目名。'
           '相对路径仍通过原目录解析。',
       confirmLabel: '接管',
     );
@@ -116,8 +112,7 @@ class _ComposeSectionState extends State<ComposeSection> {
   }
 
   Future<void> _adoptDialog() async {
-    final candidates =
-        _projects.where((project) => !project.managed).toList();
+    final candidates = _projects.where((project) => !project.managed).toList();
     if (candidates.isEmpty) {
       _toast('没有可接管的外部 compose 项目');
       return;
@@ -242,9 +237,8 @@ class _ComposeSectionState extends State<ComposeSection> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -465,9 +459,7 @@ class _Badge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        border: Border.all(
-          color: accent ? hampanelAccent : hampanelBorder,
-        ),
+        border: Border.all(color: accent ? hampanelAccent : hampanelBorder),
       ),
       child: Text(
         text,

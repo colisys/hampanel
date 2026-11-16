@@ -93,14 +93,12 @@ class _JobDialogState extends State<_JobDialog> {
       await file.parent.create(recursive: true);
       await file.writeAsBytes(bytes);
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('已保存到 ${file.path}')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('已保存到 ${file.path}')));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(describeError(error))));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(describeError(error))));
     }
   }
 
@@ -181,10 +179,7 @@ class _JobDialogState extends State<_JobDialog> {
       ),
       actions: [
         if (job != null && job.resultPath.isNotEmpty && !job.running)
-          TextButton(
-            onPressed: () => _download(),
-            child: const Text('下载产物'),
-          ),
+          TextButton(onPressed: () => _download(), child: const Text('下载产物')),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('关闭'),

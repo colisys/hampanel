@@ -35,6 +35,7 @@ class AppPaths {
     }
     try {
       await directory.create(recursive: true);
+      await restrictDirectoryToOwner(directory);
     } catch (_) {
       // Fall back to the temp directory when the preferred location is not
       // writable (for example a sandboxed or read-only home).
@@ -67,5 +68,16 @@ Future<void> restrictToOwner(File file) async {
     await Process.run('chmod', ['600', file.path]);
   } catch (_) {
     // chmod is best effort; the file lives in the user's config directory.
+  }
+}
+
+/// Keeps the configuration directory private on desktop Unix; the stored
+/// bundles contain client private keys and the AI key lives there too.
+Future<void> restrictDirectoryToOwner(Directory directory) async {
+  if (Platform.isWindows || Platform.isAndroid || Platform.isIOS) return;
+  try {
+    await Process.run('chmod', ['700', directory.path]);
+  } catch (_) {
+    // Best effort, same as restrictToOwner.
   }
 }

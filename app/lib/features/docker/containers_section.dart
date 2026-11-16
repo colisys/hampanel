@@ -210,9 +210,8 @@ class _ContainersSectionState extends State<ContainersSection> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -512,7 +511,8 @@ class _ContainerEditorDialogState extends State<ContainerEditorDialog> {
         : detail.restartPolicy;
     _restart = TextEditingController(text: restart);
     _network = TextEditingController(
-      text: detail == null ||
+      text:
+          detail == null ||
               detail.networkMode == 'default' ||
               detail.networkMode == 'bridge'
           ? ''
@@ -523,9 +523,7 @@ class _ContainerEditorDialogState extends State<ContainerEditorDialog> {
       text: detail?.cpus == null ? '' : '${detail!.cpus}',
     );
     _memory = TextEditingController(
-      text: detail?.memory == null
-          ? ''
-          : '${detail!.memory! ~/ (1024 * 1024)}',
+      text: detail?.memory == null ? '' : '${detail!.memory! ~/ (1024 * 1024)}',
     );
   }
 
@@ -554,7 +552,8 @@ class _ContainerEditorDialogState extends State<ContainerEditorDialog> {
       final ok = await confirmDialog(
         context,
         title: '重建容器 ${_name.text.trim()}?',
-        message: 'Docker 容器不可原地修改。保存后会停止旧容器、按新配置重建；'
+        message:
+            'Docker 容器不可原地修改。保存后会停止旧容器、按新配置重建；'
             '未在表单中保留的运行时参数可能丢失，旧配置会备份在数据目录。',
         confirmLabel: '重建',
         danger: true,
@@ -706,9 +705,7 @@ class _ContainerEditorDialogState extends State<ContainerEditorDialog> {
                   Expanded(
                     child: TextField(
                       controller: _network,
-                      decoration: const InputDecoration(
-                        labelText: '网络（可选）',
-                      ),
+                      decoration: const InputDecoration(labelText: '网络（可选）'),
                     ),
                   ),
                 ],

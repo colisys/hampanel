@@ -105,9 +105,8 @@ class DockerContainer {
 
   bool get running => state == 'running';
 
-  String get networkLabel => networks.isEmpty
-      ? '—'
-      : networks.map((entry) => entry.label).join(', ');
+  String get networkLabel =>
+      networks.isEmpty ? '—' : networks.map((entry) => entry.label).join(', ');
 
   String get portsLabel => portMap.isEmpty
       ? (ports.isEmpty ? '—' : ports)
@@ -138,30 +137,31 @@ class DockerContainer {
 
   String get createdLabel => formatTimestamp(createdAt);
 
-  factory DockerContainer.fromJson(Map<String, dynamic> json) => DockerContainer(
-    id: json['id'] as String? ?? '',
-    name: json['name'] as String? ?? '',
-    image: json['image'] as String? ?? '',
-    state: json['state'] as String? ?? '',
-    status: json['status'] as String? ?? '',
-    ports: json['ports'] as String? ?? '',
-    createdAt: json['created_at'] as String? ?? '',
-    imageId: json['image_id'] as String? ?? '',
-    startedAt: json['started_at'] as String? ?? '',
-    note: json['note'] as String? ?? '',
-    composeProject: json['compose_project'] as String? ?? '',
-    networks: ((json['networks'] as List<dynamic>?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(DockerNetworkInfo.fromJson)
-        .toList(),
-    portMap: ((json['port_map'] as List<dynamic>?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(DockerPort.fromJson)
-        .toList(),
-    stats: json['stats'] is Map<String, dynamic>
-        ? DockerStats.fromJson(json['stats'] as Map<String, dynamic>)
-        : null,
-  );
+  factory DockerContainer.fromJson(Map<String, dynamic> json) =>
+      DockerContainer(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        image: json['image'] as String? ?? '',
+        state: json['state'] as String? ?? '',
+        status: json['status'] as String? ?? '',
+        ports: json['ports'] as String? ?? '',
+        createdAt: json['created_at'] as String? ?? '',
+        imageId: json['image_id'] as String? ?? '',
+        startedAt: json['started_at'] as String? ?? '',
+        note: json['note'] as String? ?? '',
+        composeProject: json['compose_project'] as String? ?? '',
+        networks: ((json['networks'] as List<dynamic>?) ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(DockerNetworkInfo.fromJson)
+            .toList(),
+        portMap: ((json['port_map'] as List<dynamic>?) ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(DockerPort.fromJson)
+            .toList(),
+        stats: json['stats'] is Map<String, dynamic>
+            ? DockerStats.fromJson(json['stats'] as Map<String, dynamic>)
+            : null,
+      );
 }
 
 class DockerMount {
@@ -314,8 +314,7 @@ class DockerOverview {
   final int volumes;
 
   factory DockerOverview.fromJson(Map<String, dynamic> json) {
-    final containers =
-        json['containers'] as Map<String, dynamic>? ?? const {};
+    final containers = json['containers'] as Map<String, dynamic>? ?? const {};
     return DockerOverview(
       available: json['available'] as bool? ?? false,
       engine: json['engine'] as String? ?? '',
@@ -379,10 +378,7 @@ class DockerComposeProject {
 }
 
 class DockerComposeDetail {
-  const DockerComposeDetail({
-    required this.project,
-    required this.content,
-  });
+  const DockerComposeDetail({required this.project, required this.content});
 
   final DockerComposeProject project;
   final String content;
@@ -645,6 +641,5 @@ class DockerSettings {
   );
 }
 
-List<String> _strings(dynamic value) => ((value as List<dynamic>?) ?? const [])
-    .whereType<String>()
-    .toList();
+List<String> _strings(dynamic value) =>
+    ((value as List<dynamic>?) ?? const []).whereType<String>().toList();

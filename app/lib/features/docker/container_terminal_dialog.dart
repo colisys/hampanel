@@ -101,7 +101,9 @@ class _ContainerTerminalDialogState extends State<ContainerTerminalDialog> {
         _connected = false;
         _status = describeError(error);
       });
-      _terminal.write('\r\n\x1b[31m[hampanel] ${describeError(error)}\x1b[0m\r\n');
+      _terminal.write(
+        '\r\n\x1b[31m[hampanel] ${describeError(error)}\x1b[0m\r\n',
+      );
     }
   }
 
@@ -160,10 +162,7 @@ class _ContainerTerminalDialogState extends State<ContainerTerminalDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: _connect,
-          child: const Text('重连'),
-        ),
+        TextButton(onPressed: _connect, child: const Text('重连')),
         FilledButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('关闭'),

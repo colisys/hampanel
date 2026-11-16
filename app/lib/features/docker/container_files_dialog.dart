@@ -28,8 +28,7 @@ class _ContainerFilesDialogState extends State<ContainerFilesDialog> {
 
   ApiClient get _api => PanelScope.of(context).api;
 
-  String get _base =>
-      '/api/v1/docker/containers/${widget.container.id}/files';
+  String get _base => '/api/v1/docker/containers/${widget.container.id}/files';
 
   @override
   void initState() {
@@ -120,11 +119,7 @@ class _ContainerFilesDialogState extends State<ContainerFilesDialog> {
   }
 
   Future<void> _mkdir() async {
-    final name = await textInputDialog(
-      context,
-      title: '新建文件夹',
-      label: '文件夹名称',
-    );
+    final name = await textInputDialog(context, title: '新建文件夹', label: '文件夹名称');
     if (name == null || name.trim().isEmpty) return;
     try {
       await _api.postJson('$_base/mkdir', {'path': _join(name.trim())});
@@ -223,9 +218,8 @@ class _ContainerFilesDialogState extends State<ContainerFilesDialog> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -339,8 +333,14 @@ class _ContainerFilesDialogState extends State<ContainerFilesDialog> {
                             },
                             itemBuilder: (context) => const [
                               PopupMenuItem(value: 'open', child: Text('打开')),
-                              PopupMenuItem(value: 'rename', child: Text('重命名')),
-                              PopupMenuItem(value: 'download', child: Text('下载')),
+                              PopupMenuItem(
+                                value: 'rename',
+                                child: Text('重命名'),
+                              ),
+                              PopupMenuItem(
+                                value: 'download',
+                                child: Text('下载'),
+                              ),
                               PopupMenuItem(value: 'delete', child: Text('删除')),
                             ],
                           ),

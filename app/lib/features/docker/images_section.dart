@@ -158,7 +158,8 @@ class _ImagesSectionState extends State<ImagesSection> {
       final ok = await confirmDialog(
         context,
         title: '镜像正在使用',
-        message: '${image.reference} 正被 ${image.usedBy.join(', ')} 使用。'
+        message:
+            '${image.reference} 正被 ${image.usedBy.join(', ')} 使用。'
             '强制删除可能影响这些容器。',
         confirmLabel: '强制删除',
         danger: true,
@@ -269,10 +270,7 @@ class _ImagesSectionState extends State<ImagesSection> {
   Future<void> _search() async {
     final reference = await showDialog<String>(
       context: context,
-      builder: (context) => _SearchDialog(
-        api: _api,
-        registries: _registries,
-      ),
+      builder: (context) => _SearchDialog(api: _api, registries: _registries),
     );
     if (reference != null) await _pullReference(reference);
   }
@@ -281,9 +279,7 @@ class _ImagesSectionState extends State<ImagesSection> {
     final ok = await confirmDialog(
       context,
       title: all ? '清理所有未使用镜像?' : '清理悬空镜像?',
-      message: all
-          ? '会删除所有未被容器使用的镜像。'
-          : '只删除悬空（dangling）镜像。',
+      message: all ? '会删除所有未被容器使用的镜像。' : '只删除悬空（dangling）镜像。',
       confirmLabel: '清理',
       danger: true,
     );
@@ -326,9 +322,8 @@ class _ImagesSectionState extends State<ImagesSection> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -614,7 +609,10 @@ class _SearchDialogState extends State<_SearchDialog> {
                   initialValue: _registryId,
                   decoration: const InputDecoration(labelText: '检索源'),
                   items: [
-                    const DropdownMenuItem(value: '', child: Text('Docker Hub')),
+                    const DropdownMenuItem(
+                      value: '',
+                      child: Text('Docker Hub'),
+                    ),
                     for (final registry in widget.registries)
                       DropdownMenuItem(
                         value: registry.id,
@@ -685,8 +683,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                               size: 18,
                             ),
                             title: Text(repository),
-                            onTap: () =>
-                                Navigator.pop(context, repository),
+                            onTap: () => Navigator.pop(context, repository),
                           ),
                       ],
                     ),
@@ -807,9 +804,7 @@ class _BuildDialogState extends State<_BuildDialog> {
                     Expanded(
                       child: TextField(
                         controller: _subdir,
-                        decoration: const InputDecoration(
-                          labelText: '子目录（可选）',
-                        ),
+                        decoration: const InputDecoration(labelText: '子目录（可选）'),
                       ),
                     ),
                   ],
@@ -825,9 +820,7 @@ class _BuildDialogState extends State<_BuildDialog> {
               ] else ...[
                 TextField(
                   controller: _local,
-                  decoration: const InputDecoration(
-                    labelText: '本机 tar 上下文路径',
-                  ),
+                  decoration: const InputDecoration(labelText: '本机 tar 上下文路径'),
                 ),
               ],
               const SizedBox(height: 10),

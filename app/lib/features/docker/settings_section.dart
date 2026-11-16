@@ -90,7 +90,8 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
     final ok = await confirmDialog(
       context,
       title: '应用 Docker 设置?',
-      message: '会写入 daemon.json 并重启 Docker。'
+      message:
+          '会写入 daemon.json 并重启 Docker。'
           '未开启 Live Restore 时，重启会停止运行中的容器。',
       confirmLabel: '应用并重启',
       danger: true,
@@ -203,8 +204,7 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
                             contentPadding: EdgeInsets.zero,
                             title: const Text('启用 IPv6'),
                             value: _ipv6,
-                            onChanged: (value) =>
-                                setState(() => _ipv6 = value),
+                            onChanged: (value) => setState(() => _ipv6 = value),
                           ),
                           TextField(
                             controller: _cidr,
@@ -247,8 +247,9 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
                                 child: Text('none'),
                               ),
                             ],
-                            onChanged: (value) =>
-                                setState(() => _logDriver = value ?? 'json-file'),
+                            onChanged: (value) => setState(
+                              () => _logDriver = value ?? 'json-file',
+                            ),
                           ),
                           const SizedBox(height: 10),
                           Row(

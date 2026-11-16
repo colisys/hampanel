@@ -100,9 +100,8 @@ class _RegistriesSectionState extends State<RegistriesSection> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -224,7 +223,10 @@ class _RegistriesSectionState extends State<RegistriesSection> {
                               },
                               itemBuilder: (context) => const [
                                 PopupMenuItem(value: 'edit', child: Text('编辑')),
-                                PopupMenuItem(value: 'delete', child: Text('删除')),
+                                PopupMenuItem(
+                                  value: 'delete',
+                                  child: Text('删除'),
+                                ),
                               ],
                             ),
                           ],
@@ -336,8 +338,14 @@ class _RegistryDialogState extends State<_RegistryDialog> {
                       initialValue: _engine,
                       decoration: const InputDecoration(labelText: '引擎'),
                       items: const [
-                        DropdownMenuItem(value: 'docker', child: Text('Docker')),
-                        DropdownMenuItem(value: 'podman', child: Text('Podman')),
+                        DropdownMenuItem(
+                          value: 'docker',
+                          child: Text('Docker'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'podman',
+                          child: Text('Podman'),
+                        ),
                         DropdownMenuItem(
                           value: 'both',
                           child: Text('Docker + Podman'),
