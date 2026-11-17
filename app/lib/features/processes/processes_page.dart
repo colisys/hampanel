@@ -62,9 +62,15 @@ class _ProcessesPageState extends State<ProcessesPage> {
   }
 
   Future<void> _showDetail(ProcessInfo process) async {
-    await showDialog<void>(
-      context: context,
-      builder: (_) => _ProcessDetailDialog(pid: process.pid),
+    final api = PanelScope.of(context).api;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProcessDetailPage(
+          api: api,
+          pid: process.pid,
+          name: process.name,
+        ),
+      ),
     );
   }
 
@@ -248,7 +254,7 @@ class _ProcessesPageState extends State<ProcessesPage> {
   Widget _processCards() {
     final processes = _filtered;
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(10, 4, 10, 24),
+      padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
       itemCount: processes.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
@@ -325,18 +331,26 @@ class _ProcessesPageState extends State<ProcessesPage> {
   }
 }
 
-class _ProcessDetailDialog extends StatefulWidget {
-  const _ProcessDetailDialog({required this.pid});
+class ProcessDetailPage extends StatefulWidget {
+  const ProcessDetailPage({
+    super.key,
+    required this.api,
+    required this.pid,
+    required this.name,
+  });
 
+  final ApiClient api;
   final int pid;
+  final String name;
 
   @override
-  State<_ProcessDetailDialog> createState() => _ProcessDetailDialogState();
+  State<ProcessDetailPage> createState() => _ProcessDetailPageState();
 }
 
-class _ProcessDetailDialogState extends State<_ProcessDetailDialog> {
+class _ProcessDetailPageState extends State<ProcessDetailPage> {
   ProcessDetail? _detail;
   String? _error;
+  bool _loading = true;
 
   @override
   void initState() {
@@ -345,92 +359,121 @@ class _ProcessDetailDialogState extends State<_ProcessDetailDialog> {
   }
 
   Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
-      final json = await PanelScope.of(context).api
-          .getJson('/api/v1/processes/${widget.pid}');
+      final json = await widget.api.getJson('/api/v1/processes/${widget.pid}');
       if (!mounted) return;
       setState(() {
         _detail = ProcessDetail.fromJson(json as Map<String, dynamic>);
-        _error = null;
+        _loading = false;
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = describeError(error));
+      setState(() {
+        _error = describeError(error);
+        _loading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final detail = _detail;
-    return AlertDialog(
-      title: Text('进程详情 · PID ${widget.pid}'),
-      content: DialogBody(
-        maxWidth: 880,
-        maxHeight: 560,
-        child: _error != null
-            ? ErrorBanner(message: _error!, onRetry: _load)
-            : detail == null
+    return Scaffold(
+      backgroundColor: hampanelBackground,
+      appBar: AppBar(
+        backgroundColor: hampanelBackground,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        title: Text(
+          widget.name.isEmpty ? '进程详情' : widget.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        actions: [
+          IconButton(
+            tooltip: '刷新',
+            onPressed: _load,
+            icon: const Icon(Icons.refresh, size: 20),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: _loading
             ? const LoadingView()
-            : SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _row('名称', detail.name),
-                    _row('状态', detail.state),
-                    _row('父进程', '${detail.ppid}'),
-                    _row('用户 / 组', '${detail.uid} / ${detail.gid}'),
-                    _row('线程数', '${detail.threads}'),
-                    _row('内存占用', formatBytes(detail.rssBytes)),
-                    _row('CPU 时间', _formatTicks(detail.cpuTicks)),
-                    _row('可执行文件', detail.exe.isEmpty ? '-' : detail.exe),
-                    _row('工作目录', detail.cwd.isEmpty ? '-' : detail.cwd),
-                    _row('命令行', detail.command),
-                    const SizedBox(height: 10),
-                    Text(
-                      '监听 / 打开的端口',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
+            : _error != null
+            ? SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: ErrorBanner(message: _error!, onRetry: _load),
+              )
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                children: [
+                  _DetailCard(
+                    title: '概览',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _row('PID', '${detail!.pid}'),
+                        _row('名称', detail.name),
+                        _row('状态', detail.state),
+                        _row('父进程', '${detail.ppid}'),
+                        _row('用户 / 组', '${detail.uid} / ${detail.gid}'),
+                        _row('线程数', '${detail.threads}'),
+                        _row('内存占用', formatBytes(detail.rssBytes)),
+                        _row('CPU 时间', _formatTicks(detail.cpuTicks)),
+                      ],
                     ),
-                    const SizedBox(height: 6),
-                    if (detail.ports.isEmpty)
-                      Text(
-                        '未发现关联端口',
-                        style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-                      )
-                    else
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          for (final port in detail.ports)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 7,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: hampanelBorder),
-                              ),
-                              child: Text(
-                                '${port.protocol} ${port.localPort} · ${port.state}',
-                                style: monospace.copyWith(fontSize: 11),
-                              ),
+                  ),
+                  _DetailCard(
+                    title: '路径',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _row('可执行文件', detail.exe.isEmpty ? '-' : detail.exe),
+                        _row('工作目录', detail.cwd.isEmpty ? '-' : detail.cwd),
+                        _row('命令行', detail.command),
+                      ],
+                    ),
+                  ),
+                  _DetailCard(
+                    title: '监听 / 打开的端口',
+                    child: detail.ports.isEmpty
+                        ? Text(
+                            '未发现关联端口',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: hampanelMuted,
                             ),
-                        ],
-                      ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '打开的文件（${detail.openFiles.length}）',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Container(
-                      height: 160,
+                          )
+                        : Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (final port in detail.ports)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 7,
+                                    vertical: 3,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: hampanelBorder),
+                                  ),
+                                  child: Text(
+                                    '${port.protocol} ${port.localPort} · ${port.state}',
+                                    style: monospace.copyWith(fontSize: 11),
+                                  ),
+                                ),
+                            ],
+                          ),
+                  ),
+                  _DetailCard(
+                    title: '打开的文件（${detail.openFiles.length}）',
+                    child: Container(
+                      height: 180,
                       width: double.infinity,
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
@@ -446,16 +489,10 @@ class _ProcessDetailDialogState extends State<_ProcessDetailDialog> {
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('关闭'),
-        ),
-      ],
     );
   }
 
@@ -475,7 +512,7 @@ class _ProcessDetailDialogState extends State<_ProcessDetailDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 96,
+            width: 92,
             child: Text(
               label,
               style: TextStyle(fontSize: 11.5, color: hampanelMuted),
@@ -488,6 +525,39 @@ class _ProcessDetailDialogState extends State<_ProcessDetailDialog> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DetailCard extends StatelessWidget {
+  const _DetailCard({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              child,
+            ],
+          ),
+        ),
       ),
     );
   }

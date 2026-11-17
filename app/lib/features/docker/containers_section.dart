@@ -86,7 +86,7 @@ class _ContainersSectionState extends State<ContainersSection> {
   Future<void> _create() async {
     final created = await showDialog<bool>(
       context: context,
-      builder: (context) => const ContainerEditorDialog(),
+      builder: (context) => ContainerEditorDialog(api: _api),
     );
     if (created == true) {
       _toast('容器已创建');
@@ -105,7 +105,7 @@ class _ContainersSectionState extends State<ContainersSection> {
       if (!mounted) return;
       final changed = await showDialog<bool>(
         context: context,
-        builder: (context) => ContainerEditorDialog(detail: detail),
+        builder: (context) => ContainerEditorDialog(api: _api, detail: detail),
       );
       if (changed == true) {
         _toast('容器已重建');
@@ -197,14 +197,14 @@ class _ContainersSectionState extends State<ContainersSection> {
   Future<void> _terminal(DockerContainer container) async {
     await showDialog<void>(
       context: context,
-      builder: (context) => ContainerTerminalDialog(container: container),
+      builder: (context) => ContainerTerminalDialog(api: _api, container: container),
     );
   }
 
   Future<void> _files(DockerContainer container) async {
     await showDialog<void>(
       context: context,
-      builder: (context) => ContainerFilesDialog(container: container),
+      builder: (context) => ContainerFilesDialog(api: _api, container: container),
     );
   }
 
@@ -456,8 +456,9 @@ class _Field extends StatelessWidget {
 }
 
 class ContainerEditorDialog extends StatefulWidget {
-  const ContainerEditorDialog({super.key, this.detail});
+  const ContainerEditorDialog({super.key, required this.api, this.detail});
 
+  final ApiClient api;
   final DockerContainerDetail? detail;
 
   @override
@@ -482,7 +483,7 @@ class _ContainerEditorDialogState extends State<ContainerEditorDialog> {
 
   bool get _editing => widget.detail != null;
 
-  ApiClient get _api => PanelScope.of(context).api;
+  ApiClient get _api => widget.api;
 
   @override
   void initState() {

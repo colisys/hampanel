@@ -54,7 +54,7 @@ class _RegistriesSectionState extends State<RegistriesSection> {
   Future<void> _edit([DockerRegistry? registry]) async {
     final saved = await showDialog<bool>(
       context: context,
-      builder: (context) => _RegistryDialog(registry: registry),
+      builder: (context) => _RegistryDialog(api: _api, registry: registry),
     );
     if (saved == true) {
       _toast(registry == null ? '镜像源已添加' : '镜像源已更新');
@@ -242,8 +242,9 @@ class _RegistriesSectionState extends State<RegistriesSection> {
 }
 
 class _RegistryDialog extends StatefulWidget {
-  const _RegistryDialog({this.registry});
+  const _RegistryDialog({required this.api, this.registry});
 
+  final ApiClient api;
   final DockerRegistry? registry;
 
   @override
@@ -262,7 +263,7 @@ class _RegistryDialogState extends State<_RegistryDialog> {
 
   bool get _editing => widget.registry != null;
 
-  ApiClient get _api => PanelScope.of(context).api;
+  ApiClient get _api => widget.api;
 
   @override
   void initState() {

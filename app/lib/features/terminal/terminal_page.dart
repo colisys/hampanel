@@ -28,6 +28,7 @@ class _TerminalPageState extends State<TerminalPage> {
   StreamSubscription<dynamic>? _subscription;
   String _status = '正在连接';
   bool _connected = false;
+  double _fontSize = 13;
 
   @override
   void initState() {
@@ -128,6 +129,11 @@ class _TerminalPageState extends State<TerminalPage> {
     }
   }
 
+  void _send(String data) {
+    if (!_connected || _socket?.readyState != WebSocket.open) return;
+    _socket?.add(data);
+  }
+
   @override
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 720;
@@ -135,13 +141,14 @@ class _TerminalPageState extends State<TerminalPage> {
       children: [
         PageHeader(
           title: '终端',
-          subtitle: 'PTY 会话通过 WebSocket + mTLS 传输',
+          subtitle: compact ? null : 'PTY 会话通过 WebSocket + mTLS 传输',
           actions: [
             StatusPill(text: _status, good: _connected),
-            const SizedBox(width: 10),
+            const SizedBox(width: 6),
             if (PlatformSupport.isMobile)
               IconButton(
                 tooltip: '切换键盘',
+                visualDensity: VisualDensity.compact,
                 onPressed: () {
                   if (_terminalFocus.hasFocus) {
                     _terminalFocus.unfocus();
@@ -151,20 +158,29 @@ class _TerminalPageState extends State<TerminalPage> {
                 },
                 icon: const Icon(Icons.keyboard_outlined, size: 18),
               ),
-            OutlinedButton.icon(
-              onPressed: _connect,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('重新连接'),
-            ),
+            if (compact)
+              IconButton(
+                tooltip: '重新连接',
+                visualDensity: VisualDensity.compact,
+                onPressed: _connect,
+                icon: const Icon(Icons.refresh, size: 18),
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: _connect,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('重新连接'),
+              ),
           ],
         ),
+        if (compact) _shortcutBar(),
         Expanded(
           child: Padding(
             padding: EdgeInsets.fromLTRB(
-              compact ? 10 : 24,
+              compact ? 12 : 24,
               0,
-              compact ? 10 : 24,
-              compact ? 10 : 24,
+              compact ? 12 : 24,
+              compact ? 12 : 24,
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(3),
@@ -179,6 +195,7 @@ class _TerminalPageState extends State<TerminalPage> {
                   _terminal,
                   focusNode: _terminalFocus,
                   autofocus: !PlatformSupport.isMobile,
+                  textStyle: TerminalStyle(fontSize: _fontSize),
                   padding: const EdgeInsets.all(4),
                 ),
               ),
@@ -186,6 +203,74 @@ class _TerminalPageState extends State<TerminalPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _shortcutBar() {
+    final keys = <(String, String)>[
+      ('Esc', '\x1b'),
+      ('Tab', '\t'),
+      ('Ctrl+C', '\x03'),
+      ('Ctrl+D', '\x04'),
+      ('↑', '\x1b[A'),
+      ('↓', '\x1b[B'),
+      ('←', '\x1b[D'),
+      ('→', '\x1b[C'),
+      ('Home', '\x1b[H'),
+      ('End', '\x1b[F'),
+      ('PgUp', '\x1b[5~'),
+      ('PgDn', '\x1b[6~'),
+    ];
+    return SizedBox(
+      height: 42,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        children: [
+          for (final key in keys)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: OutlinedButton(
+                onPressed: _connected ? () => _send(key.$2) : null,
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(42, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  textStyle: const TextStyle(fontSize: 11),
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: Text(key.$1),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: OutlinedButton(
+              onPressed: _fontSize > 10
+                  ? () => setState(() => _fontSize -= 1)
+                  : null,
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(38, 32),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text('A-'),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: OutlinedButton(
+              onPressed: _fontSize < 22
+                  ? () => setState(() => _fontSize += 1)
+                  : null,
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(38, 32),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text('A+'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

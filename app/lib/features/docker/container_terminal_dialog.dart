@@ -7,13 +7,17 @@ import 'package:xterm/xterm.dart';
 
 import '../../core/api_client.dart';
 import '../../core/models/docker.dart';
-import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 
 class ContainerTerminalDialog extends StatefulWidget {
-  const ContainerTerminalDialog({super.key, required this.container});
+  const ContainerTerminalDialog({
+    super.key,
+    required this.api,
+    required this.container,
+  });
 
+  final ApiClient api;
   final DockerContainer container;
 
   @override
@@ -56,7 +60,7 @@ class _ContainerTerminalDialogState extends State<ContainerTerminalDialog> {
         _status = '正在建立 mTLS 会话';
         _connected = false;
       });
-      final socket = await PanelScope.of(context).api.openSocket(
+      final socket = await widget.api.openSocket(
         '/api/v1/docker/containers/${widget.container.id}/terminal/ws',
         {
           'cols': '${_terminal.viewWidth}',

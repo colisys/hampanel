@@ -722,9 +722,9 @@ class _AiPageState extends State<AiPage> {
                               )
                             : ListView.builder(
                                 padding: EdgeInsets.fromLTRB(
-                                  compact ? 12 : 24,
+                                  24,
                                   0,
-                                  compact ? 12 : 24,
+                                  24,
                                   12,
                                 ),
                                 itemCount: _messages.length,
@@ -752,12 +752,12 @@ class _AiPageState extends State<AiPage> {
                               child: TextField(
                                 controller: _inputController,
                                 minLines: 1,
-                                maxLines: MediaQuery.sizeOf(context).width < 720
-                                    ? 3
-                                    : 5,
+                                maxLines: compact ? 4 : 6,
+                                textInputAction: TextInputAction.send,
                                 onSubmitted: (_) => _send(),
                                 decoration: const InputDecoration(
-                                  hintText: '描述你想完成的操作…（Enter 发送）',
+                                  hintText: '描述操作…',
+                                  isDense: true,
                                 ),
                               ),
                             ),

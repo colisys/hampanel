@@ -55,7 +55,7 @@ class _ComposeSectionState extends State<ComposeSection> {
   Future<void> _create() async {
     final created = await showDialog<bool>(
       context: context,
-      builder: (context) => const ComposeEditorDialog(),
+      builder: (context) => ComposeEditorDialog(api: _api),
     );
     if (created == true) {
       _toast('编排项目已创建');
@@ -74,7 +74,7 @@ class _ComposeSectionState extends State<ComposeSection> {
       if (!mounted) return;
       final changed = await showDialog<bool>(
         context: context,
-        builder: (context) => ComposeEditorDialog(detail: detail),
+        builder: (context) => ComposeEditorDialog(api: _api, detail: detail),
       );
       if (changed == true) {
         _toast('compose 文件已保存');
@@ -473,8 +473,9 @@ class _Badge extends StatelessWidget {
 }
 
 class ComposeEditorDialog extends StatefulWidget {
-  const ComposeEditorDialog({super.key, this.detail});
+  const ComposeEditorDialog({super.key, required this.api, this.detail});
 
+  final ApiClient api;
   final DockerComposeDetail? detail;
 
   @override
@@ -489,7 +490,7 @@ class _ComposeEditorDialogState extends State<ComposeEditorDialog> {
 
   bool get _editing => widget.detail != null;
 
-  ApiClient get _api => PanelScope.of(context).api;
+  ApiClient get _api => widget.api;
 
   @override
   void initState() {

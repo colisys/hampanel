@@ -130,8 +130,15 @@ pub fn run(allocator: std.mem.Allocator, process_args: std.process.Args) !u8 {
     }
 
     if (args.items.len == 1) {
-        printUsage();
-        return 0;
+        // Older service units sometimes invoke the binary without `run`.
+        // Under systemd, treat that as the server command instead of exiting
+        // and letting Restart=always produce a restart loop.
+        if (compat.getEnv("INVOCATION_ID") != null) {
+            opts.command = .run;
+        } else {
+            printUsage();
+            return 0;
+        }
     }
 
     return switch (opts.command) {

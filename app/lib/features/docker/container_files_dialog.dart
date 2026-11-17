@@ -4,13 +4,17 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
 import '../../core/models/docker.dart';
-import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 
 class ContainerFilesDialog extends StatefulWidget {
-  const ContainerFilesDialog({super.key, required this.container});
+  const ContainerFilesDialog({
+    super.key,
+    required this.api,
+    required this.container,
+  });
 
+  final ApiClient api;
   final DockerContainer container;
 
   @override
@@ -26,7 +30,7 @@ class _ContainerFilesDialogState extends State<ContainerFilesDialog> {
   String? _error;
   bool _loading = true;
 
-  ApiClient get _api => PanelScope.of(context).api;
+  ApiClient get _api => widget.api;
 
   String get _base => '/api/v1/docker/containers/${widget.container.id}/files';
 

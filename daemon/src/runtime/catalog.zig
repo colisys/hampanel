@@ -204,7 +204,7 @@ pub const runtimes = [_]Runtime{
         .docker_repo = "library/node",
         .workdir = "/app",
         .web_port = 3000,
-        .recommended_tags = &.{ "24-bookworm-slim", "22-bookworm-slim", "24-bookworm", "22-bookworm" },
+        .recommended_tags = &.{ "24-bookworm-slim", "22-bookworm-slim", "24-alpine", "22-alpine", "24-bookworm", "22-bookworm" },
         .extensions = &.{
             .{ .id = "typescript", .label = "TypeScript" },
             .{ .id = "pnpm", .label = "pnpm" },
@@ -222,7 +222,7 @@ pub const runtimes = [_]Runtime{
         .docker_repo = "library/python",
         .workdir = "/app",
         .web_port = 8000,
-        .recommended_tags = &.{ "3.13-slim-bookworm", "3.12-slim-bookworm" },
+        .recommended_tags = &.{ "3.13-slim-bookworm", "3.12-slim-bookworm", "3.13-alpine", "3.12-alpine" },
         .extensions = &.{
             .{ .id = "flask", .label = "Flask" },
             .{ .id = "fastapi", .label = "FastAPI" },
@@ -254,7 +254,7 @@ pub const runtimes = [_]Runtime{
         .docker_repo = "library/golang",
         .workdir = "/app",
         .web_port = 8080,
-        .recommended_tags = &.{ "1.25-bookworm", "1.24-bookworm" },
+        .recommended_tags = &.{ "1.25-bookworm", "1.24-bookworm", "1.25-alpine" },
         .extensions = &.{
             .{ .id = "air", .label = "Air（热重载）" },
             .{ .id = "delve", .label = "Delve（调试）" },
@@ -270,7 +270,7 @@ pub const runtimes = [_]Runtime{
         .docker_repo = "library/php",
         .workdir = "/var/www/html",
         .web_port = 80,
-        .recommended_tags = &.{ "8.5-fpm-bookworm", "8.5-fpm" },
+        .recommended_tags = &.{ "8.5-fpm-bookworm", "8.5-fpm-alpine", "8.5-fpm" },
         .extensions = &.{
             .{ .id = "opcache", .label = "OPcache" },
             .{ .id = "redis", .label = "Redis" },
@@ -294,7 +294,7 @@ pub const runtimes = [_]Runtime{
         .docker_repo = "library/ruby",
         .workdir = "/app",
         .web_port = 3000,
-        .recommended_tags = &.{ "3.4-slim-bookworm", "3.3-slim-bookworm" },
+        .recommended_tags = &.{ "3.4-slim-bookworm", "3.3-slim-bookworm", "3.4-alpine", "3.3-alpine" },
         .extensions = &.{
             .{ .id = "rails", .label = "Rails" },
             .{ .id = "sinatra", .label = "Sinatra" },

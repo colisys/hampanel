@@ -53,7 +53,7 @@ class _DockerPageState extends State<DockerPage> {
       _error = null;
     });
     try {
-      final json = await _api.getJson('/api/v1/docker/test-connection');
+      final json = await _api.postJson('/api/v1/docker/test-connection', const <String, dynamic>{});
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       setState(() {

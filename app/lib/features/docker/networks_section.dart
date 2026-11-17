@@ -54,7 +54,7 @@ class _NetworksSectionState extends State<NetworksSection> {
   Future<void> _create() async {
     final created = await showDialog<bool>(
       context: context,
-      builder: (context) => const _NetworkDialog(),
+      builder: (context) => _NetworkDialog(api: _api),
     );
     if (created == true) {
       _toast('网络已创建');
@@ -225,7 +225,9 @@ class _NetworksSectionState extends State<NetworksSection> {
 }
 
 class _NetworkDialog extends StatefulWidget {
-  const _NetworkDialog();
+  const _NetworkDialog({required this.api});
+
+  final ApiClient api;
 
   @override
   State<_NetworkDialog> createState() => _NetworkDialogState();
@@ -240,7 +242,7 @@ class _NetworkDialogState extends State<_NetworkDialog> {
   bool _saving = false;
   String? _error;
 
-  ApiClient get _api => PanelScope.of(context).api;
+  ApiClient get _api => widget.api;
 
   @override
   void dispose() {

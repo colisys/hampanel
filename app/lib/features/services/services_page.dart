@@ -108,8 +108,90 @@ class _ServicesPageState extends State<ServicesPage> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Widget _serviceMenu(ServiceInfo service) {
+    return PopupMenuButton<String>(
+      tooltip: '操作',
+      icon: const Icon(Icons.more_horiz, size: 18),
+      onSelected: (value) => _run(service, value),
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: 'start', child: Text('启动')),
+        PopupMenuItem(value: 'stop', child: Text('停止')),
+        PopupMenuItem(value: 'restart', child: Text('重启')),
+        PopupMenuItem(value: 'reload', child: Text('重载')),
+        PopupMenuItem(value: 'enable', child: Text('开机自启')),
+        PopupMenuItem(value: 'disable', child: Text('取消自启')),
+      ],
+    );
+  }
+
+  Widget _serviceCards() {
+    final services = _filtered;
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      itemCount: services.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final service = services[index];
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        service.unit,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: monospace.copyWith(fontSize: 12.5),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    StatusPill(
+                      text: service.active,
+                      good: service.running,
+                    ),
+                    _serviceMenu(service),
+                    IconButton(
+                      tooltip: '日志',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _showLogs(service),
+                      icon: const Icon(
+                        Icons.receipt_long_outlined,
+                        size: 18,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  service.description.isEmpty ? service.sub : service.description,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: hampanelMuted,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  service.sub,
+                  style: TextStyle(fontSize: 10.5, color: hampanelMuted),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 720;
     return Column(
       children: [
         PageHeader(
@@ -137,6 +219,8 @@ class _ServicesPageState extends State<ServicesPage> {
         Expanded(
           child: _loading
               ? const LoadingView()
+              : compact
+              ? _serviceCards()
               : Padding(
                   padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
                   child: Card(

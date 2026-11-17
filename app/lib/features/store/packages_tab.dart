@@ -169,18 +169,32 @@ class _PackagesTabState extends State<PackagesTab> {
     return Column(
       children: [
         Padding(
-          padding: EdgeInsets.fromLTRB(
-            MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
-            8,
-            MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
-            10,
-          ),
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 10),
           child: MediaQuery.sizeOf(context).width < 720
-              ? Wrap(
-                  spacing: 10,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: _storeActions(status),
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        StatusPill(text: status.manager, good: true),
+                        const SizedBox(width: 10),
+                        Text(
+                          '${status.tools.length} 个精选工具',
+                          style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(
+                        spacing: 10,
+                        runSpacing: 8,
+                        alignment: WrapAlignment.end,
+                        children: _storeActions(status).skip(2).toList(),
+                      ),
+                    ),
+                  ],
                 )
               : Row(
                   children: [
@@ -197,12 +211,7 @@ class _PackagesTabState extends State<PackagesTab> {
         ),
         Expanded(
           child: ListView.separated(
-            padding: EdgeInsets.fromLTRB(
-              MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
-              0,
-              MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
-              24,
-            ),
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
             itemCount: status.tools.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, index) {
@@ -271,19 +280,29 @@ class _PackagesTabState extends State<PackagesTab> {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 10,
-                              runSpacing: 8,
-                              crossAxisAlignment: WrapCrossAlignment.center,
+                            Row(
                               children: [
-                                Text(
-                                  tool.binary,
-                                  style: monospace.copyWith(fontSize: 11.5),
+                                Expanded(
+                                  child: Wrap(
+                                    spacing: 10,
+                                    runSpacing: 8,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
+                                    children: [
+                                      Text(
+                                        tool.binary,
+                                        style: monospace.copyWith(
+                                          fontSize: 11.5,
+                                        ),
+                                      ),
+                                      StatusPill(
+                                        text: tool.installed ? '已安装' : '未安装',
+                                        good: tool.installed,
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                StatusPill(
-                                  text: tool.installed ? '已安装' : '未安装',
-                                  good: tool.installed,
-                                ),
+                                const SizedBox(width: 8),
                                 installButton,
                               ],
                             ),

@@ -9,6 +9,7 @@ import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/enrollment_trust.dart';
 import '../../ui/widgets.dart';
+import '../auth/install_page.dart';
 
 /// 多机管理：本机 SQLite 中的受管主机列表、别名与凭据 CRUD。
 class HostsPage extends StatefulWidget {
@@ -39,6 +40,59 @@ class _HostsPageState extends State<HostsPage> {
   }
 
   Future<void> _add() async {
+    final mode = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('新增主机'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'paste'),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.content_paste_outlined),
+                title: Text('粘贴 enrollment'),
+                subtitle: Text('已经有 daemon 导出的 enroll.json'),
+              ),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'ssh'),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.terminal),
+                title: Text('通过 SSH 安装'),
+                subtitle: Text('复用起始页的安装向导，自动导入凭据'),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (mode == null) return;
+    if (mode == 'ssh') {
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => InstallPage(
+            onEnrolled: (enrollment, {String? alias}) async {
+              final record = _hosts.upsert(
+                alias: alias,
+                enrollment: enrollment,
+                activate: true,
+              );
+              _afterChange();
+              await widget.onSwitchHost(record);
+            },
+          ),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
     final created = await showDialog<HostRecord>(
       context: context,
       builder: (_) => _HostEditDialog(store: _hosts),

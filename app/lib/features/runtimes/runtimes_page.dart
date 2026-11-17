@@ -211,22 +211,6 @@ class _RuntimesPageState extends State<RuntimesPage> {
     );
   }
 
-  Future<void> _dockerSettings() async {
-    try {
-      final json = await _api.getJson('/api/v1/docker/settings');
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (_) => _DockerSettingsDialog(
-          api: _api,
-          initial: json as Map<String, dynamic>,
-        ),
-      );
-    } catch (error) {
-      _toast(describeError(error));
-    }
-  }
-
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -241,12 +225,6 @@ class _RuntimesPageState extends State<RuntimesPage> {
           title: '运行环境',
           subtitle: '借宿主机 Docker 运行的隔离运行时 · 配置、扩展与进程统一管理',
           actions: [
-            OutlinedButton.icon(
-              onPressed: _busy ? null : _dockerSettings,
-              icon: const Icon(Icons.settings_ethernet, size: 16),
-              label: const Text('Docker 设置'),
-            ),
-            const SizedBox(width: 10),
             FilledButton.icon(
               onPressed: _busy ? null : _create,
               icon: const Icon(Icons.add, size: 17),
@@ -439,13 +417,17 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
   final _image = TextEditingController();
   final _tag = TextEditingController();
   final _port = TextEditingController();
-  final _cpu = TextEditingController();
-  final _memory = TextEditingController();
+  final _customMemory = TextEditingController();
   final _customMirror = TextEditingController();
+  final _customExtension = TextEditingController();
   RuntimePreset? _preset;
   String _mirror = '';
   final Set<String> _extensions = {};
   List<String> _tags = const [];
+  bool _customBase = false;
+  int _cpuPercent = 0;
+  int _cpuCount = 0;
+  String _memoryChoice = '';
 
   @override
   void initState() {
@@ -460,9 +442,9 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
       _image,
       _tag,
       _port,
-      _cpu,
-      _memory,
+      _customMemory,
       _customMirror,
+      _customExtension,
     ]) {
       controller.dispose();
     }
@@ -477,6 +459,7 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
       _port.text = '${preset.webPort}';
       _extensions.clear();
       _tags = preset.recommendedTags;
+      _customBase = false;
     });
     _loadTags(preset);
   }
@@ -486,16 +469,37 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
       final json = await widget.api.getJson(
         '/api/v1/runtimes/catalog/${preset.id}/tags',
       );
-      final tags =
+      final fetched =
           (((json as Map<String, dynamic>)['tags'] as List<dynamic>?) ??
                   const [])
-              .whereType<String>()
-              .toList();
+              .whereType<String>();
       if (!mounted || _preset?.id != preset.id) return;
-      setState(() => _tags = tags);
+      final seen = <String>{};
+      final merged = <String>[];
+      for (final tag in [...preset.recommendedTags, ...fetched]) {
+        if (seen.add(tag)) merged.add(tag);
+        if (merged.length >= 30) break;
+      }
+      setState(() => _tags = merged);
     } catch (_) {
       // keep recommended tags
     }
+  }
+
+  void _addCustomExtension() {
+    final value = _customExtension.text.trim();
+    if (value.isEmpty) return;
+    if (value.contains(' ') || value.contains('\n')) return;
+    setState(() {
+      _extensions.add(value);
+      _customExtension.clear();
+    });
+  }
+
+  List<String> get _tagOptions {
+    final options = <String>{..._tags};
+    if (_tag.text.isNotEmpty) options.add(_tag.text);
+    return options.toList();
   }
 
   void _submit() {
@@ -515,9 +519,16 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
     };
     final port = int.tryParse(_port.text.trim());
     if (port != null) request['port'] = port;
-    final cpu = double.tryParse(_cpu.text.trim());
+    final cpu = _cpuCount > 0
+        ? _cpuCount.toDouble()
+        : (_cpuPercent > 0 ? _cpuPercent / 100.0 : null);
     if (cpu != null) request['cpu'] = cpu;
-    final memory = int.tryParse(_memory.text.trim());
+    int? memory;
+    if (_memoryChoice == 'custom') {
+      memory = int.tryParse(_customMemory.text.trim());
+    } else if (_memoryChoice.isNotEmpty) {
+      memory = int.tryParse(_memoryChoice);
+    }
     if (memory != null) request['memory_mb'] = memory;
     Navigator.of(context).pop(request);
   }
@@ -562,35 +573,69 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
                 ),
               ),
               const SizedBox(height: 10),
-              FormRow(
-                flex: const [3, 2],
-                children: [
-                  TextField(
-                    controller: _image,
-                    decoration: const InputDecoration(labelText: '镜像'),
-                  ),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('预设底包')),
+                  ButtonSegment(value: true, label: Text('自定义底包')),
+                ],
+                selected: {_customBase},
+                onSelectionChanged: (value) {
+                  setState(() {
+                    _customBase = value.first;
+                    if (!_customBase && preset != null) {
+                      _image.text = preset.image;
+                      _tag.text = preset.tag;
+                    }
+                  });
+                },
+              ),
+              const SizedBox(height: 10),
+              if (_customBase)
+                FormRow(
+                  flex: const [3, 2],
+                  children: [
+                    TextField(
+                      controller: _image,
+                      decoration: const InputDecoration(
+                        labelText: '自定义镜像',
+                        hintText: 'registry.example.com/base:tag',
+                      ),
+                    ),
+                    TextField(
+                      controller: _tag,
+                      decoration: const InputDecoration(labelText: 'Tag / 版本'),
+                    ),
+                  ],
+                )
+              else ...[
+                Text(
+                  '镜像：${preset?.image ?? '—'}',
+                  style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+                ),
+                const SizedBox(height: 8),
+                if (_tagOptions.isNotEmpty)
+                  DropdownButtonFormField<String>(
+                    key: ValueKey('tag-${preset?.id}-${_tagOptions.length}'),
+                    initialValue: _tagOptions.contains(_tag.text)
+                        ? _tag.text
+                        : _tagOptions.first,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Tag / 版本'),
+                    items: [
+                      for (final tag in _tagOptions)
+                        DropdownMenuItem(
+                          value: tag,
+                          child: Text(tag, overflow: TextOverflow.ellipsis),
+                        ),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _tag.text = value ?? ''),
+                  )
+                else
                   TextField(
                     controller: _tag,
                     decoration: const InputDecoration(labelText: 'Tag / 版本'),
                   ),
-                ],
-              ),
-              if (preset != null && preset.recommendedTags.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: [
-                    for (final tag in _tags.take(16))
-                      ActionChip(
-                        label: Text(
-                          tag,
-                          style: const TextStyle(fontSize: 10.5),
-                        ),
-                        onPressed: () => setState(() => _tag.text = tag),
-                      ),
-                  ],
-                ),
               ],
               const SizedBox(height: 10),
               FormRow(
@@ -599,20 +644,63 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
                     controller: _port,
                     decoration: const InputDecoration(labelText: '宿主端口'),
                   ),
-                  TextField(
-                    controller: _cpu,
-                    decoration: const InputDecoration(
-                      labelText: 'CPU 限额（可选）',
-                      hintText: '1.0',
-                    ),
+                  _NumberStepper(
+                    label: 'CPU 限额',
+                    value: _cpuPercent == 0 ? '不限' : '$_cpuPercent%',
+                    onMinus: _cpuPercent > 0
+                        ? () => setState(() => _cpuPercent -= 10)
+                        : null,
+                    onPlus: _cpuPercent < 1600
+                        ? () => setState(() => _cpuPercent += 10)
+                        : null,
                   ),
-                  TextField(
-                    controller: _memory,
-                    decoration: const InputDecoration(
-                      labelText: '内存 MB（可选）',
-                      hintText: '512',
-                    ),
+                  _NumberStepper(
+                    label: 'CPU 数量',
+                    value: _cpuCount == 0 ? '不限' : '$_cpuCount 核',
+                    onMinus: _cpuCount > 0
+                        ? () => setState(() => _cpuCount -= 1)
+                        : null,
+                    onPlus: _cpuCount < 64
+                        ? () => setState(() => _cpuCount += 1)
+                        : null,
                   ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'CPU 限额按 10% 步进（100% = 1 核）；CPU 数量优先于百分比。',
+                style: TextStyle(fontSize: 10.5, color: hampanelMuted),
+              ),
+              const SizedBox(height: 10),
+              FormRow(
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: _memoryChoice,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: '内存限额'),
+                    items: const [
+                      DropdownMenuItem(value: '', child: Text('不限制')),
+                      DropdownMenuItem(value: '128', child: Text('128 MB')),
+                      DropdownMenuItem(value: '256', child: Text('256 MB')),
+                      DropdownMenuItem(value: '512', child: Text('512 MB')),
+                      DropdownMenuItem(value: '1024', child: Text('1 GB')),
+                      DropdownMenuItem(value: '2048', child: Text('2 GB')),
+                      DropdownMenuItem(value: '4096', child: Text('4 GB')),
+                      DropdownMenuItem(value: '8192', child: Text('8 GB')),
+                      DropdownMenuItem(value: 'custom', child: Text('自定义')),
+                    ],
+                    onChanged: (value) =>
+                        setState(() => _memoryChoice = value ?? ''),
+                  ),
+                  if (_memoryChoice == 'custom')
+                    TextField(
+                      controller: _customMemory,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '自定义内存（MB）',
+                        hintText: '1536',
+                      ),
+                    ),
                 ],
               ),
               const SizedBox(height: 10),
@@ -642,14 +730,15 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
                   hintText: 'https://mirrors.example.com',
                 ),
               ),
-              if (preset != null && preset.extensions.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                const Text(
-                  '扩展 / 插件',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                ),
+              const SizedBox(height: 12),
+              const Text(
+                '扩展 / 插件',
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+              if (preset != null && preset.extensions.isNotEmpty)
                 Wrap(
                   spacing: 8,
+                  runSpacing: 4,
                   children: [
                     for (final extension in preset.extensions)
                       FilterChip(
@@ -665,7 +754,48 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
                       ),
                   ],
                 ),
-              ],
+              if (_extensions.any(
+                (id) =>
+                    preset == null ||
+                    !preset.extensions.any((item) => item.id == id),
+              ))
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    for (final id in _extensions.where(
+                      (id) =>
+                          preset == null ||
+                          !preset.extensions.any((item) => item.id == id),
+                    ))
+                      InputChip(
+                        label: Text(id),
+                        onDeleted: () => setState(() => _extensions.remove(id)),
+                      ),
+                  ],
+                ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _customExtension,
+                      decoration: const InputDecoration(
+                        labelText: '自定义扩展 ID',
+                        hintText: '例如 redis 或 vips',
+                        isDense: true,
+                      ),
+                      onSubmitted: (_) => _addCustomExtension(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: '添加扩展',
+                    onPressed: _addCustomExtension,
+                    icon: const Icon(Icons.add_circle_outline, size: 20),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
@@ -1024,149 +1154,6 @@ class _ProcessesDialogState extends State<_ProcessesDialog> {
   }
 }
 
-class _DockerSettingsDialog extends StatefulWidget {
-  const _DockerSettingsDialog({required this.api, required this.initial});
-
-  final ApiClient api;
-  final Map<String, dynamic> initial;
-
-  @override
-  State<_DockerSettingsDialog> createState() => _DockerSettingsDialogState();
-}
-
-class _DockerSettingsDialogState extends State<_DockerSettingsDialog> {
-  late final TextEditingController _mirrors;
-  late final TextEditingController _cidr;
-  late bool _ipv6;
-  late bool _experimental;
-  bool _restart = true;
-  bool _busy = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final mirrors =
-        ((widget.initial['registry_mirrors'] as List<dynamic>?) ?? const [])
-            .whereType<String>()
-            .join('\n');
-    _mirrors = TextEditingController(text: mirrors);
-    _cidr = TextEditingController(
-      text: widget.initial['fixed_cidr_v6'] as String? ?? '',
-    );
-    _ipv6 = widget.initial['ipv6'] as bool? ?? false;
-    _experimental = widget.initial['experimental'] as bool? ?? false;
-  }
-
-  @override
-  void dispose() {
-    _mirrors.dispose();
-    _cidr.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    setState(() => _busy = true);
-    try {
-      final mirrors = _mirrors.text
-          .split('\n')
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty)
-          .toList();
-      final result = await widget.api.putJson('/api/v1/docker/settings', {
-        'registry_mirrors': mirrors,
-        'ipv6': _ipv6,
-        'experimental': _experimental,
-        'fixed_cidr_v6': _cidr.text.trim(),
-        'restart': _restart,
-      });
-      final map = result as Map<String, dynamic>? ?? const {};
-      if (!mounted) return;
-      if (map['ok'] != true) {
-        await showOutputDialog(context, '保存失败', map['output'] as String? ?? '');
-      } else {
-        await showOutputDialog(
-          context,
-          'Docker 设置',
-          map['output'] as String? ?? '已保存',
-        );
-        if (mounted) Navigator.of(context).pop();
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(describeError(error))));
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Docker 守护进程设置'),
-      content: DialogBody(
-        maxWidth: 620,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextField(
-                controller: _mirrors,
-                minLines: 4,
-                maxLines: 8,
-                decoration: const InputDecoration(
-                  labelText: '镜像源 registry-mirrors（每行一个）',
-                  hintText: 'https://mirror.example.com',
-                ),
-              ),
-              const SizedBox(height: 8),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('启用 IPv6'),
-                value: _ipv6,
-                onChanged: (value) => setState(() => _ipv6 = value),
-              ),
-              if (_ipv6)
-                TextField(
-                  controller: _cidr,
-                  decoration: const InputDecoration(
-                    labelText: 'fixed-cidr-v6（可选）',
-                    hintText: 'fd00::/64',
-                  ),
-                ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('启用 experimental 特性'),
-                value: _experimental,
-                onChanged: (value) => setState(() => _experimental = value),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('保存后重启 Docker'),
-                subtitle: const Text('会中断正在运行的容器'),
-                value: _restart,
-                onChanged: (value) => setState(() => _restart = value),
-              ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: _busy ? null : _save,
-          child: Text(_busy ? '保存中…' : '保存'),
-        ),
-      ],
-    );
-  }
-}
-
-/// 运行环境详情：日志 / 配置 / 扩展 / 进程统一用标签页切换。
 class _EnvironmentDetailDialog extends StatelessWidget {
   const _EnvironmentDetailDialog({
     required this.api,
@@ -1482,6 +1469,7 @@ class _RuntimeExtensionsTab extends StatefulWidget {
 
 class _RuntimeExtensionsTabState extends State<_RuntimeExtensionsTab> {
   Set<String> _selected = {};
+  final _customExtension = TextEditingController();
   String? _error;
   bool _loading = true;
   bool _busy = false;
@@ -1490,6 +1478,22 @@ class _RuntimeExtensionsTabState extends State<_RuntimeExtensionsTab> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _customExtension.dispose();
+    super.dispose();
+  }
+
+  void _addCustomExtension() {
+    final value = _customExtension.text.trim();
+    if (value.isEmpty) return;
+    if (value.contains(' ') || value.contains('\n')) return;
+    setState(() {
+      _selected.add(value);
+      _customExtension.clear();
+    });
   }
 
   Future<void> _load() async {
@@ -1549,12 +1553,6 @@ class _RuntimeExtensionsTabState extends State<_RuntimeExtensionsTab> {
     if (_loading) return const LoadingView();
     if (_error != null) return ErrorBanner(message: _error!, onRetry: _load);
     final extensions = widget.preset?.extensions ?? const [];
-    if (extensions.isEmpty) {
-      return const EmptyState(
-        icon: Icons.extension_outlined,
-        title: '该运行时没有可选的扩展',
-      );
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1579,6 +1577,35 @@ class _RuntimeExtensionsTabState extends State<_RuntimeExtensionsTab> {
                   }
                 }),
               ),
+            for (final id in _selected.where(
+              (id) => !extensions.any((item) => item.id == id),
+            ))
+              InputChip(
+                label: Text(id),
+                onDeleted: () => setState(() => _selected.remove(id)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _customExtension,
+                decoration: const InputDecoration(
+                  labelText: '自定义扩展 ID',
+                  hintText: '例如 redis 或 vips',
+                  isDense: true,
+                ),
+                onSubmitted: (_) => _addCustomExtension(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: '添加扩展',
+              onPressed: _addCustomExtension,
+              icon: const Icon(Icons.add_circle_outline, size: 20),
+            ),
           ],
         ),
         const SizedBox(height: 14),
@@ -1669,6 +1696,49 @@ class _RuntimeProcessesTabState extends State<_RuntimeProcessesTab> {
           ),
         ),
       ],
+    );
+  }
+}
+
+
+class _NumberStepper extends StatelessWidget {
+  const _NumberStepper({
+    required this.label,
+    required this.value,
+    this.onMinus,
+    this.onPlus,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback? onMinus;
+  final VoidCallback? onPlus;
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(labelText: label),
+      child: Row(
+        children: [
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: onMinus,
+            icon: const Icon(Icons.remove, size: 17),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: onPlus,
+            icon: const Icon(Icons.add, size: 17),
+          ),
+        ],
+      ),
     );
   }
 }

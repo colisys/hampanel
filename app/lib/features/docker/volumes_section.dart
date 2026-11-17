@@ -54,7 +54,7 @@ class _VolumesSectionState extends State<VolumesSection> {
   Future<void> _create() async {
     final created = await showDialog<bool>(
       context: context,
-      builder: (context) => const _VolumeDialog(),
+      builder: (context) => _VolumeDialog(api: _api),
     );
     if (created == true) {
       _toast('存储卷已创建');
@@ -233,7 +233,9 @@ class _VolumesSectionState extends State<VolumesSection> {
 }
 
 class _VolumeDialog extends StatefulWidget {
-  const _VolumeDialog();
+  const _VolumeDialog({required this.api});
+
+  final ApiClient api;
 
   @override
   State<_VolumeDialog> createState() => _VolumeDialogState();
@@ -247,7 +249,7 @@ class _VolumeDialogState extends State<_VolumeDialog> {
   bool _saving = false;
   String? _error;
 
-  ApiClient get _api => PanelScope.of(context).api;
+  ApiClient get _api => widget.api;
 
   @override
   void dispose() {

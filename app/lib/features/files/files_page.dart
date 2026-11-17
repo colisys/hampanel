@@ -444,12 +444,27 @@ class _FilesPageState extends State<FilesPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        PageHeader(
-          title: '文件',
-          subtitle: '双击目录进入，点击文件在线编辑',
-          actions: [
+    final compact = MediaQuery.sizeOf(context).width < 720;
+    final horizontal = compact ? 12.0 : 24.0;
+    final actions = compact
+        ? <Widget>[
+            IconButton(
+              tooltip: '新建目录',
+                      onPressed: _createFolder,
+              icon: const Icon(Icons.create_new_folder_outlined, size: 20),
+            ),
+            IconButton(
+              tooltip: '新建文件',
+                      onPressed: _createFile,
+              icon: const Icon(Icons.note_add_outlined, size: 20),
+            ),
+            IconButton(
+              tooltip: '上传',
+                      onPressed: _upload,
+              icon: const Icon(Icons.upload_file_outlined, size: 20),
+            ),
+          ]
+        : <Widget>[
             OutlinedButton.icon(
               onPressed: _createFolder,
               icon: const Icon(Icons.create_new_folder_outlined, size: 16),
@@ -467,31 +482,38 @@ class _FilesPageState extends State<FilesPage> {
               icon: const Icon(Icons.upload_file_outlined, size: 16),
               label: const Text('上传'),
             ),
-          ],
+          ];
+    return Column(
+      children: [
+        PageHeader(
+          title: '文件',
+          subtitle: compact ? null : '双击目录进入，点击文件在线编辑',
+          actions: actions,
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 10),
+          padding: EdgeInsets.fromLTRB(horizontal, 0, horizontal, 10),
           child: Row(
             children: [
               IconButton(
                 tooltip: '上一级',
-                onPressed: () => _load(_parent),
+                          onPressed: () => _load(_parent),
                 icon: const Icon(Icons.arrow_upward, size: 18),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 2),
               Expanded(
                 child: TextField(
                   controller: _pathController,
                   style: monospace,
                   decoration: const InputDecoration(
+                    isDense: true,
                     prefixIcon: Icon(Icons.folder_outlined, size: 17),
                   ),
                   onSubmitted: _load,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
               IconButton(
-                onPressed: () => _load(_path),
+                          onPressed: () => _load(_path),
                 icon: const Icon(Icons.refresh, size: 19),
               ),
             ],
@@ -503,7 +525,7 @@ class _FilesPageState extends State<FilesPage> {
           child: _loading
               ? const LoadingView()
               : Padding(
-                  padding: EdgeInsets.fromLTRB(24, 0, 24, 24),
+                  padding: EdgeInsets.fromLTRB(horizontal, 0, horizontal, 24),
                   child: Card(
                     child: _entries.isEmpty
                         ? EmptyState(
@@ -511,6 +533,8 @@ class _FilesPageState extends State<FilesPage> {
                             title: '目录为空',
                             message: '使用上方按钮创建文件或上传内容。',
                           )
+                        : compact
+                        ? _compactFileList()
                         : Column(
                             children: [
                               _headerRow(),
@@ -529,6 +553,87 @@ class _FilesPageState extends State<FilesPage> {
                   ),
                 ),
         ),
+      ],
+    );
+  }
+
+  Widget _compactFileList() {
+    return ListView.separated(
+      itemCount: _entries.length,
+      separatorBuilder: (_, _) => const Divider(height: 1),
+      itemBuilder: (context, index) => _compactFileRow(_entries[index]),
+    );
+  }
+
+  Widget _compactFileRow(FileEntry entry) {
+    final icon = entry.isDir
+        ? Icons.folder_outlined
+        : entry.symlink
+        ? Icons.link
+        : Icons.description_outlined;
+    final color = entry.isDir ? hampanelAccent : hampanelMuted;
+    return InkWell(
+      onTap: () => entry.isDir ? _load(entry.path) : _edit(entry),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 9, 4, 9),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: color),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${entry.isDir ? '目录' : formatBytes(entry.size)}'
+                    ' · ${formatDateTime(entry.modifiedMs)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 10.5, color: hampanelMuted),
+                  ),
+                ],
+              ),
+            ),
+            _fileMenu(entry),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _fileMenu(FileEntry entry) {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_horiz, size: 18),
+      onSelected: (value) {
+        switch (value) {
+          case 'edit':
+            _edit(entry);
+          case 'versions':
+            _versions(entry);
+          case 'rename':
+            _rename(entry);
+          case 'download':
+            _download(entry);
+          case 'delete':
+            _delete(entry);
+        }
+      },
+      itemBuilder: (context) => [
+        if (!entry.isDir)
+          const PopupMenuItem(value: 'edit', child: Text('编辑')),
+        if (!entry.isDir)
+          const PopupMenuItem(value: 'versions', child: Text('历史版本')),
+        const PopupMenuItem(value: 'rename', child: Text('重命名')),
+        if (!entry.isDir)
+          const PopupMenuItem(value: 'download', child: Text('下载')),
+        const PopupMenuItem(value: 'delete', child: Text('删除')),
       ],
     );
   }
@@ -593,33 +698,7 @@ class _FilesPageState extends State<FilesPage> {
                 style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               ),
             ),
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_horiz, size: 18),
-              onSelected: (value) {
-                switch (value) {
-                  case 'edit':
-                    _edit(entry);
-                  case 'versions':
-                    _versions(entry);
-                  case 'rename':
-                    _rename(entry);
-                  case 'download':
-                    _download(entry);
-                  case 'delete':
-                    _delete(entry);
-                }
-              },
-              itemBuilder: (context) => [
-                if (!entry.isDir)
-                  const PopupMenuItem(value: 'edit', child: Text('编辑')),
-                if (!entry.isDir)
-                  const PopupMenuItem(value: 'versions', child: Text('历史版本')),
-                const PopupMenuItem(value: 'rename', child: Text('重命名')),
-                if (!entry.isDir)
-                  const PopupMenuItem(value: 'download', child: Text('下载')),
-                const PopupMenuItem(value: 'delete', child: Text('删除')),
-              ],
-            ),
+            _fileMenu(entry),
           ],
         ),
       ),
