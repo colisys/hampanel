@@ -180,7 +180,10 @@ class _PackagesTabState extends State<PackagesTab> {
                         const SizedBox(width: 10),
                         Text(
                           '${status.tools.length} 个精选工具',
-                          style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: hampanelMuted,
+                          ),
                         ),
                       ],
                     ),

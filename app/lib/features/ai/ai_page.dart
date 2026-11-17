@@ -721,12 +721,7 @@ class _AiPageState extends State<AiPage> {
                                       ),
                               )
                             : ListView.builder(
-                                padding: EdgeInsets.fromLTRB(
-                                  24,
-                                  0,
-                                  24,
-                                  12,
-                                ),
+                                padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
                                 itemCount: _messages.length,
                                 itemBuilder: (context, index) =>
                                     _bubble(_messages[index]),

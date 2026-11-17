@@ -149,25 +149,21 @@ class _ServicesPageState extends State<ServicesPage> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    StatusPill(
-                      text: service.active,
-                      good: service.running,
-                    ),
+                    StatusPill(text: service.active, good: service.running),
                     _serviceMenu(service),
                     IconButton(
                       tooltip: '日志',
                       visualDensity: VisualDensity.compact,
                       onPressed: () => _showLogs(service),
-                      icon: const Icon(
-                        Icons.receipt_long_outlined,
-                        size: 18,
-                      ),
+                      icon: const Icon(Icons.receipt_long_outlined, size: 18),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  service.description.isEmpty ? service.sub : service.description,
+                  service.description.isEmpty
+                      ? service.sub
+                      : service.description,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(

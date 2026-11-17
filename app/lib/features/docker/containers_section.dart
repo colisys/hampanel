@@ -197,14 +197,16 @@ class _ContainersSectionState extends State<ContainersSection> {
   Future<void> _terminal(DockerContainer container) async {
     await showDialog<void>(
       context: context,
-      builder: (context) => ContainerTerminalDialog(api: _api, container: container),
+      builder: (context) =>
+          ContainerTerminalDialog(api: _api, container: container),
     );
   }
 
   Future<void> _files(DockerContainer container) async {
     await showDialog<void>(
       context: context,
-      builder: (context) => ContainerFilesDialog(api: _api, container: container),
+      builder: (context) =>
+          ContainerFilesDialog(api: _api, container: container),
     );
   }
 

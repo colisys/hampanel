@@ -90,8 +90,11 @@ void main() {
   "created_at": "now"
 }
 ''');
-    final host =
-        store.upsert(alias: 'golden', enrollment: enrollment, activate: true);
+    final host = store.upsert(
+      alias: 'golden',
+      enrollment: enrollment,
+      activate: true,
+    );
     session = PanelSession(enrollment, store);
     hostId = host.id;
   });

@@ -1700,7 +1700,6 @@ class _RuntimeProcessesTabState extends State<_RuntimeProcessesTab> {
   }
 }
 
-
 class _NumberStepper extends StatelessWidget {
   const _NumberStepper({
     required this.label,

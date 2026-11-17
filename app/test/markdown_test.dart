@@ -3,7 +3,8 @@ import 'package:hampanel/ui/markdown.dart';
 
 void main() {
   test('parses headings, lists, quotes and code fences', () {
-    final blocks = parseMarkdown('''
+    final blocks = parseMarkdown(
+      '''
 # 标题
 第一段
 - 项目一
@@ -17,7 +18,9 @@ void main() {
 ` ` `
 code line
 ` ` `
-'''.replaceAll('` ` `', '```'));
+'''
+          .replaceAll('` ` `', '```'),
+    );
 
     expect(blocks.map((block) => block.kind).toList(), [
       MdBlockKind.heading,

@@ -65,11 +65,8 @@ class _ProcessesPageState extends State<ProcessesPage> {
     final api = PanelScope.of(context).api;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => ProcessDetailPage(
-          api: api,
-          pid: process.pid,
-          name: process.name,
-        ),
+        builder: (_) =>
+            ProcessDetailPage(api: api, pid: process.pid, name: process.name),
       ),
     );
   }

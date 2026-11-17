@@ -5,22 +5,34 @@ void main() {
   test('source refs select the matching channel', () {
     expect(
       effectiveInstallChannel(
-          mode: 'source', channel: 'stable', sourceRef: 'nightly'),
+        mode: 'source',
+        channel: 'stable',
+        sourceRef: 'nightly',
+      ),
       'nightly',
     );
     expect(
       effectiveInstallChannel(
-          mode: 'source', channel: 'nightly', sourceRef: 'v1.2.3'),
+        mode: 'source',
+        channel: 'nightly',
+        sourceRef: 'v1.2.3',
+      ),
       'stable',
     );
     expect(
       effectiveInstallChannel(
-          mode: 'source', channel: 'stable', sourceRef: 'main'),
+        mode: 'source',
+        channel: 'stable',
+        sourceRef: 'main',
+      ),
       'nightly',
     );
     expect(
       effectiveInstallChannel(
-          mode: 'binary', channel: 'nightly', sourceRef: 'nightly'),
+        mode: 'binary',
+        channel: 'nightly',
+        sourceRef: 'nightly',
+      ),
       'nightly',
     );
   });

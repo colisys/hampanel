@@ -46,9 +46,7 @@ void main() {
 
   testWidgets('login page is shown without enrollment', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: LoginPage(onEnrolled: (_, {alias}) async {}),
-      ),
+      MaterialApp(home: LoginPage(onEnrolled: (_, {alias}) async {})),
     );
     await tester.pumpAndSettle();
     expect(find.text('导入注册凭据'), findsOneWidget);

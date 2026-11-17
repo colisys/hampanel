@@ -7,6 +7,7 @@ import 'core/enrollment.dart';
 import 'core/host_store.dart';
 import 'core/session.dart';
 import 'features/auth/login_page.dart';
+import 'features/auth/server_picker_page.dart';
 import 'features/shell/panel_shell.dart';
 import 'ui/theme.dart';
 
@@ -48,55 +49,14 @@ class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
       await AppPaths.init();
       final hosts = await HostStore.open();
       final initial = widget.initial;
-      HostRecord? active;
-      if (initial != null) {
-        active = hosts.upsert(alias: null, enrollment: initial, activate: true);
-      } else {
-        active = hosts.active();
-      }
-      if (active != null) {
-        final pinIssue = hosts.pinMismatch(active);
-        if (pinIssue != null) {
-          if (!mounted) return;
-          setState(() {
-            _hosts = hosts;
-            _activeId = active!.id;
-            _trustHostId = active.id;
-            _session = null;
-            _trustError = pinIssue;
-            _pinMismatch = true;
-            _bootstrapping = false;
-          });
-          return;
-        }
-      }
-      PanelSession? session;
-      if (active != null) {
-        session = PanelSession(active.enrollment, hosts);
-        final identityIssue = await session.verifyIdentity();
-        if (identityIssue != null) {
-          session.dispose();
-          if (!mounted) return;
-          setState(() {
-            _hosts = hosts;
-            _activeId = active!.id;
-            _trustHostId = active.id;
-            _session = null;
-            _trustError = identityIssue;
-            _pinMismatch = false;
-            _bootstrapping = false;
-          });
-          return;
-        }
-      }
-      if (!mounted) {
-        session?.dispose();
-        return;
-      }
+      final host = initial != null
+          ? hosts.upsert(alias: null, enrollment: initial, activate: true)
+          : hosts.active();
+      if (!mounted) return;
       setState(() {
         _hosts = hosts;
-        _activeId = active?.id;
-        _session = session;
+        _activeId = host?.id;
+        _session = null;
         _bootstrapping = false;
       });
     } catch (error) {
@@ -196,8 +156,28 @@ class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
     final id = _trustHostId;
     if (hosts == null || id == null) return;
     final host = hosts.byId(id);
-    if (host != null) hosts.trustPins(id, host.enrollment);
+    if (host == null) {
+      _bootstrap();
+      return;
+    }
+    hosts.trustPins(id, host.enrollment);
+    _activate(host);
+  }
+
+  Future<void> _retryTrust() async {
+    final hosts = _hosts;
+    final id = _trustHostId;
+    final host = (hosts != null && id != null) ? hosts.byId(id) : null;
+    if (host != null) {
+      await _activate(host);
+      return;
+    }
     _bootstrap();
+  }
+
+  void _deleteHost(HostRecord host) {
+    _hosts?.delete(host.id);
+    if (_activeId == host.id) setState(() => _activeId = null);
   }
 
   void _reimportEnrollment() {
@@ -212,8 +192,9 @@ class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
     });
   }
 
+  /// Closing the session only stops requests to the target. Saved servers,
+  /// the remembered host and its credentials stay untouched.
   Future<void> _logout() async {
-    _hosts?.setActive(null);
     _session?.dispose();
     setState(() {
       _session = null;
@@ -256,7 +237,7 @@ class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
               title: '服务端身份未通过校验',
               message: _trustError!,
               directory: AppPaths.configDirectory().path,
-              onRetry: _bootstrap,
+              onRetry: _retryTrust,
               hint: _pinMismatch
                   ? '如果指纹变化来自你自己的证书轮换，请先带外核对，再更新本机指纹。'
                   : 'TLS 链校验之外还要求服务端报告的证书指纹与注册凭据一致。'
@@ -269,7 +250,15 @@ class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
           : _bootstrapping || _hosts == null
           ? const Scaffold(body: Center(child: CircularProgressIndicator()))
           : session == null
-          ? LoginPage(onEnrolled: _onEnrolled)
+          ? (_hosts!.list().isEmpty
+                ? LoginPage(onEnrolled: _onEnrolled)
+                : ServerPickerPage(
+                    store: _hosts!,
+                    activeId: _activeId,
+                    onConnect: _switchHost,
+                    onEnrolled: _onEnrolled,
+                    onDelete: _deleteHost,
+                  ))
           : PanelScope(
               session: session,
               child: PanelShell(

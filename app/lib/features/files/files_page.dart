@@ -450,17 +450,17 @@ class _FilesPageState extends State<FilesPage> {
         ? <Widget>[
             IconButton(
               tooltip: '新建目录',
-                      onPressed: _createFolder,
+              onPressed: _createFolder,
               icon: const Icon(Icons.create_new_folder_outlined, size: 20),
             ),
             IconButton(
               tooltip: '新建文件',
-                      onPressed: _createFile,
+              onPressed: _createFile,
               icon: const Icon(Icons.note_add_outlined, size: 20),
             ),
             IconButton(
               tooltip: '上传',
-                      onPressed: _upload,
+              onPressed: _upload,
               icon: const Icon(Icons.upload_file_outlined, size: 20),
             ),
           ]
@@ -496,7 +496,7 @@ class _FilesPageState extends State<FilesPage> {
             children: [
               IconButton(
                 tooltip: '上一级',
-                          onPressed: () => _load(_parent),
+                onPressed: () => _load(_parent),
                 icon: const Icon(Icons.arrow_upward, size: 18),
               ),
               const SizedBox(width: 2),
@@ -513,7 +513,7 @@ class _FilesPageState extends State<FilesPage> {
               ),
               const SizedBox(width: 4),
               IconButton(
-                          onPressed: () => _load(_path),
+                onPressed: () => _load(_path),
                 icon: const Icon(Icons.refresh, size: 19),
               ),
             ],
@@ -626,8 +626,7 @@ class _FilesPageState extends State<FilesPage> {
         }
       },
       itemBuilder: (context) => [
-        if (!entry.isDir)
-          const PopupMenuItem(value: 'edit', child: Text('编辑')),
+        if (!entry.isDir) const PopupMenuItem(value: 'edit', child: Text('编辑')),
         if (!entry.isDir)
           const PopupMenuItem(value: 'versions', child: Text('历史版本')),
         const PopupMenuItem(value: 'rename', child: Text('重命名')),

@@ -76,11 +76,24 @@ class _LoginPageState extends State<LoginPage> {
             ),
           ),
           Positioned(
-            left: 28,
-            top: 22,
-            child: Text(
-              'HAMPANEL / MANGA CONSOLE',
-              style: mangaKicker.copyWith(color: hampanelInk),
+            left: 8,
+            top: 4,
+            child: SafeArea(
+              bottom: false,
+              child: Row(
+                children: [
+                  if (Navigator.of(context).canPop())
+                    IconButton(
+                      tooltip: '返回服务器列表',
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      icon: const Icon(Icons.arrow_back, size: 18),
+                    ),
+                  Text(
+                    'HAMPANEL / MANGA CONSOLE',
+                    style: mangaKicker.copyWith(color: hampanelInk),
+                  ),
+                ],
+              ),
             ),
           ),
           SafeArea(
