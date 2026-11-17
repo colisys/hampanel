@@ -8,10 +8,9 @@ import '../../core/api_client.dart';
 import '../../core/ai_config.dart';
 import '../../core/build_info.dart';
 import '../../core/client_settings.dart';
-import '../../core/client_update.dart';
+import 'client_update_panel.dart';
 import '../../core/format.dart';
 import '../../core/enrollment.dart';
-import '../../core/native_files.dart';
 import '../../core/platform_support.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
@@ -35,13 +34,9 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _checking = false;
   Map<String, dynamic>? _update;
   bool _updateBusy = false;
-  final _clientMirror = TextEditingController();
   final _daemonMirror = TextEditingController();
   String? _daemonChannel;
   bool _daemonSaving = false;
-  ClientRelease? _clientRelease;
-  bool _clientChecking = false;
-  String? _clientError;
 
   final _aiTools = buildAiTools();
   final _sensitivePathController = TextEditingController();
@@ -57,16 +52,11 @@ class _SettingsPageState extends State<SettingsPage> {
     _check();
     _loadUpdate();
     _loadAiSettings();
-    ClientSettings.instance.load().then((_) {
-      if (!mounted) return;
-      setState(() => _clientMirror.text = ClientSettings.instance.githubMirror);
-    });
   }
 
   @override
   void dispose() {
     _sensitivePathController.dispose();
-    _clientMirror.dispose();
     _daemonMirror.dispose();
     super.dispose();
   }
@@ -616,123 +606,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _updateRow(
-                                  channel: DropdownButtonFormField<String>(
-                                    initialValue:
-                                        ClientSettings.instance.updateChannel,
-                                    decoration: const InputDecoration(
-                                      labelText: '更新通道',
-                                      hintText: '请选择通道',
-                                    ),
-                                    items: const [
-                                      DropdownMenuItem(
-                                        value: 'stable',
-                                        child: Text('stable（正式版）'),
-                                      ),
-                                      DropdownMenuItem(
-                                        value: 'nightly',
-                                        child: Text('nightly（每日构建）'),
-                                      ),
-                                    ],
-                                    onChanged: _setClientChannel,
-                                  ),
-                                  mirror: TextField(
-                                    controller: _clientMirror,
-                                    decoration: const InputDecoration(
-                                      labelText: 'GitHub 镜像（可选）',
-                                      hintText: 'https://ghproxy.example',
-                                    ),
-                                    onSubmitted: (_) => _saveClientMirror(),
-                                  ),
-                                  save: OutlinedButton(
-                                    onPressed: _saveClientMirror,
-                                    child: const Text('保存'),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  '必须先选择更新通道；通道与镜像只保存在本机，用于管理端自身更新。',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: hampanelMuted,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                _row('当前版本', fullClientVersion),
-                                if (_clientRelease != null) ...[
-                                  _row('最新版本', _clientRelease!.version),
-                                  _row(
-                                    '发布时间',
-                                    formatTimestamp(
-                                      _clientRelease!.publishedAt
-                                          ?.toIso8601String(),
-                                    ),
-                                  ),
-                                  _row(
-                                    '状态',
-                                    ClientUpdateService.isNewer(
-                                          channel:
-                                              ClientSettings
-                                                      .instance
-                                                      .updateChannel ==
-                                                  'nightly'
-                                              ? ClientUpdateChannel.nightly
-                                              : ClientUpdateChannel.stable,
-                                          remoteVersion:
-                                              _clientRelease!.version,
-                                          localVersion: buildVersion,
-                                          localCommit: buildCommit,
-                                        )
-                                        ? '有新版本可用'
-                                        : '已是最新',
-                                  ),
-                                ],
-                                if (_clientError != null) ...[
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    _clientError!,
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      color: hampanelDanger,
-                                    ),
-                                  ),
-                                ],
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    FilledButton.icon(
-                                      onPressed: _clientChecking
-                                          ? null
-                                          : _checkClientUpdate,
-                                      icon: _clientChecking
-                                          ? const SizedBox(
-                                              width: 14,
-                                              height: 14,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                              ),
-                                            )
-                                          : const Icon(
-                                              Icons.system_update_alt,
-                                              size: 16,
-                                            ),
-                                      label: const Text('检查更新'),
-                                    ),
-                                    if (_clientRelease != null) ...[
-                                      const SizedBox(width: 10),
-                                      OutlinedButton.icon(
-                                        onPressed: () => _openExternal(
-                                          _clientDownloadUrl(_clientRelease!),
-                                        ),
-                                        icon: const Icon(
-                                          Icons.download_outlined,
-                                          size: 16,
-                                        ),
-                                        label: const Text('下载客户端'),
-                                      ),
-                                    ],
-                                  ],
-                                ),
+                                const ClientUpdatePanel(),
                                 const SizedBox(height: 14),
                                 Container(height: 1, color: hampanelBorder),
                                 const SizedBox(height: 14),
@@ -1021,81 +895,11 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Future<void> _setClientChannel(String? value) async {
-    if (value == null) return;
-    ClientSettings.instance.updateChannel = value;
-    await ClientSettings.instance.save();
-    if (!mounted) return;
-    setState(() {
-      _clientRelease = null;
-      _clientError = null;
-    });
-  }
-
-  Future<void> _saveClientMirror() async {
-    ClientSettings.instance.githubMirror = _clientMirror.text.trim();
-    await ClientSettings.instance.save();
-    _toast('GitHub 镜像已保存');
-  }
-
   Future<void> _setRefreshSeconds(int? value) async {
     if (value == null) return;
     ClientSettings.instance.overviewRefreshSeconds = value;
     await ClientSettings.instance.save();
     if (mounted) setState(() {});
-  }
-
-  String _clientDownloadUrl(ClientRelease release) =>
-      ClientUpdateService.clientAsset(release) ??
-      'https://github.com/colisys/hampanel/releases/tag/${release.tag}';
-
-  Future<void> _checkClientUpdate() async {
-    final channel = ClientSettings.instance.updateChannel;
-    if (channel == null) {
-      _toast('请先选择更新通道');
-      return;
-    }
-    setState(() {
-      _clientChecking = true;
-      _clientError = null;
-    });
-    try {
-      final release = await const ClientUpdateService().fetch(
-        channel == 'nightly'
-            ? ClientUpdateChannel.nightly
-            : ClientUpdateChannel.stable,
-        mirror: ClientSettings.instance.githubMirror,
-      );
-      if (!mounted) return;
-      setState(() => _clientRelease = release);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _clientError = error.toString());
-    } finally {
-      if (mounted) setState(() => _clientChecking = false);
-    }
-  }
-
-  Future<void> _openExternal(String url) async {
-    if (NativeFiles.supported) {
-      try {
-        await NativeFiles.openUrl(url);
-      } catch (_) {
-        _toast('无法打开链接，请手动复制');
-      }
-      return;
-    }
-    try {
-      if (Platform.isMacOS) {
-        await Process.run('open', [url]);
-      } else if (Platform.isWindows) {
-        await Process.run('cmd', ['/c', 'start', '', url]);
-      } else {
-        await Process.run('xdg-open', [url]);
-      }
-    } catch (_) {
-      // 打开外部浏览器失败时保持安静。
-    }
   }
 
   Widget _toolGroup(String title, List<AiTool> tools) {

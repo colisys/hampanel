@@ -144,8 +144,8 @@ class ClientUpdateService {
         'linux' => name.contains('client-linux-x86_64'),
         'windows' => name.contains('client-windows-x86_64'),
         'macos' => name.contains('client-macos-') && name.contains(arch),
-        'android' => name.contains('client-android-'),
-        'ios' => name.contains('client-ios-'),
+        'android' => name.contains('android') && name.endsWith('.apk'),
+        'ios' => name.contains('ios') && name.endsWith('.ipa'),
         _ => false,
       };
       if (matches) {

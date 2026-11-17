@@ -1,10 +1,12 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/build_info.dart';
 import '../../core/enrollment.dart';
 import '../../ui/enrollment_trust.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
+import '../settings/client_update_panel.dart';
 import 'install_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -319,6 +321,18 @@ class _LoginPageState extends State<LoginPage> {
                                 label: const Text('通过 SSH 安装'),
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 14),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: () => showClientUpdateDialog(context),
+                              icon: const Icon(
+                                Icons.system_update_alt,
+                                size: 16,
+                              ),
+                              label: Text('管理端更新 · v$fullClientVersion'),
+                            ),
                           ),
                         ],
                       ),

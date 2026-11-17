@@ -1,10 +1,12 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/build_info.dart';
 import '../../core/enrollment.dart';
 import '../../core/format.dart';
 import '../../core/host_store.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
+import '../settings/client_update_panel.dart';
 import 'login_page.dart';
 
 /// Startup screen for existing installations: lists every saved server and
@@ -165,6 +167,19 @@ class _ServerPickerPageState extends State<ServerPickerPage> {
                           color: hampanelMuted,
                           height: 1.6,
                         ),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () => showClientUpdateDialog(context),
+                            icon: const Icon(Icons.system_update_alt, size: 16),
+                            label: Text('管理端更新 · v$fullClientVersion'),
+                          ),
+                        ],
                       ),
                     ],
                   ),

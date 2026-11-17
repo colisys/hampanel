@@ -77,12 +77,16 @@ void main() {
           'browser_download_url': 'https://example/linux',
         },
         {
-          'name': 'hampanel-client-android-universal-unsigned.apk',
+          'name': 'hampanel-0.1.0-android-universal.apk',
           'browser_download_url': 'https://example/apk',
         },
         {
           'name': 'hampanel-client-macos-arm64.dmg',
           'browser_download_url': 'https://example/macos',
+        },
+        {
+          'name': 'hampanel-0.1.0-ios-unsigned.ipa',
+          'browser_download_url': 'https://example/ios',
         },
       ],
     );
@@ -109,6 +113,14 @@ void main() {
         architecture: 'arm64',
       ),
       'https://example/macos',
+    );
+    expect(
+      ClientUpdateService.clientAsset(
+        release,
+        operatingSystem: 'ios',
+        architecture: 'arm64',
+      ),
+      'https://example/ios',
     );
     expect(
       ClientUpdateService.clientAsset(
