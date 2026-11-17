@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const compat = @import("compat");
 
 pub const Result = struct {
@@ -27,7 +28,34 @@ pub fn run(allocator: std.mem.Allocator, argv: []const []const u8, max_output: u
     return runWith(allocator, argv, .{ .max_output = max_output });
 }
 
+pub fn commandExists(allocator: std.mem.Allocator, name: []const u8) bool {
+    if (name.len == 0) return false;
+    if (std.mem.indexOfAny(u8, name, "/\\") != null) return fileExists(name);
+    const path = compat.getEnv("PATH") orelse return false;
+    const separator: u8 = if (builtin.os.tag == .windows) ';' else ':';
+    var iterator = std.mem.splitScalar(u8, path, separator);
+    while (iterator.next()) |dir| {
+        if (dir.len == 0) continue;
+        const full = std.fs.path.join(allocator, &.{ dir, name }) catch continue;
+        defer allocator.free(full);
+        if (fileExists(full)) return true;
+        if (builtin.os.tag == .windows) {
+            const exe = std.fmt.allocPrint(allocator, "{s}.exe", .{full}) catch continue;
+            defer allocator.free(exe);
+            if (fileExists(exe)) return true;
+        }
+    }
+    return false;
+}
+
+fn fileExists(path: []const u8) bool {
+    var file = compat.openFileAbsolute(path, .{}) catch return false;
+    file.close();
+    return true;
+}
+
 pub fn runWith(allocator: std.mem.Allocator, argv: []const []const u8, options: Options) RunError!Result {
+    if (argv.len == 0 or !commandExists(allocator, argv[0])) return error.SpawnFailed;
     const io = compat.io();
     var child = std.process.spawn(io, .{
         .argv = argv,

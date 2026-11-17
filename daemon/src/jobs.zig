@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const compat = @import("compat");
+const exec = @import("shared").exec;
 const engine_mod = @import("runtime/engine.zig");
 
 pub const Status = enum { running, succeeded, failed, cancelled };
@@ -167,6 +168,11 @@ fn worker(task: *Task) void {
         }
     }
     defer if (env_map) |*map| map.deinit();
+
+    if (task.argv.len == 0 or !exec.commandExists(gpa, task.argv[0])) {
+        finish(task.job, .failed, null);
+        return;
+    }
 
     var child = std.process.spawn(io, .{
         .argv = task.argv,
