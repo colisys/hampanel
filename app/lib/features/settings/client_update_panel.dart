@@ -137,6 +137,7 @@ class _ClientUpdatePanelState extends State<ClientUpdatePanel> {
           flex: const [2, 3],
           children: [
             DropdownButtonFormField<String>(
+              key: ValueKey(_channel),
               initialValue: _channel,
               isExpanded: true,
               decoration: const InputDecoration(
