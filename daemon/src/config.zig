@@ -26,6 +26,7 @@ pub const Config = struct {
     github_mirror: []const u8 = "",
     update_auto: bool = false,
     service_name: []const u8 = "hampanel",
+    container: []const u8 = "",
 
     pub fn updatesEnabled(self: Config) bool {
         return std.mem.eql(u8, self.install_mode, "binary");

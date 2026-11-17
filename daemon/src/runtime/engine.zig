@@ -18,7 +18,24 @@ pub fn socketFromDb(allocator: std.mem.Allocator, database: *db.Db) []const u8 {
     return value orelse "";
 }
 
+var preferred_name: []const u8 = "";
+
+pub fn setPreferred(name: []const u8) void {
+    preferred_name = name;
+}
+
 pub fn detect(allocator: std.mem.Allocator, socket: []const u8) !Engine {
+    if (preferred_name.len > 0) {
+        if (!std.mem.eql(u8, preferred_name, "docker") and !std.mem.eql(u8, preferred_name, "podman")) {
+            return error.InvalidEngine;
+        }
+        if (!exec.commandExists(allocator, preferred_name)) return error.EngineUnavailable;
+        return .{ .name = preferred_name, .podman = std.mem.eql(u8, preferred_name, "podman") };
+    }
+    return autoDetect(allocator, socket);
+}
+
+pub fn autoDetect(allocator: std.mem.Allocator, socket: []const u8) !Engine {
     const candidates = [_]struct { name: []const u8, podman: bool }{
         .{ .name = "docker", .podman = false },
         .{ .name = "podman", .podman = true },

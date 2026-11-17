@@ -14,6 +14,7 @@ const audit = @import("audit.zig");
 const log = @import("log.zig");
 const version = @import("version.zig");
 const update = @import("update.zig");
+const engine_mod = @import("runtime/engine.zig");
 const notify = @import("notify.zig");
 const validate = @import("shared").validate;
 
@@ -192,6 +193,7 @@ fn cmdInit(allocator: std.mem.Allocator, opts: *Options) !u8 {
     var cfg = try config.Config.load(a, opts.config_path);
     applyOverrides(&cfg, opts.*);
     log.setLevelName(cfg.log_level);
+    _ = detectContainer(a, &cfg);
 
     const endpoint_raw = opts.endpoint orelse {
         std.debug.print("init requires --endpoint HOST[:PORT]\n", .{});
@@ -435,6 +437,22 @@ fn cmdUpdate(allocator: std.mem.Allocator, opts: *Options) !u8 {
     return 0;
 }
 
+fn detectContainer(allocator: std.mem.Allocator, cfg: *config.Config) bool {
+    if (cfg.container.len > 0) {
+        engine_mod.setPreferred(cfg.container);
+        return false;
+    }
+    if (engine_mod.autoDetect(allocator, "")) |engine| {
+        cfg.container = allocator.dupe(u8, engine.name) catch "";
+        engine_mod.setPreferred(cfg.container);
+        log.info("container engine configured as {s}", .{engine.name});
+        return true;
+    } else |err| {
+        log.warn("no container engine detected ({s}); set \"container\" to docker or podman", .{@errorName(err)});
+        return false;
+    }
+}
+
 fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -443,6 +461,11 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     var cfg = try config.Config.load(a, opts.config_path);
     applyOverrides(&cfg, opts.*);
     log.setLevelName(cfg.log_level);
+    if (detectContainer(a, &cfg)) {
+        cfg.save(a, opts.config_path) catch |err| {
+            log.warn("failed to persist container engine: {s}", .{@errorName(err)});
+        };
+    }
 
     if (!pki.exists(a, cfg.tls_dir)) {
         std.debug.print("PKI not found in {s}; run `hampaneld init --endpoint HOST` first\n", .{cfg.tls_dir});

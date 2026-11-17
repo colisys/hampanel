@@ -165,6 +165,10 @@ Android 签名使用仓库 secrets：`ANDROID_KEYSTORE_BASE64`（PKCS#12 的 bas
   记录 `install_mode=source`，**不会**启用更新检查，面板 API 也会拒绝再添加检查更新
   的计划任务。
 
+- **容器引擎**：daemon 首次启动（或 `init`）时探测 Docker/Podman，并把结果写入
+  `config.json` 的 `container` 字段（`docker` / `podman`）。之后固定使用该值，不再每次
+  探测；手动修改该字段并重启即可切换。
+
 > 当前尚未发布正式版，请使用 `--channel nightly`（Linux）或 `-Channel nightly`
 > （Windows）安装预发布产物；`stable` 会在没有正式 Release 时给出明确错误。
 
