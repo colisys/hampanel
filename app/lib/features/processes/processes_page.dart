@@ -251,7 +251,7 @@ class _ProcessesPageState extends State<ProcessesPage> {
   Widget _processCards() {
     final processes = _filtered;
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
       itemCount: processes.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {

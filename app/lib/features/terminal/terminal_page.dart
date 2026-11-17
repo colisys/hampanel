@@ -173,14 +173,13 @@ class _TerminalPageState extends State<TerminalPage> {
               ),
           ],
         ),
-        if (compact) _shortcutBar(),
         Expanded(
           child: Padding(
             padding: EdgeInsets.fromLTRB(
               compact ? 12 : 24,
               0,
               compact ? 12 : 24,
-              compact ? 12 : 24,
+              compact ? 4 : 24,
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(3),
@@ -202,6 +201,7 @@ class _TerminalPageState extends State<TerminalPage> {
             ),
           ),
         ),
+        if (compact) _shortcutBar(),
       ],
     );
   }
@@ -210,6 +210,7 @@ class _TerminalPageState extends State<TerminalPage> {
     final keys = <(String, String)>[
       ('Esc', '\x1b'),
       ('Tab', '\t'),
+      ('⌫', '\x7f'),
       ('Ctrl+C', '\x03'),
       ('Ctrl+D', '\x04'),
       ('↑', '\x1b[A'),

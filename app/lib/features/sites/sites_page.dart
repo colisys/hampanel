@@ -194,25 +194,36 @@ class _SitesPageState extends State<SitesPage> {
       children: [
         PageHeader(
           title: '网站',
-          subtitle: list == null ? '正在读取 Nginx 站点' : '配置目录 ${list.directory}',
-          actions: [
-            OutlinedButton.icon(
-              onPressed: _create,
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('新建站点'),
-            ),
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              onPressed: _reload,
-              icon: const Icon(Icons.sync, size: 16),
-              label: const Text('重载 Nginx'),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
-          ],
+          subtitle: list == null
+              ? '正在读取站点'
+              : list.available
+              ? '配置目录 ${list.directory}'
+              : '未检测到可用的 WebServer',
+          actions: list?.available == true
+              ? [
+                  OutlinedButton.icon(
+                    onPressed: _create,
+                    icon: const Icon(Icons.add, size: 16),
+                    label: const Text('新建站点'),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: _reload,
+                    icon: const Icon(Icons.sync, size: 16),
+                    label: const Text('重载 Nginx'),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh, size: 20),
+                  ),
+                ]
+              : [
+                  IconButton(
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh, size: 20),
+                  ),
+                ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
         Expanded(
@@ -222,7 +233,7 @@ class _SitesPageState extends State<SitesPage> {
               ? EmptyState(
                   icon: Icons.public_off_outlined,
                   title: '当前环境无法管理站点',
-                  message: '未检测到 Nginx，或当前平台不提供站点管理功能。',
+                  message: '未检测到可用的 WebServer，或当前平台不提供站点管理功能。',
                   action: OutlinedButton(
                     onPressed: _load,
                     child: const Text('重新检测'),
