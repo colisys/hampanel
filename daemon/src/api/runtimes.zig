@@ -448,11 +448,17 @@ pub fn dockerSettings(ctx: *context.Context) anyerror!void {
         .cgroup_driver = settings.cgroup_driver,
         .nvidia_runtime = settings.nvidia_runtime,
         .socket_path = socket orelse "",
+        .engine = ctx.app.config.container,
+        .podman = std.mem.eql(u8, ctx.app.config.container, "podman"),
         .snapshot = stored,
     });
 }
 
 pub fn dockerSettingsSave(ctx: *context.Context) anyerror!void {
+    if (std.mem.eql(u8, ctx.app.config.container, "podman")) {
+        ctx.fail(409, "unsupported_engine", "Docker settings are only available when using Docker");
+        return;
+    }
     const Body = struct {
         registry_mirrors: []const []const u8 = &.{},
         insecure_registries: []const []const u8 = &.{},

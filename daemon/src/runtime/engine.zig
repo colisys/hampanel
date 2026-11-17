@@ -13,6 +13,36 @@ pub const Options = struct {
     max_output: usize = 1024 * 1024,
 };
 
+pub fn parseJsonObjects(
+    allocator: std.mem.Allocator,
+    raw: []const u8,
+) ![]const std.json.Value {
+    var list = std.array_list.Managed(std.json.Value).init(allocator);
+    const trimmed = std.mem.trim(u8, raw, " \t\r\n");
+    if (trimmed.len == 0) return try list.toOwnedSlice();
+    if (std.json.parseFromSliceLeaky(std.json.Value, allocator, trimmed, .{})) |value| {
+        switch (value) {
+            .array => {
+                try list.appendSlice(value.array.items);
+                return try list.toOwnedSlice();
+            },
+            .object => {
+                try list.append(value);
+                return try list.toOwnedSlice();
+            },
+            else => {},
+        }
+    } else |_| {}
+    var lines = std.mem.splitScalar(u8, raw, '\n');
+    while (lines.next()) |line| {
+        const text = std.mem.trim(u8, line, " \t\r");
+        if (text.len == 0) continue;
+        const value = std.json.parseFromSliceLeaky(std.json.Value, allocator, text, .{}) catch continue;
+        if (value == .object) try list.append(value);
+    }
+    return try list.toOwnedSlice();
+}
+
 pub fn socketFromDb(allocator: std.mem.Allocator, database: *db.Db) []const u8 {
     const value = database.getSetting(allocator, "docker.socket_path") catch null;
     return value orelse "";

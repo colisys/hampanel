@@ -28,6 +28,7 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
   String _logDriver = 'json-file';
   String _cgroup = 'systemd';
   String _path = '';
+  bool _podman = false;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -62,6 +63,7 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
       if (!mounted) return;
       setState(() {
         _path = settings.path;
+        _podman = settings.podman;
         _mirrors.text = settings.registryMirrors.join('\n');
         _insecure.text = settings.insecureRegistries.join('\n');
         _cidr.text = settings.fixedCidrV6;
@@ -87,6 +89,7 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
   }
 
   Future<void> _save() async {
+    if (_podman) return;
     final ok = await confirmDialog(
       context,
       title: '应用 Docker 设置?',
@@ -145,20 +148,24 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
       children: [
         PageHeader(
           title: 'Docker 设置',
-          subtitle: _path.isEmpty ? 'daemon.json 与连接参数' : _path,
+          subtitle: _podman
+              ? '当前容器引擎为 Podman，Docker 专属设置不可用'
+              : (_path.isEmpty ? 'daemon.json 与连接参数' : _path),
           actions: [
-            FilledButton.icon(
-              onPressed: _saving ? null : _save,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save_outlined, size: 16),
-              label: Text(_saving ? '应用中…' : '应用'),
-            ),
-            const SizedBox(width: 8),
+            if (!_podman) ...[
+              FilledButton.icon(
+                onPressed: _saving ? null : _save,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined, size: 16),
+                label: Text(_saving ? '应用中…' : '应用'),
+              ),
+              const SizedBox(width: 8),
+            ],
             IconButton(
               onPressed: _load,
               icon: const Icon(Icons.refresh, size: 20),
@@ -169,6 +176,19 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
         Expanded(
           child: _loading
               ? const LoadingView()
+              : _podman
+              ? ListView(
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                  children: [
+                    EmptyState(
+                      icon: Icons.info_outline,
+                      title: '当前引擎为 Podman',
+                      message:
+                          'Docker 的 daemon.json、NVIDIA Runtime、CgroupDriver 等设置不适用于 Podman。'
+                          '请切换到 Docker 引擎后再修改这些选项。',
+                    ),
+                  ],
+                )
               : ListView(
                   padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
                   children: [

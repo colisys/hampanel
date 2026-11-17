@@ -362,11 +362,7 @@ pub fn search(ctx: *context.Context) anyerror!void {
             official: bool,
         };
         var results = std.array_list.Managed(Result).init(ctx.arena);
-        var lines = std.mem.splitScalar(u8, result.stdout, '\n');
-        while (lines.next()) |line| {
-            const trimmed = std.mem.trim(u8, line, " \t\r");
-            if (trimmed.len == 0) continue;
-            const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, trimmed, .{}) catch continue;
+        for (try engine_mod.parseJsonObjects(ctx.arena, result.stdout)) |value| {
             if (value != .object) continue;
             try results.append(.{
                 .name = string(value, "Name"),

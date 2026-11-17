@@ -33,12 +33,9 @@ pub fn index(ctx: *context.Context) anyerror!void {
         ctx.fail(502, "docker_failed", textOf(listing));
         return;
     }
+    const objects = try engine_mod.parseJsonObjects(ctx.arena, listing.stdout);
     var names = std.array_list.Managed([]const u8).init(ctx.arena);
-    var lines = std.mem.splitScalar(u8, listing.stdout, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len == 0) continue;
-        const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, trimmed, .{}) catch continue;
+    for (objects) |value| {
         if (value != .object) continue;
         const name = field(value, "Name");
         if (name.len > 0) try names.append(name);
@@ -68,11 +65,7 @@ pub fn index(ctx: *context.Context) anyerror!void {
     }
 
     var volumes = std.array_list.Managed(Volume).init(ctx.arena);
-    lines = std.mem.splitScalar(u8, listing.stdout, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len == 0) continue;
-        const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, trimmed, .{}) catch continue;
+    for (objects) |value| {
         if (value != .object) continue;
         const name = field(value, "Name");
         var item = Volume{

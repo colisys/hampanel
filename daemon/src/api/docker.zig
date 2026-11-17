@@ -90,11 +90,7 @@ pub fn overview(ctx: *context.Context) anyerror!void {
     var stopped: usize = 0;
     var restarting: usize = 0;
     var failed: usize = 0;
-    var lines = std.mem.splitScalar(u8, ps.stdout, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len == 0) continue;
-        const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, trimmed, .{}) catch continue;
+    for (try engine_mod.parseJsonObjects(ctx.arena, ps.stdout)) |value| {
         const state = stringField(value, "State");
         if (std.mem.eql(u8, state, "running")) {
             running += 1;
@@ -187,11 +183,7 @@ pub fn containers(ctx: *context.Context) anyerror!void {
 
     var items = std.array_list.Managed(Container).init(ctx.arena);
     var ids = std.array_list.Managed([]const u8).init(ctx.arena);
-    var lines = std.mem.splitScalar(u8, result.stdout, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len == 0) continue;
-        const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, trimmed, .{}) catch continue;
+    for (try engine_mod.parseJsonObjects(ctx.arena, result.stdout)) |value| {
         if (value != .object) continue;
         const id = stringField(value, "ID");
         try items.append(.{
@@ -252,11 +244,7 @@ pub fn images(ctx: *context.Context) anyerror!void {
 
     const usage = loadImageUsage(ctx, engine, socket) catch &[_]UsageEntry{};
     var items = std.array_list.Managed(Image).init(ctx.arena);
-    var lines = std.mem.splitScalar(u8, result.stdout, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len == 0) continue;
-        const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, trimmed, .{}) catch continue;
+    for (try engine_mod.parseJsonObjects(ctx.arena, result.stdout)) |value| {
         if (value != .object) continue;
         const id = stringField(value, "ID");
         const repository = stringField(value, "Repository");
@@ -810,11 +798,7 @@ fn loadStats(
         engine.name, "stats", "--no-stream", "--format", "{{json .}}",
     }, .{ .max_output = max_output }) catch return map;
     if (!result.ok()) return map;
-    var lines = std.mem.splitScalar(u8, result.stdout, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len == 0) continue;
-        const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, trimmed, .{}) catch continue;
+    for (try engine_mod.parseJsonObjects(ctx.arena, result.stdout)) |value| {
         if (value != .object) continue;
         const name = stringField(value, "Name");
         if (name.len == 0) continue;
@@ -1084,11 +1068,7 @@ fn loadImageUsage(
     }, .{ .max_output = max_output }) catch return &.{};
     if (!result.ok()) return &.{};
     var ids = std.array_list.Managed([]const u8).init(ctx.arena);
-    var lines = std.mem.splitScalar(u8, result.stdout, '\n');
-    while (lines.next()) |line| {
-        const trimmed = std.mem.trim(u8, line, " \t\r");
-        if (trimmed.len == 0) continue;
-        const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, trimmed, .{}) catch continue;
+    for (try engine_mod.parseJsonObjects(ctx.arena, result.stdout)) |value| {
         if (value != .object) continue;
         const id = stringField(value, "ID");
         if (id.len > 0) try ids.append(id);

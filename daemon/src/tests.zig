@@ -101,3 +101,24 @@ test "validation helpers" {
     try std.testing.expect(!validate.isEntryPrefix("/a/b"));
     try std.testing.expect(!validate.isEntryPrefix("/../etc"));
 }
+
+test "container engine JSON list parser" {
+    const engine_mod = @import("runtime/engine.zig");
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const podman = try engine_mod.parseJsonObjects(
+        allocator,
+        "[{\"State\":\"running\"},{\"State\":\"exited\"}]",
+    );
+    try std.testing.expectEqual(@as(usize, 2), podman.len);
+    try std.testing.expectEqualStrings("running", podman[0].object.get("State").?.string);
+
+    const docker = try engine_mod.parseJsonObjects(
+        allocator,
+        "{\"State\":\"running\"}\n{\"State\":\"paused\"}\n",
+    );
+    try std.testing.expectEqual(@as(usize, 2), docker.len);
+    try std.testing.expectEqualStrings("paused", docker[1].object.get("State").?.string);
+}

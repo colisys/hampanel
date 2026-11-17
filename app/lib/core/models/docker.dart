@@ -606,6 +606,8 @@ class DockerSettings {
     required this.cgroupDriver,
     required this.nvidiaRuntime,
     required this.socketPath,
+    required this.engine,
+    required this.podman,
   });
 
   final String path;
@@ -622,6 +624,8 @@ class DockerSettings {
   final String cgroupDriver;
   final bool nvidiaRuntime;
   final String socketPath;
+  final String engine;
+  final bool podman;
 
   factory DockerSettings.fromJson(Map<String, dynamic> json) => DockerSettings(
     path: json['path'] as String? ?? '',
@@ -638,6 +642,8 @@ class DockerSettings {
     cgroupDriver: json['cgroup_driver'] as String? ?? 'systemd',
     nvidiaRuntime: json['nvidia_runtime'] as bool? ?? false,
     socketPath: json['socket_path'] as String? ?? '',
+    engine: json['engine'] as String? ?? '',
+    podman: json['podman'] as bool? ?? false,
   );
 }
 
