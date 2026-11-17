@@ -185,15 +185,15 @@ pub fn containers(ctx: *context.Context) anyerror!void {
     var ids = std.array_list.Managed([]const u8).init(ctx.arena);
     for (try engine_mod.parseJsonObjects(ctx.arena, result.stdout)) |value| {
         if (value != .object) continue;
-        const id = stringField(value, "ID");
+        const id = stringFieldAny(value, &.{ "ID", "Id", "id" });
         try items.append(.{
             .id = id,
-            .name = stringField(value, "Names"),
+            .name = nameField(value),
             .image = stringField(value, "Image"),
             .state = stringField(value, "State"),
             .status = stringField(value, "Status"),
             .ports = stringField(value, "Ports"),
-            .created_at = stringField(value, "CreatedAt"),
+            .created_at = stringFieldAny(value, &.{ "CreatedAt", "Created" }),
         });
         try ids.append(id);
     }
@@ -246,9 +246,30 @@ pub fn images(ctx: *context.Context) anyerror!void {
     var items = std.array_list.Managed(Image).init(ctx.arena);
     for (try engine_mod.parseJsonObjects(ctx.arena, result.stdout)) |value| {
         if (value != .object) continue;
-        const id = stringField(value, "ID");
-        const repository = stringField(value, "Repository");
-        const tag = stringField(value, "Tag");
+        const id = stringFieldAny(value, &.{ "ID", "Id", "id" });
+        var repository = stringField(value, "Repository");
+        var tag = stringField(value, "Tag");
+        if (repository.len == 0) {
+            if (value.object.get("RepoTags")) |repo_tags| {
+                if (repo_tags == .array) {
+                    for (repo_tags.array.items) |entry| {
+                        if (entry != .string) continue;
+                        const reference = entry.string;
+                        if (std.mem.eql(u8, reference, "<none>:<none>") or reference.len == 0) continue;
+                        if (std.mem.lastIndexOfScalar(u8, reference, ':')) |colon| {
+                            repository = reference[0..colon];
+                            tag = reference[colon + 1 ..];
+                        } else {
+                            repository = reference;
+                            tag = "latest";
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        const size_text = imageSize(ctx.arena, value) catch "";
+        const created_text = imageCreated(ctx.arena, value) catch "";
         const reference = if (std.mem.eql(u8, tag, "<none>"))
             repository
         else if (std.mem.eql(u8, repository, "<none>"))
@@ -267,8 +288,8 @@ pub fn images(ctx: *context.Context) anyerror!void {
             .id = id,
             .repository = repository,
             .tag = tag,
-            .size = stringField(value, "Size"),
-            .created_at = stringField(value, "CreatedSince"),
+            .size = size_text,
+            .created_at = created_text,
             .digest = stringField(value, "Digest"),
             .dangling = std.mem.eql(u8, repository, "<none>") or std.mem.eql(u8, tag, "<none>"),
             .in_use = used_by.items.len > 0,
@@ -1121,11 +1142,79 @@ fn composeCount(ctx: *context.Context, engine: Engine, socket: []const u8) usize
 }
 
 fn stringField(value: std.json.Value, key: []const u8) []const u8 {
+    if (value != .object) return "";
     const entry = value.object.get(key) orelse return "";
     return switch (entry) {
         .string => |text| text,
         else => "",
     };
+}
+
+fn stringFieldAny(value: std.json.Value, keys: []const []const u8) []const u8 {
+    for (keys) |key| {
+        const text = stringField(value, key);
+        if (text.len > 0) return text;
+    }
+    return "";
+}
+
+fn nameField(value: std.json.Value) []const u8 {
+    if (value != .object) return "";
+    if (value.object.get("Names")) |names| {
+        if (names == .string) return names.string;
+        if (names == .array) {
+            for (names.array.items) |entry| {
+                if (entry == .string) return entry.string;
+            }
+        }
+    }
+    return stringField(value, "Name");
+}
+
+fn imageSize(allocator: std.mem.Allocator, value: std.json.Value) ![]const u8 {
+    if (value != .object) return "";
+    const entry = value.object.get("Size") orelse return "";
+    return switch (entry) {
+        .string => |text| text,
+        .integer => |bytes| formatSize(allocator, @intCast(bytes)),
+        else => "",
+    };
+}
+
+fn imageCreated(allocator: std.mem.Allocator, value: std.json.Value) ![]const u8 {
+    const direct = stringFieldAny(value, &.{ "CreatedAt", "CreatedSince" });
+    if (direct.len > 0) return direct;
+    if (value != .object) return "";
+    const entry = value.object.get("Created") orelse return "";
+    return switch (entry) {
+        .string => |text| text,
+        .integer => |seconds| formatEpoch(allocator, seconds),
+        else => "",
+    };
+}
+
+fn formatSize(allocator: std.mem.Allocator, bytes: u64) ![]const u8 {
+    const units = [_][]const u8{ "B", "KiB", "MiB", "GiB", "TiB" };
+    var value: f64 = @floatFromInt(bytes);
+    var unit: usize = 0;
+    while (value >= 1024 and unit + 1 < units.len) : (unit += 1) value /= 1024;
+    if (unit == 0) return std.fmt.allocPrint(allocator, "{d} {s}", .{ bytes, units[unit] });
+    return std.fmt.allocPrint(allocator, "{d:.1} {s}", .{ value, units[unit] });
+}
+
+fn formatEpoch(allocator: std.mem.Allocator, seconds: i64) ![]const u8 {
+    const epoch = std.time.epoch.EpochSeconds{ .secs = @intCast(seconds) };
+    const day = epoch.getEpochDay();
+    const year_day = day.calculateYearDay();
+    const month_day = year_day.calculateMonthDay();
+    const day_seconds = epoch.getDaySeconds();
+    return std.fmt.allocPrint(allocator, "{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}", .{
+        year_day.year,
+        month_day.month.numeric(),
+        month_day.day_index + 1,
+        day_seconds.getHoursIntoDay(),
+        day_seconds.getMinutesIntoHour(),
+    });
 }
 
 fn textOf(result: exec.Result) []const u8 {

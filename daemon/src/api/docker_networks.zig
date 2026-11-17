@@ -38,7 +38,7 @@ pub fn index(ctx: *context.Context) anyerror!void {
     var ids = std.array_list.Managed([]const u8).init(ctx.arena);
     for (objects) |value| {
         if (value != .object) continue;
-        const id = field(value, "ID");
+        const id = fieldAny(value, &.{ "ID", "Id", "id" });
         if (id.len > 0) try ids.append(id);
     }
     var inspected = std.StringHashMap(std.json.Value).init(ctx.arena);
@@ -56,7 +56,7 @@ pub fn index(ctx: *context.Context) anyerror!void {
                 if (parsed) |root| {
                     if (root == .array) {
                         for (root.array.items) |item| {
-                            const id = field(item, "Id");
+                            const id = fieldAny(item, &.{ "Id", "ID", "id" });
                             if (id.len > 0) try inspected.put(id, item);
                         }
                     }
@@ -68,21 +68,22 @@ pub fn index(ctx: *context.Context) anyerror!void {
     var networks = std.array_list.Managed(Network).init(ctx.arena);
     for (objects) |value| {
         if (value != .object) continue;
-        const id = field(value, "ID");
+        const id = fieldAny(value, &.{ "ID", "Id", "id" });
         var item = Network{
             .id = id,
-            .name = field(value, "Name"),
-            .driver = field(value, "Driver"),
-            .scope = field(value, "Scope"),
+            .name = fieldAny(value, &.{ "Name", "name" }),
+            .driver = fieldAny(value, &.{ "Driver", "driver" }),
+            .scope = fieldAny(value, &.{ "Scope", "scope" }),
             .subnet = "",
             .gateway = "",
             .labels = &.{},
             .created_at = "",
         };
         if (inspected.get(id)) |detail| {
-            item.created_at = field(detail, "Created");
+            item.created_at = fieldAny(detail, &.{ "Created", "created" });
             var labels = std.array_list.Managed([]const u8).init(ctx.arena);
             try collectMap(ctx.arena, detail, "Labels", &labels);
+            if (labels.items.len == 0) try collectMap(ctx.arena, detail, "labels", &labels);
             item.labels = labels.items;
             if (detail.object.get("IPAM")) |ipam| {
                 if (ipam == .object) {
@@ -92,6 +93,15 @@ pub fn index(ctx: *context.Context) anyerror!void {
                             item.gateway = field(config.array.items[0], "Gateway");
                         }
                     }
+                }
+            }
+        }
+        if (item.subnet.len == 0) {
+            if (value.object.get("subnets")) |subnets| {
+                if (subnets == .array and subnets.array.items.len > 0) {
+                    const first = subnets.array.items[0];
+                    item.subnet = fieldAny(first, &.{ "subnet", "Subnet" });
+                    item.gateway = fieldAny(first, &.{ "gateway", "Gateway" });
                 }
             }
         }
@@ -181,6 +191,14 @@ pub fn prune(ctx: *context.Context) anyerror!void {
     };
     if (!result.ok()) ctx.response.status = 502;
     try ctx.json(.{ .ok = result.ok(), .output = textOf(result) });
+}
+
+fn fieldAny(value: std.json.Value, keys: []const []const u8) []const u8 {
+    for (keys) |key| {
+        const text = field(value, key);
+        if (text.len > 0) return text;
+    }
+    return "";
 }
 
 fn collectMap(

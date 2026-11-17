@@ -37,7 +37,7 @@ pub fn index(ctx: *context.Context) anyerror!void {
     var names = std.array_list.Managed([]const u8).init(ctx.arena);
     for (objects) |value| {
         if (value != .object) continue;
-        const name = field(value, "Name");
+        const name = fieldAny(value, &.{ "Name", "name" });
         if (name.len > 0) try names.append(name);
     }
     var inspected = std.StringHashMap(std.json.Value).init(ctx.arena);
@@ -55,7 +55,7 @@ pub fn index(ctx: *context.Context) anyerror!void {
                 if (parsed) |root| {
                     if (root == .array) {
                         for (root.array.items) |item| {
-                            const name = field(item, "Name");
+                            const name = fieldAny(item, &.{ "Name", "name" });
                             if (name.len > 0) try inspected.put(name, item);
                         }
                     }
@@ -67,24 +67,26 @@ pub fn index(ctx: *context.Context) anyerror!void {
     var volumes = std.array_list.Managed(Volume).init(ctx.arena);
     for (objects) |value| {
         if (value != .object) continue;
-        const name = field(value, "Name");
+        const name = fieldAny(value, &.{ "Name", "name" });
         var item = Volume{
             .name = name,
-            .driver = field(value, "Driver"),
-            .scope = field(value, "Scope"),
-            .mountpoint = field(value, "Mountpoint"),
+            .driver = fieldAny(value, &.{ "Driver", "driver" }),
+            .scope = fieldAny(value, &.{ "Scope", "scope" }),
+            .mountpoint = fieldAny(value, &.{ "Mountpoint", "mountpoint" }),
             .labels = &.{},
             .options = &.{},
             .created_at = "",
         };
         if (inspected.get(name)) |detail| {
-            item.created_at = field(detail, "CreatedAt");
-            item.mountpoint = field(detail, "Mountpoint");
+            item.created_at = fieldAny(detail, &.{ "CreatedAt", "created" });
+            item.mountpoint = fieldAny(detail, &.{ "Mountpoint", "mountpoint" });
             var labels = std.array_list.Managed([]const u8).init(ctx.arena);
             try collectMap(ctx.arena, detail, "Labels", &labels);
+            if (labels.items.len == 0) try collectMap(ctx.arena, detail, "labels", &labels);
             item.labels = labels.items;
             var options = std.array_list.Managed([]const u8).init(ctx.arena);
             try collectMap(ctx.arena, detail, "Options", &options);
+            if (options.items.len == 0) try collectMap(ctx.arena, detail, "options", &options);
             item.options = options.items;
         }
         try volumes.append(item);
@@ -177,6 +179,14 @@ pub fn prune(ctx: *context.Context) anyerror!void {
     };
     if (!result.ok()) ctx.response.status = 502;
     try ctx.json(.{ .ok = result.ok(), .output = textOf(result) });
+}
+
+fn fieldAny(value: std.json.Value, keys: []const []const u8) []const u8 {
+    for (keys) |key| {
+        const text = field(value, key);
+        if (text.len > 0) return text;
+    }
+    return "";
 }
 
 fn collectMap(
