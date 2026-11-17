@@ -11,6 +11,21 @@ on:
     # branch, so jobs check out `nightly` when triggered this way.
     - cron: "30 18 * * *"
   workflow_dispatch:
+    inputs:
+      target:
+        description: "Build target (single target saves runner cost)"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - daemon
+          - daemon-windows
+          - flutter-linux
+          - flutter-windows
+          - flutter-macos
+          - flutter-android
+          - flutter-ios
 
 permissions:
   contents: read
@@ -21,13 +36,17 @@ env:
   BUILD_REF: ${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }}
 
 concurrency:
-  group: build-${{ github.workflow }}-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  group: build-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target || 'all' }}-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
   cancel-in-progress: true
 
 jobs:
   daemon:
     name: Daemon (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.target == 'all' ||
+      github.event.inputs.target == 'daemon'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -110,6 +129,10 @@ jobs:
   daemon-windows:
     name: Daemon Windows (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: windows-latest
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.target == 'all' ||
+      github.event.inputs.target == 'daemon-windows'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -220,6 +243,10 @@ jobs:
   flutter-linux:
     name: Flutter Linux (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.target == 'all' ||
+      github.event.inputs.target == 'flutter-linux'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -286,6 +313,10 @@ jobs:
   flutter-windows:
     name: Flutter Windows (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: windows-latest
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.target == 'all' ||
+      github.event.inputs.target == 'flutter-windows'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -364,6 +395,10 @@ jobs:
           - runner: macos-15-intel
             arch: x86_64
     runs-on: ${{ matrix.runner }}
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.target == 'all' ||
+      github.event.inputs.target == 'flutter-macos'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -417,6 +452,10 @@ jobs:
   flutter-android:
     name: Flutter Android (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.target == 'all' ||
+      github.event.inputs.target == 'flutter-android'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -509,6 +548,10 @@ jobs:
   flutter-ios:
     name: Flutter iOS unsigned (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: macos-latest
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.target == 'all' ||
+      github.event.inputs.target == 'flutter-ios'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -562,7 +605,12 @@ jobs:
     needs: [daemon, daemon-windows, flutter-linux, flutter-windows, flutter-macos, flutter-android, flutter-ios]
     if: >-
       github.event_name != 'pull_request' &&
-      (startsWith(github.ref, 'refs/tags/') || github.event_name == 'schedule' || github.ref == 'refs/heads/nightly')
+      (
+        startsWith(github.ref, 'refs/tags/') ||
+        github.event_name == 'schedule' ||
+        github.ref == 'refs/heads/nightly'
+      ) &&
+      (github.event_name != 'workflow_dispatch' || github.event.inputs.target == 'all')
     runs-on: ubuntu-latest
     permissions:
       contents: write
