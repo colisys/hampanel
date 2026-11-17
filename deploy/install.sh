@@ -171,11 +171,27 @@ if [[ "$MODE" == "binary" ]]; then
   if ! curl -fsSL -A "$USER_AGENT" --retry 1 --connect-timeout 10 -o "$TMP/version.txt" "$BASE/version.txt"; then
     fail "no release found for channel ${CHANNEL}; use --channel nightly for prereleases or publish a stable tag"
   fi
+  libc="gnu"
+  if ldd --version 2>&1 | grep -qi musl || ls /lib/ld-musl-*.so.1 >/dev/null 2>&1; then
+    libc="musl"
+  fi
   machine="$(uname -m)"
   case "$machine" in
-    x86_64) asset="hampanel-daemon-linux-x86_64.tar.gz" ;;
-    aarch64|arm64) asset="hampanel-daemon-linux-aarch64.tar.gz" ;;
-    riscv64) asset="hampanel-daemon-linux-riscv64.tar.gz" ;;
+    x86_64)
+      if [[ "$libc" == "musl" ]]; then
+        asset="hampanel-daemon-linux-musl-x86_64.tar.gz"
+      else
+        asset="hampanel-daemon-linux-x86_64.tar.gz"
+      fi
+      ;;
+    aarch64|arm64)
+      if [[ "$libc" == "musl" ]]; then fail "no musl build published for aarch64"; fi
+      asset="hampanel-daemon-linux-aarch64.tar.gz"
+      ;;
+    riscv64)
+      if [[ "$libc" == "musl" ]]; then fail "no musl build published for riscv64"; fi
+      asset="hampanel-daemon-linux-riscv64.tar.gz"
+      ;;
     *) fail "unsupported architecture: $machine" ;;
   esac
   log "downloading ${BASE}/${asset}"

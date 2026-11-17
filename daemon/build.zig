@@ -53,6 +53,7 @@ pub fn build(b: *std.Build) void {
     const openssl_include = b.option([]const u8, "openssl-include", "Extra OpenSSL include directory");
     const openssl_lib_dir = b.option([]const u8, "openssl-lib-dir", "Extra OpenSSL library directory");
     const openssl_dir = b.option([]const u8, "openssl-dir", "OpenSSL installation prefix (Windows)");
+    const openssl_static = b.option(bool, "openssl-static", "Link OpenSSL statically") orelse false;
 
     const build_info = b.addOptions();
     build_info.addOption([]const u8, "version", full_version);
@@ -178,8 +179,9 @@ pub fn build(b: *std.Build) void {
         exe_module.linkSystemLibrary("psapi", .{});
         exe_module.linkSystemLibrary("ws2_32", .{});
     } else {
-        exe_module.linkSystemLibrary("ssl", .{});
-        exe_module.linkSystemLibrary("crypto", .{});
+        const link_mode: std.builtin.LinkMode = if (openssl_static) .static else .dynamic;
+        exe_module.linkSystemLibrary("ssl", .{ .preferred_link_mode = link_mode });
+        exe_module.linkSystemLibrary("crypto", .{ .preferred_link_mode = link_mode });
     }
 
     const exe = b.addExecutable(.{
@@ -210,8 +212,9 @@ pub fn build(b: *std.Build) void {
     tests_module.addOptions("build_info", build_info);
     if (openssl_include) |dir| tests_module.addIncludePath(.{ .cwd_relative = dir });
     if (openssl_lib_dir) |dir| tests_module.addLibraryPath(.{ .cwd_relative = dir });
-    tests_module.linkSystemLibrary("ssl", .{});
-    tests_module.linkSystemLibrary("crypto", .{});
+    const test_link_mode: std.builtin.LinkMode = if (openssl_static) .static else .dynamic;
+    tests_module.linkSystemLibrary("ssl", .{ .preferred_link_mode = test_link_mode });
+    tests_module.linkSystemLibrary("crypto", .{ .preferred_link_mode = test_link_mode });
 
     const tests = b.addTest(.{
         .root_module = tests_module,

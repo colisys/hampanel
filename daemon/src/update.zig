@@ -312,10 +312,11 @@ const curl_user_agent =
 
 fn assetName() []const u8 {
     if (builtin.os.tag == .windows) return "hampanel-daemon-windows-x86_64.zip";
+    const musl = builtin.abi == .musl;
     return switch (builtin.cpu.arch) {
-        .aarch64 => "hampanel-daemon-linux-aarch64.tar.gz",
-        .riscv64 => "hampanel-daemon-linux-riscv64.tar.gz",
-        else => "hampanel-daemon-linux-x86_64.tar.gz",
+        .aarch64 => if (musl) "hampanel-daemon-linux-aarch64-musl.tar.gz" else "hampanel-daemon-linux-aarch64.tar.gz",
+        .riscv64 => if (musl) "hampanel-daemon-linux-riscv64-musl.tar.gz" else "hampanel-daemon-linux-riscv64.tar.gz",
+        else => if (musl) "hampanel-daemon-linux-musl-x86_64.tar.gz" else "hampanel-daemon-linux-x86_64.tar.gz",
     };
 }
 

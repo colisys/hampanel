@@ -121,12 +121,13 @@ CI 在 `v*` tag 上发布正式版，在 `nightly` 分支上维护滚动预发�
 
 | 产物 | 说明 |
 | --- | --- |
-| `hampanel-client-linux-x86_64.AppImage` | Linux 客户端，单文件；`chmod +x` 后直接运行 |
+| `hampanel-client-linux-x86_64.AppImage` | Linux 客户端（glibc），单文件；`chmod +x` 后直接运行 |
 | `hampanel-client-windows-x86_64.exe` | Windows 客户端，单文件绿色版；双击运行 |
 | `hampanel-client-macos-<arch>.dmg` | macOS 客户端（仅控制 Linux / Windows） |
 | `hampanel-client-android-universal.apk` | Android 客户端，CI 使用发布密钥签名（v2 + v3）；未配置密钥时退化为 `-unsigned.apk` |
 | `hampanel-client-ios-unsigned.ipa` | iOS 客户端，未签名，需自行签名后安装 |
-| `hampanel-daemon-linux-x86_64.tar.gz` | `hampaneld`、风险网关、`bootstrap.sh`、`install.sh` |
+| `hampanel-daemon-linux-x86_64.tar.gz` | glibc 版 daemon：`hampaneld`、风险网关、`bootstrap.sh`、`install.sh` |
+| `hampanel-daemon-linux-musl-x86_64.tar.gz` | 静态 musl 版 daemon，内容同上 |
 | `hampanel-daemon-windows-x86_64.zip` | `hampaneld.exe`、OpenSSL DLL、`install.ps1` |
 | `hampanel-install-linux.sh` / `hampanel-install-windows.ps1` | 一键安装器；默认装发布二进制，也可源码构建 |
 | `version.txt` / `SHA256SUMS.txt` / `LICENSE.txt` | 版本、校验和与许可证 |
@@ -289,7 +290,7 @@ zig build -Doptimize=ReleaseSafe
 # 或关闭前缀：--entry-prefix ""
 ```
 
-依赖：Zig 0.17.1+、OpenSSL 1.1.1+/3.x（开发头文件）、Linux、glibc。
+依赖：Zig 0.17.1+、OpenSSL 1.1.1+/3.x（开发头文件）、Linux、glibc 或 musl。musl 静态构建使用 `-Dtarget=x86_64-linux-musl -Dopenssl-static=true -Dopenssl-lib-dir=/usr/lib`。
 
 ## 安全模型
 
