@@ -359,30 +359,28 @@ class _SshPageState extends State<SshPage> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                FormRow(
+                  flex: const [3, 1],
                   children: [
-                    SizedBox(
-                      width: 260,
-                      child: DropdownButtonFormField<String>(
-                        key: ValueKey(_logMode),
-                        initialValue: _logMode,
-                        decoration: const InputDecoration(labelText: '记录方式'),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'syslog',
-                            child: Text('syslog / journald'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'file',
-                            child: Text('传统文件（rsyslog）'),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          if (value != null) setState(() => _logMode = value);
-                        },
-                      ),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey(_logMode),
+                      initialValue: _logMode,
+                      isExpanded: true,
+                      decoration: const InputDecoration(labelText: '记录方式'),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'syslog',
+                          child: Text('syslog / journald'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'file',
+                          child: Text('传统文件（rsyslog）'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) setState(() => _logMode = value);
+                      },
                     ),
-                    const SizedBox(width: 12),
                     FilledButton(
                       onPressed: _applyLogMode,
                       child: const Text('应用'),

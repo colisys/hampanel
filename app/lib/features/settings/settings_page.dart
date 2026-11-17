@@ -325,6 +325,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    spacing: 14,
                     children: [
                       if (_tab == _SettingsTab.general)
                         ConstrainedBox(
@@ -404,7 +405,6 @@ class _SettingsPageState extends State<SettingsPage> {
                             ),
                           ),
                         ),
-                      const SizedBox(height: 14),
                       if (_tab == _SettingsTab.general)
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 720),
@@ -571,7 +571,6 @@ class _SettingsPageState extends State<SettingsPage> {
                                   ),
                           ),
                         ),
-                      const SizedBox(height: 14),
                       if (_tab == _SettingsTab.general)
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 720),
@@ -597,7 +596,6 @@ class _SettingsPageState extends State<SettingsPage> {
                             ),
                           ),
                         ),
-                      const SizedBox(height: 14),
                       if (_tab == _SettingsTab.general)
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 720),
@@ -607,10 +605,8 @@ class _SettingsPageState extends State<SettingsPage> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const ClientUpdatePanel(),
-                                const SizedBox(height: 14),
-                                Container(height: 1, color: hampanelBorder),
-                                const SizedBox(height: 14),
-                                Wrap(
+                                          Container(height: 1, color: hampanelBorder),
+                                          Wrap(
                                   spacing: 12,
                                   runSpacing: 8,
                                   crossAxisAlignment: WrapCrossAlignment.center,
@@ -648,7 +644,6 @@ class _SettingsPageState extends State<SettingsPage> {
                             ),
                           ),
                         ),
-                      const SizedBox(height: 14),
                       if (_tab == _SettingsTab.ai)
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 720),
@@ -732,7 +727,6 @@ class _SettingsPageState extends State<SettingsPage> {
                                   ),
                           ),
                         ),
-                      const SizedBox(height: 14),
                       if (_tab == _SettingsTab.ai)
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 720),
@@ -834,7 +828,6 @@ class _SettingsPageState extends State<SettingsPage> {
                                   ),
                           ),
                         ),
-                      const SizedBox(height: 14),
                       if (_tab == _SettingsTab.host)
                         const HostSettingsSection(),
                       if (_tab == _SettingsTab.about)

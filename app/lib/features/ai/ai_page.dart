@@ -45,10 +45,11 @@ class _AiPageState extends State<AiPage> {
   AiConfig? _config;
   bool _loading = true;
   bool _sending = false;
+  int _requestId = 0;
+  ConversationEntry? _pendingPlaceholder;
   bool _keyPresent = false;
   String? _keychainError;
   String? _error;
-  String _status = '';
 
   List<Map<String, dynamic>> _chatHistory = [];
   List<Map<String, dynamic>> _responsesInput = [];
@@ -138,6 +139,8 @@ class _AiPageState extends State<AiPage> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
+          scrollable: true,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           title: const Text('AI 配置'),
           content: DialogBody(
             maxWidth: 560,
@@ -298,7 +301,6 @@ class _AiPageState extends State<AiPage> {
       _chatHistory = [];
       _responsesInput = [];
       _error = null;
-      _status = '';
     });
     _persist();
   }
@@ -315,8 +317,7 @@ class _AiPageState extends State<AiPage> {
           conversation.responsesInput,
         );
         _error = null;
-        _status = '';
-      });
+        });
       return;
     }
   }
@@ -355,6 +356,7 @@ class _AiPageState extends State<AiPage> {
   Future<void> _send() async {
     final text = _inputController.text.trim();
     if (text.isEmpty || _sending) return;
+    final requestId = ++_requestId;
     final config = _config;
     final conversation = _active;
     if (config == null || !_keyPresent) {
@@ -369,7 +371,7 @@ class _AiPageState extends State<AiPage> {
       _toast('系统钥匙串中没有 API Key');
       return;
     }
-    if (!mounted) return;
+    if (!mounted || requestId != _requestId) return;
 
     _inputController.clear();
     if (conversation.title == '新对话') {
@@ -381,7 +383,6 @@ class _AiPageState extends State<AiPage> {
     setState(() {
       _sending = true;
       _error = null;
-      _status = 'AI 思考中…';
       conversation.entries.add(ConversationEntry(role: 'user', text: text));
     });
 
@@ -402,10 +403,16 @@ class _AiPageState extends State<AiPage> {
     try {
       var iterations = 0;
       while (iterations < 6) {
+        if (requestId != _requestId) break;
         iterations += 1;
-        final placeholder = ConversationEntry(role: 'assistant', text: '');
+        final placeholder = ConversationEntry(
+          role: 'assistant',
+          text: 'AI 思考中…',
+        );
+        _pendingPlaceholder = placeholder;
         setState(() => conversation.entries.add(placeholder));
         var streamed = false;
+        var clearedPlaceholder = false;
 
         final reply = config.protocol == 'responses'
             ? await _client.responses(
@@ -425,12 +432,22 @@ class _AiPageState extends State<AiPage> {
                     .map((tool) => chatToolSpec(_toolSchema(tool)))
                     .toList(),
                 (delta) {
-                  if (!mounted) return;
+                  if (!mounted || requestId != _requestId) return;
                   streamed = true;
-                  setState(() => placeholder.text += delta);
+                  setState(() {
+                    if (!clearedPlaceholder) {
+                      placeholder.text = '';
+                      clearedPlaceholder = true;
+                      if (_pendingPlaceholder == placeholder) {
+                        _pendingPlaceholder = null;
+                      }
+                    }
+                    placeholder.text += delta;
+                  });
                 },
               );
 
+        if (requestId != _requestId) return;
         if (!streamed) {
           final answer = reply.text;
           if (answer != null && answer.isNotEmpty) {
@@ -469,6 +486,7 @@ class _AiPageState extends State<AiPage> {
         }
 
         for (final call in reply.toolCalls) {
+          if (requestId != _requestId) break;
           final tool = _toolsByName[call.name];
           String result;
           if (tool == null || !activeNames.contains(call.name)) {
@@ -506,7 +524,6 @@ class _AiPageState extends State<AiPage> {
               'content': result,
             });
           }
-          setState(() => _status = 'AI 思考中…');
         }
       }
 
@@ -514,19 +531,32 @@ class _AiPageState extends State<AiPage> {
         _appendAssistant('已达到工具调用次数上限，请缩小任务范围后重试。');
       }
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestId != _requestId) return;
       setState(() => _error = error.toString());
       _appendAssistant('请求失败：$error');
     } finally {
       conversation.updatedAt = DateTime.now().millisecondsSinceEpoch;
-      if (mounted) {
+      if (mounted && requestId == _requestId) {
         setState(() {
+          _pendingPlaceholder = null;
           _sending = false;
-          _status = '';
         });
       }
       await _persist();
     }
+  }
+
+  void _stop() {
+    if (!_sending) return;
+    _requestId += 1;
+    final pending = _pendingPlaceholder;
+    setState(() {
+      if (pending != null && pending.text == 'AI 思考中…') {
+        pending.text = '已停止';
+      }
+      _pendingPlaceholder = null;
+      _sending = false;
+    });
   }
 
   Future<String> _executeTool(
@@ -758,17 +788,12 @@ class _AiPageState extends State<AiPage> {
                             ),
                             const SizedBox(width: 10),
                             FilledButton.icon(
-                              onPressed: _sending ? null : _send,
-                              icon: _sending
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.send, size: 16),
-                              label: Text(_sending ? _status : '发送'),
+                              onPressed: _sending ? _stop : _send,
+                              icon: Icon(
+                                _sending ? Icons.stop : Icons.send,
+                                size: 16,
+                              ),
+                              label: Text(_sending ? '停止' : '发送'),
                             ),
                           ],
                         ),
@@ -789,18 +814,21 @@ class _AiPageState extends State<AiPage> {
       context: context,
       backgroundColor: hampanelSurface,
       isScrollControlled: true,
-      builder: (sheetContext) => SizedBox(
-        height: 460,
-        child: SafeArea(
-          child: _conversationList(
-            onPicked: () => Navigator.of(sheetContext).pop(),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) => SizedBox(
+          height: 460,
+          child: SafeArea(
+            child: _conversationList(
+              onPicked: () => Navigator.of(sheetContext).pop(),
+              onChanged: () => setSheetState(() {}),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _conversationList({VoidCallback? onPicked}) {
+  Widget _conversationList({VoidCallback? onPicked, VoidCallback? onChanged}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -880,8 +908,10 @@ class _AiPageState extends State<AiPage> {
                           IconButton(
                             tooltip: '删除对话',
                             visualDensity: VisualDensity.compact,
-                            onPressed: () =>
-                                _deleteConversation(conversation.id),
+                            onPressed: () async {
+                              await _deleteConversation(conversation.id);
+                              onChanged?.call();
+                            },
                             icon: const Icon(Icons.close, size: 13),
                           ),
                         ],

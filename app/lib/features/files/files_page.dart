@@ -8,6 +8,7 @@ import '../../core/native_files.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
+import '../recycle/recycle_page.dart';
 import '../store/deploy_dialog.dart';
 
 class FilesPage extends StatefulWidget {
@@ -442,6 +443,13 @@ class _FilesPageState extends State<FilesPage> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _openRecycle() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const RecyclePage()),
+    );
+    if (mounted) _load(_path);
+  }
+
   @override
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 720;
@@ -463,6 +471,11 @@ class _FilesPageState extends State<FilesPage> {
               onPressed: _upload,
               icon: const Icon(Icons.upload_file_outlined, size: 20),
             ),
+            IconButton(
+              tooltip: '回收站',
+              onPressed: _openRecycle,
+              icon: const Icon(Icons.delete_outline, size: 20),
+            ),
           ]
         : <Widget>[
             OutlinedButton.icon(
@@ -481,6 +494,12 @@ class _FilesPageState extends State<FilesPage> {
               onPressed: _upload,
               icon: const Icon(Icons.upload_file_outlined, size: 16),
               label: const Text('上传'),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: '回收站',
+              onPressed: _openRecycle,
+              icon: const Icon(Icons.delete_outline, size: 18),
             ),
           ];
     return Column(

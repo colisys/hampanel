@@ -154,9 +154,6 @@ class _DashboardPageState extends State<DashboardPage> {
       children: [
         PageHeader(
           title: '概览',
-          subtitle: _info == null
-              ? '正在读取服务器状态'
-              : '${_info!.hostname} · ${_info!.os}',
           actions: [
             IconButton(
               onPressed: _refresh,
@@ -309,7 +306,7 @@ class _DashboardPageState extends State<DashboardPage> {
           const SizedBox(height: 12),
           StyledProgress(value: (memory?.percent ?? 0) / 100),
           const SizedBox(height: 12),
-          Sparkline(values: _memoryHistory, color: hampanelAccent),
+          Sparkline(values: _memoryHistory, color: hampanelAccent, maxValue: 100),
           const SizedBox(height: 6),
           Text(
             '近期内存使用率',
@@ -334,9 +331,10 @@ class _DashboardPageState extends State<DashboardPage> {
     final tx = _txHistory[selected?.name] ?? const <double>[];
     return PanelCard(
       title: '网络',
-      trailing: interfaces.length > 1
-          ? SizedBox(
-              width: 120,
+      trailing: interfaces.isEmpty
+          ? null
+          : SizedBox(
+              width: 128,
               child: DropdownButton<String>(
                 value: selected?.name,
                 isExpanded: true,
@@ -359,8 +357,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   setState(() => _iface = value);
                 },
               ),
-            )
-          : null,
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -401,11 +398,6 @@ class _DashboardPageState extends State<DashboardPage> {
               _legend('下行', hampanelAccent),
               const SizedBox(width: 12),
               _legend('上行', hampanelMuted),
-              const Spacer(),
-              Text(
-                '每 3 秒采样',
-                style: TextStyle(fontSize: 10.5, color: hampanelMuted),
-              ),
             ],
           ),
         ],
@@ -515,6 +507,7 @@ class Sparkline extends StatelessWidget {
     required this.color,
     this.secondary,
     this.secondaryColor,
+    this.maxValue,
     this.height = 40,
   });
 
@@ -522,6 +515,7 @@ class Sparkline extends StatelessWidget {
   final Color color;
   final List<double>? secondary;
   final Color? secondaryColor;
+  final double? maxValue;
   final double height;
 
   @override
@@ -535,6 +529,7 @@ class Sparkline extends StatelessWidget {
           color: color,
           secondary: secondary,
           secondaryColor: secondaryColor ?? color,
+          maxValue: maxValue,
         ),
       ),
     );
@@ -547,12 +542,14 @@ class _SparkPainter extends CustomPainter {
     required this.color,
     this.secondary,
     required this.secondaryColor,
+    required this.maxValue,
   });
 
   final List<double> values;
   final Color color;
   final List<double>? secondary;
   final Color secondaryColor;
+  final double? maxValue;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -565,7 +562,7 @@ class _SparkPainter extends CustomPainter {
       background,
     );
 
-    var max = 1.0;
+    var max = maxValue ?? 1.0;
     for (final value in values) {
       if (value > max) max = value;
     }

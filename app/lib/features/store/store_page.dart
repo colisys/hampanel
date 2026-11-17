@@ -22,12 +22,22 @@ class StorePage extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '应用商店',
-                        style: TextStyle(
-                          fontSize: 21,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      Row(
+                        children: [
+                          Container(
+                            width: 5,
+                            height: 20,
+                            color: hampanelAccent,
+                          ),
+                          const SizedBox(width: 10),
+                          const Text(
+                            '应用商店',
+                            style: TextStyle(
+                              fontSize: 21,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                       SizedBox(height: 4),
                       Text(

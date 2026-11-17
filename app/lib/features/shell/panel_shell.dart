@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/build_info.dart';
@@ -14,7 +16,6 @@ import '../files/files_page.dart';
 import '../firewall/firewall_page.dart';
 import '../logs/logs_page.dart';
 import '../processes/processes_page.dart';
-import '../recycle/recycle_page.dart';
 import '../services/services_page.dart';
 import '../settings/settings_page.dart';
 import '../sites/sites_page.dart';
@@ -50,8 +51,64 @@ class PanelShell extends StatefulWidget {
   State<PanelShell> createState() => _PanelShellState();
 }
 
+enum _LinkState { connected, reconnecting, failed }
+
 class _PanelShellState extends State<PanelShell> {
   int _index = 0;
+  _LinkState _link = _LinkState.reconnecting;
+  Timer? _heartbeat;
+  bool _heartbeatInFlight = false;
+  int _heartbeatFailures = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startHeartbeat());
+  }
+
+  @override
+  void dispose() {
+    _heartbeat?.cancel();
+    super.dispose();
+  }
+
+  void _startHeartbeat() {
+    if (!mounted) return;
+    _heartbeat?.cancel();
+    _checkLink();
+    _heartbeat = Timer.periodic(
+      const Duration(seconds: 8),
+      (_) => _checkLink(),
+    );
+  }
+
+  Future<void> _checkLink() async {
+    if (_heartbeatInFlight || !mounted) return;
+    _heartbeatInFlight = true;
+    try {
+      await PanelScope.of(context).api.getJson(
+        '/api/v1/health',
+        timeout: const Duration(seconds: 4),
+      );
+      if (!mounted) return;
+      if (_link != _LinkState.connected || _heartbeatFailures != 0) {
+        setState(() {
+          _link = _LinkState.connected;
+          _heartbeatFailures = 0;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      _heartbeatFailures += 1;
+      setState(() {
+        _link = _heartbeatFailures >= 3
+            ? _LinkState.failed
+            : _LinkState.reconnecting;
+      });
+    } finally {
+      _heartbeatInFlight = false;
+    }
+  }
 
   List<_Destination> get _destinations => [
     _Destination(
@@ -66,7 +123,6 @@ class _PanelShellState extends State<PanelShell> {
     ),
     _Destination('进程', Icons.memory_outlined, (_, _) => const ProcessesPage()),
     _Destination('文件', Icons.folder_open_outlined, (_, _) => const FilesPage()),
-    _Destination('回收站', Icons.delete_outline, (_, _) => const RecyclePage()),
     _Destination(
       '终端',
       Icons.terminal_outlined,
@@ -382,33 +438,63 @@ class _PanelShellState extends State<PanelShell> {
               ),
             ),
           ),
-          Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: compact ? 6 : 8,
-              vertical: 4,
-            ),
-            decoration: BoxDecoration(
-              border: Border.all(color: hampanelInk, width: 1.5),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.verified_user_outlined,
-                  size: 12,
-                  color: hampanelAccent,
+          Tooltip(
+            message: switch (_link) {
+              _LinkState.connected => '心跳正常',
+              _LinkState.reconnecting => '连接中断，正在重试',
+              _LinkState.failed => '连接失败',
+            },
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 6 : 8,
+                vertical: 4,
+              ),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: switch (_link) {
+                    _LinkState.connected => const Color(0xFF2E7D32),
+                    _LinkState.reconnecting => hampanelWarning,
+                    _LinkState.failed => hampanelDanger,
+                  },
+                  width: 1.5,
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  compact ? 'mTLS' : 'mTLS 已加密',
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 10,
-                    color: hampanelInk,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.4,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: switch (_link) {
+                        _LinkState.connected => const Color(0xFF2E7D32),
+                        _LinkState.reconnecting => hampanelWarning,
+                        _LinkState.failed => hampanelDanger,
+                      },
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 6),
+                  Text(
+                    switch (_link) {
+                      _LinkState.connected => '已连接',
+                      _LinkState.reconnecting => '重连中',
+                      _LinkState.failed => '连接失败',
+                    },
+                    style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 10,
+                      color: switch (_link) {
+                        _LinkState.connected => const Color(0xFF2E7D32),
+                        _LinkState.reconnecting => hampanelWarning,
+                        _LinkState.failed => hampanelDanger,
+                      },
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

@@ -159,24 +159,31 @@ class _DockerPageState extends State<DockerPage> {
         if (narrow) {
           return Column(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                child: Row(
-                  children: [
-                    SubNavMenu(
-                      items: _sections,
-                      index: _selected,
-                      onChanged: (value) => setState(() => _selected = value),
-                    ),
-                    const Spacer(),
-                    Text(
-                      _engine == null ? '' : _engine!,
-                      style: TextStyle(fontSize: 11, color: hampanelMuted),
-                    ),
-                  ],
+              Expanded(child: content),
+              Container(
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: hampanelBorder)),
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+                child: SafeArea(
+                  top: false,
+                  child: Row(
+                    children: [
+                      SubNavMenu(
+                        items: _sections,
+                        index: _selected,
+                        onChanged: (value) =>
+                            setState(() => _selected = value),
+                      ),
+                      const Spacer(),
+                      Text(
+                        _engine == null ? '' : _engine!,
+                        style: TextStyle(fontSize: 11, color: hampanelMuted),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              Expanded(child: content),
             ],
           );
         }
