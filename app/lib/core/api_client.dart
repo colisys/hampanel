@@ -70,6 +70,21 @@ class ApiClient {
     );
   }
 
+  Future<HttpClientResponse> openEventStream(
+    String path, {
+    Map<String, String>? query,
+  }) async {
+    final request = await _http.openUrl('GET', uri(path, query));
+    request.headers.set(HttpHeaders.acceptHeader, 'text/event-stream');
+    if (AiRequestContext.active) request.headers.set('x-hampanel-ai', '1');
+    final response = await request.close().timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200) {
+      final text = await utf8.decoder.bind(response).join();
+      throw _errorFrom(response.statusCode, text);
+    }
+    return response;
+  }
+
   Future<dynamic> getJson(
     String path, {
     Map<String, String>? query,

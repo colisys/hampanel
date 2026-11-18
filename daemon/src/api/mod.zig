@@ -202,8 +202,6 @@ pub const routes = [_]router.Route{
     .{ .method = .POST, .pattern = "/api/v1/store/packages/:id/install", .handler = store.installPackage },
 
     .{ .method = .GET, .pattern = "/api/v1/store/nix", .handler = store.nixStatus },
-    .{ .method = .POST, .pattern = "/api/v1/store/nix/build", .handler = store.nixBuild },
-    .{ .method = .POST, .pattern = "/api/v1/store/nix/run", .handler = store.nixRun },
 
     .{ .method = .GET, .pattern = "/api/v1/ssh", .handler = ssh.status },
     .{ .method = .POST, .pattern = "/api/v1/ssh/config", .handler = ssh.apply },

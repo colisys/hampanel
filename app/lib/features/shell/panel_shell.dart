@@ -22,6 +22,7 @@ import '../sites/sites_page.dart';
 import '../software/software_page.dart';
 import '../ssh/ssh_page.dart';
 import '../store/store_page.dart';
+import '../tasks/task_list_page.dart';
 import '../runtimes/runtimes_page.dart';
 import '../terminal/terminal_page.dart';
 import '../tunnels/tunnels_page.dart';
@@ -69,6 +70,7 @@ class _PanelShellState extends State<PanelShell> {
   @override
   void dispose() {
     _heartbeat?.cancel();
+    _session?.tasks.stop();
     super.dispose();
   }
 
@@ -116,6 +118,7 @@ class _PanelShellState extends State<PanelShell> {
       Icons.space_dashboard_outlined,
       (_, _) => const DashboardPage(),
     ),
+    _Destination('任务', Icons.task_alt, (_, _) => const TaskListPage()),
     _Destination(
       'AI 助手',
       Icons.auto_awesome_outlined,
@@ -161,8 +164,20 @@ class _PanelShellState extends State<PanelShell> {
   ];
 
   bool _hostsOpen = false;
+  bool _tasksStarted = false;
+  PanelSession? _session;
 
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _session ??= PanelScope.of(context);
+    if (!_tasksStarted) {
+      _tasksStarted = true;
+      _session!.tasks.start();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

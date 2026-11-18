@@ -4,13 +4,17 @@ import '../core/api_client.dart';
 import '../core/format.dart';
 import '../core/enrollment.dart';
 import '../core/host_store.dart';
+import 'task_center.dart';
 
 class PanelSession extends ChangeNotifier {
-  PanelSession(this.enrollment, this.hosts) : api = ApiClient(enrollment);
+  PanelSession(this.enrollment, this.hosts) : api = ApiClient(enrollment) {
+    tasks = TaskCenter(api);
+  }
 
   final Enrollment enrollment;
   final HostStore hosts;
   final ApiClient api;
+  late final TaskCenter tasks;
 
   /// Rebuilds widgets that read the host list (sidebar switcher, hosts page)
   /// after a CRUD change that does not replace the active session.
@@ -53,6 +57,7 @@ class PanelSession extends ChangeNotifier {
 
   @override
   void dispose() {
+    tasks.dispose();
     api.close();
     super.dispose();
   }

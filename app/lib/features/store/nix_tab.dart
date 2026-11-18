@@ -106,26 +106,19 @@ class _NixTabState extends State<NixTab> {
     if (!mounted) return;
     setState(() => _busy = '$target-${build ? 'build' : 'run'}');
     try {
-      final json = await _api.postJson(
-        build ? '/api/v1/store/nix/build' : '/api/v1/store/nix/run',
-        {'target': target, if (mirror.isNotEmpty) 'substituters': mirror},
-        timeout: const Duration(minutes: 30),
+      final task = await PanelScope.of(context).tasks.submit(
+        build ? 'nix.build' : 'nix.run',
+        title: '$target ${build ? '构建' : '运行'}',
+        params: {
+          'target': target,
+          if (mirror.isNotEmpty) 'substituters': mirror,
+        },
       );
-      final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
-      if (map['ok'] == false) {
-        await showOutputDialog(
-          context,
-          '${build ? '构建' : '运行'}失败',
-          map['output'] as String? ?? '',
-        );
-      } else {
-        await showOutputDialog(
-          context,
-          '$target ${build ? '构建输出' : '运行输出'}',
-          map['output'] as String? ?? '',
-        );
-      }
+      showAppSnackBar(
+        context,
+        SnackBar(content: Text('已提交任务：${task.title}')),
+      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)

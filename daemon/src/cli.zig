@@ -515,6 +515,7 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     const audit_log = try audit.Log.init(allocator, &database);
     const task_manager = try @import("tasks.zig").Manager.init(allocator, &database, cfg.data_dir);
     defer task_manager.deinit();
+    try @import("task_handlers.zig").register(task_manager);
     try task_manager.start();
     var app = app_mod.App{
         .allocator = allocator,
