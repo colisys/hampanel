@@ -21,9 +21,11 @@ Future<void> _loadFont(String family, String path) async {
 }
 
 /// Font rasterisation differs per platform, so the golden only makes sense on
-/// a Linux host that has the reference fonts installed. CI runners have
-/// neither, so skip there instead of failing in setUpAll.
+/// a Linux host that has the reference fonts installed. CI images install the
+/// fonts for the app build but their rasterisation still differs, so the image
+/// baseline is checked locally only.
 String? _goldenSkipReason() {
+  if (Platform.environment['CI'] == 'true') return 'golden baseline is local-only';
   if (!Platform.isLinux) return 'golden requires the Linux font stack';
   for (final path in [_notoFontPath, _monoFontPath]) {
     if (!File(path).existsSync()) return 'golden font missing: $path';
