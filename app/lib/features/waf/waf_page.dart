@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
@@ -122,21 +124,16 @@ class _WafPageState extends State<WafPage>
       confirmLabel: '开始构建',
     );
     if (!ok) return;
+    if (!mounted) return;
     setState(() => _busy = true);
     try {
-      final json = await _api.postJson(
-        '/api/v1/waf/install',
-        const {},
-        timeout: const Duration(minutes: 20),
-      );
-      final map = json as Map<String, dynamic>? ?? const {};
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit('waf.install', title: '构建 WAF');
       if (!mounted) return;
-      await showOutputDialog(
-        context,
-        map['ok'] == true ? 'WAF 构建完成' : 'WAF 构建失败',
-        map['output'] as String? ?? '',
-      );
-      await _load();
+      _toast('已提交任务：${task.title}');
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -219,18 +216,16 @@ class _WafPageState extends State<WafPage>
   Future<void> _startStop(bool start) async {
     setState(() => _busy = true);
     try {
-      final json = await _api.postJson(
-        start ? '/api/v1/waf/start' : '/api/v1/waf/stop',
-        const {},
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        start ? 'waf.start' : 'waf.stop',
+        title: start ? '启动 WAF' : '停止 WAF',
       );
-      final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
-      if (map['ok'] == false) {
-        await showOutputDialog(context, '操作失败', map['output'] as String? ?? '');
-      } else {
-        _toast(map['output'] as String? ?? (start ? '已启动' : '已停止'));
-      }
-      await _load();
+      _toast('已提交任务：${task.title}');
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
     } catch (error) {
       if (!mounted) return;
       _toast(describeError(error));

@@ -8,6 +8,9 @@ pub fn register(manager: *tasks.Manager) !void {
     try manager.register(.{ .kind = "package.install", .lock_key = "packages", .handler = packageInstall });
     try manager.register(.{ .kind = "package.custom", .lock_key = "packages", .handler = packageCustom });
     try manager.register(.{ .kind = "package.refresh", .lock_key = "packages", .handler = packageRefresh });
+    try manager.register(.{ .kind = "waf.install", .lock_key = "waf", .handler = wafInstall });
+    try manager.register(.{ .kind = "waf.start", .lock_key = "waf", .handler = wafStart });
+    try manager.register(.{ .kind = "waf.stop", .lock_key = "waf", .handler = wafStop });
 }
 
 fn stringParam(ctx: *tasks.Context, key: []const u8) ![]const u8 {
@@ -102,4 +105,31 @@ fn packageRefresh(ctx: *tasks.Context) !void {
     };
     try ctx.write(outcome.output);
     if (!outcome.ok) return error.PackageRefreshFailed;
+}
+
+fn wafInstall(ctx: *tasks.Context) !void {
+    try ctx.setPhase("building");
+    const outcome = platform.waf.install(ctx.allocator, ctx.manager.data_dir) catch |err| {
+        return err;
+    };
+    try ctx.write(outcome.output);
+    if (!outcome.ok) return error.WafInstallFailed;
+}
+
+fn wafStart(ctx: *tasks.Context) !void {
+    try ctx.setPhase("starting");
+    const outcome = platform.waf.start(ctx.allocator, ctx.manager.data_dir) catch |err| {
+        return err;
+    };
+    try ctx.write(outcome.output);
+    if (!outcome.ok) return error.WafStartFailed;
+}
+
+fn wafStop(ctx: *tasks.Context) !void {
+    try ctx.setPhase("stopping");
+    const outcome = platform.waf.stop(ctx.allocator, ctx.manager.data_dir) catch |err| {
+        return err;
+    };
+    try ctx.write(outcome.output);
+    if (!outcome.ok) return error.WafStopFailed;
 }

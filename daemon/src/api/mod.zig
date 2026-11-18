@@ -227,10 +227,7 @@ pub const routes = [_]router.Route{
     .{ .method = .POST, .pattern = "/api/v1/files/versions/restore", .handler = versions.restore },
 
     .{ .method = .GET, .pattern = "/api/v1/waf", .handler = waf.status },
-    .{ .method = .POST, .pattern = "/api/v1/waf/install", .handler = waf.install },
     .{ .method = .POST, .pattern = "/api/v1/waf/config", .handler = waf.configure },
-    .{ .method = .POST, .pattern = "/api/v1/waf/start", .handler = waf.start },
-    .{ .method = .POST, .pattern = "/api/v1/waf/stop", .handler = waf.stop },
     .{ .method = .GET, .pattern = "/api/v1/waf/logs", .handler = waf.logs },
     .{ .method = .POST, .pattern = "/api/v1/waf/typesafe/key", .handler = waf.setTypesafeKey },
     .{ .method = .DELETE, .pattern = "/api/v1/waf/typesafe/key", .handler = waf.clearTypesafeKey },
