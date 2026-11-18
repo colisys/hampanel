@@ -5,6 +5,7 @@ import '../../core/models/site.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
+import 'site_detail_page.dart';
 
 class SitesPage extends StatefulWidget {
   const SitesPage({super.key});
@@ -47,57 +48,120 @@ class _SitesPageState extends State<SitesPage> {
     }
   }
 
+  Future<void> _open(Site site) async {
+    final api = _api;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SiteDetailPage(api: api, siteName: site.name),
+      ),
+    );
+    if (mounted) await _load();
+  }
+
   Future<void> _create() async {
+    final api = _api;
+    final runtimes = await _loadRuntimes(api);
+    if (!mounted) return;
     final nameController = TextEditingController();
     final domainsController = TextEditingController();
     final rootController = TextEditingController(text: '/var/www');
+    final targetController = TextEditingController(text: '127.0.0.1:3000');
     final portController = TextEditingController(text: '80');
+    var kind = 'static';
+    var runtimeId = runtimes.isNotEmpty ? runtimes.first.id : '';
 
     final submitted = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('新建站点'),
-        content: DialogBody(
-          maxWidth: 520,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(labelText: '站点标识（英文 slug）'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: domainsController,
-                decoration: const InputDecoration(
-                  labelText: '域名',
-                  hintText: 'example.com, www.example.com',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          scrollable: true,
+          title: const Text('新建站点'),
+          content: DialogBody(
+            maxWidth: 560,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: kind,
+                  decoration: const InputDecoration(labelText: '站点类型'),
+                  items: const [
+                    DropdownMenuItem(value: 'static', child: Text('静态网站')),
+                    DropdownMenuItem(
+                      value: 'reverse_proxy',
+                      child: Text('反向代理'),
+                    ),
+                    DropdownMenuItem(value: 'runtime', child: Text('运行环境')),
+                    DropdownMenuItem(value: 'subsite', child: Text('子网站')),
+                  ],
+                  onChanged: (value) =>
+                      setDialogState(() => kind = value ?? 'static'),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: rootController,
-                decoration: const InputDecoration(labelText: '站点根目录'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: portController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '监听端口'),
-              ),
-            ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: '站点标识（英文 slug）'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: domainsController,
+                  decoration: const InputDecoration(
+                    labelText: '域名',
+                    hintText: 'example.com, www.example.com',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (kind == 'static' || kind == 'subsite')
+                  TextField(
+                    controller: rootController,
+                    decoration: const InputDecoration(labelText: '站点根目录'),
+                  ),
+                if (kind == 'reverse_proxy')
+                  TextField(
+                    controller: targetController,
+                    decoration: const InputDecoration(
+                      labelText: '上游地址',
+                      hintText: '127.0.0.1:3000',
+                    ),
+                  ),
+                if (kind == 'runtime')
+                  DropdownButtonFormField<String>(
+                    initialValue: runtimes.any((item) => item.id == runtimeId)
+                        ? runtimeId
+                        : null,
+                    decoration: const InputDecoration(labelText: '运行环境'),
+                    items: [
+                      for (final runtime in runtimes)
+                        DropdownMenuItem(
+                          value: runtime.id,
+                          child: Text(
+                            '${runtime.name} · ${runtime.status}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => runtimeId = value ?? ''),
+                  ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: portController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'HTTP 监听端口'),
+                ),
+              ],
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('创建'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('创建'),
-          ),
-        ],
       ),
     );
 
@@ -105,6 +169,7 @@ class _SitesPageState extends State<SitesPage> {
       nameController.dispose();
       domainsController.dispose();
       rootController.dispose();
+      targetController.dispose();
       portController.dispose();
       return;
     }
@@ -114,14 +179,24 @@ class _SitesPageState extends State<SitesPage> {
         .where((value) => value.trim().isNotEmpty)
         .toList();
     final port = int.tryParse(portController.text.trim()) ?? 80;
+    final body = <String, dynamic>{
+      'name': nameController.text.trim(),
+      'kind': kind,
+      'domains': domains,
+      'listen': port,
+    };
+    if (kind == 'static' || kind == 'subsite') {
+      body['root'] = rootController.text.trim();
+    }
+    if (kind == 'reverse_proxy') {
+      body['proxy_target'] = targetController.text.trim();
+    }
+    if (kind == 'runtime') {
+      body['runtime_id'] = runtimeId;
+    }
 
     try {
-      final json = await _api.postJson('/api/v1/sites', {
-        'name': nameController.text.trim(),
-        'domains': domains,
-        'root': rootController.text.trim(),
-        'port': port,
-      });
+      final json = await api.postJson('/api/v1/sites', body);
       final map = json as Map<String, dynamic>? ?? const {};
       final output = (map['output'] as String? ?? '').trim();
       if (output.isNotEmpty) _toast(output);
@@ -132,11 +207,32 @@ class _SitesPageState extends State<SitesPage> {
       nameController.dispose();
       domainsController.dispose();
       rootController.dispose();
+      targetController.dispose();
       portController.dispose();
     }
   }
 
-  Future<void> _toggle(SiteInfo site, bool enabled) async {
+  Future<List<_RuntimeOption>> _loadRuntimes(ApiClient api) async {
+    try {
+      final json = await api.getJson('/api/v1/runtimes');
+      final items =
+          ((json as Map<String, dynamic>?)?['environments'] as List<dynamic>?) ??
+          const [];
+      return [
+        for (final item in items.whereType<Map<String, dynamic>>())
+          _RuntimeOption(
+            id: item['id'] as String? ?? '',
+            name: item['name'] as String? ?? '',
+            status: item['status'] as String? ?? '',
+            port: (item['port'] as num?)?.toInt(),
+          ),
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> _toggle(Site site, bool enabled) async {
     try {
       await _api.postJson('/api/v1/sites/${site.name}/toggle', {
         'enabled': enabled,
@@ -147,11 +243,11 @@ class _SitesPageState extends State<SitesPage> {
     }
   }
 
-  Future<void> _delete(SiteInfo site) async {
+  Future<void> _delete(Site site) async {
     final ok = await confirmDialog(
       context,
       title: '删除站点 ${site.name}?',
-      message: '将删除 Nginx 站点配置文件并重载服务。',
+      message: '将删除面板托管的站点配置并重载 WebServer。',
       confirmLabel: '删除',
       danger: true,
     );
@@ -159,6 +255,45 @@ class _SitesPageState extends State<SitesPage> {
     try {
       await _api.deleteJson('/api/v1/sites/${site.name}');
       await _load();
+    } catch (error) {
+      _toast(describeError(error));
+    }
+  }
+
+  Future<void> _logs(Site site) async {
+    final api = _api;
+    try {
+      final json = await api.getJson(
+        '/api/v1/sites/${site.name}/logs',
+        query: const {'kind': 'access', 'lines': '200'},
+      );
+      if (!mounted) return;
+      final map = json as Map<String, dynamic>? ?? const {};
+      final lines = ((map['lines'] as List<dynamic>?) ?? const [])
+          .whereType<String>()
+          .join('\n');
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('访问日志 · ${site.name}'),
+          content: DialogBody(
+            maxWidth: 760,
+            maxHeight: 520,
+            child: SingleChildScrollView(
+              child: SelectableText(
+                lines.isEmpty ? '暂无日志' : lines,
+                style: monospace.copyWith(fontSize: 11.5),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('关闭'),
+            ),
+          ],
+        ),
+      );
     } catch (error) {
       _toast(describeError(error));
     }
@@ -173,7 +308,7 @@ class _SitesPageState extends State<SitesPage> {
       final map = json as Map<String, dynamic>? ?? const {};
       _toast(
         (map['ok'] as bool? ?? false)
-            ? 'Nginx 已重载'
+            ? 'WebServer 已重载'
             : (map['output'] as String? ?? '重载失败'),
       );
     } catch (error) {
@@ -190,16 +325,17 @@ class _SitesPageState extends State<SitesPage> {
   @override
   Widget build(BuildContext context) {
     final list = _list;
+    final available = list?.available == true && list?.supported == true;
     return Column(
       children: [
         PageHeader(
           title: '网站',
           subtitle: list == null
               ? '正在读取站点'
-              : list.available
-              ? '配置目录 ${list.directory}'
-              : '未检测到可用的 WebServer',
-          actions: list?.available == true
+              : list.webserver.isEmpty
+              ? '未检测到可用的 WebServer'
+              : '${list.webserver.toUpperCase()} · ${list.directory}',
+          actions: available
               ? [
                   OutlinedButton.icon(
                     onPressed: _create,
@@ -210,7 +346,7 @@ class _SitesPageState extends State<SitesPage> {
                   OutlinedButton.icon(
                     onPressed: _reload,
                     icon: const Icon(Icons.sync, size: 16),
-                    label: const Text('重载 Nginx'),
+                    label: const Text('重载'),
                   ),
                   const SizedBox(width: 8),
                   IconButton(
@@ -239,11 +375,19 @@ class _SitesPageState extends State<SitesPage> {
                     child: const Text('重新检测'),
                   ),
                 )
+              : !list.supported
+              ? EmptyState(
+                  icon: Icons.construction_outlined,
+                  title: '站点配置暂未开放',
+                  message: list.message.isEmpty
+                      ? '当前 WebServer 暂不支持站点配置。'
+                      : list.message,
+                )
               : list.sites.isEmpty
               ? EmptyState(
                   icon: Icons.add_to_queue_outlined,
                   title: '还没有站点',
-                  message: '创建一个 Nginx 站点，面板会校验配置后自动重载。',
+                  message: '创建站点后，面板会生成配置、校验并自动重载 WebServer。',
                   action: FilledButton(
                     onPressed: _create,
                     child: const Text('新建站点'),
@@ -256,71 +400,104 @@ class _SitesPageState extends State<SitesPage> {
                   itemBuilder: (context, index) {
                     final site = list.sites[index];
                     return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.language,
-                              size: 20,
-                              color: site.enabled
-                                  ? hampanelAccent
-                                  : hampanelMuted,
-                            ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              flex: 3,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                      child: InkWell(
+                        onTap: () => _open(site),
+                        borderRadius: BorderRadius.circular(3),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
                                 children: [
-                                  Text(
-                                    site.name,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
+                                  Icon(
+                                    Icons.language,
+                                    size: 20,
+                                    color: site.enabled
+                                        ? hampanelAccent
+                                        : hampanelMuted,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      site.name,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    site.domains.join(', '),
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      color: hampanelMuted,
-                                    ),
+                                  StatusPill(
+                                    text: site.enabled ? '已启用' : '已停用',
+                                    good: site.enabled,
+                                  ),
+                                  PopupMenuButton<String>(
+                                    icon: const Icon(Icons.more_horiz, size: 18),
+                                    onSelected: (value) {
+                                      switch (value) {
+                                        case 'edit':
+                                          _open(site);
+                                        case 'logs':
+                                          _logs(site);
+                                        case 'toggle':
+                                          _toggle(site, !site.enabled);
+                                        case 'delete':
+                                          _delete(site);
+                                      }
+                                    },
+                                    itemBuilder: (context) => [
+                                      const PopupMenuItem(
+                                        value: 'edit',
+                                        child: Text('编辑配置'),
+                                      ),
+                                      const PopupMenuItem(
+                                        value: 'logs',
+                                        child: Text('访问日志'),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'toggle',
+                                        child: Text(
+                                          site.enabled ? '停用站点' : '启用站点',
+                                        ),
+                                      ),
+                                      const PopupMenuItem(
+                                        value: 'delete',
+                                        child: Text('删除站点'),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
-                            ),
-                            Expanded(
-                              flex: 3,
-                              child: Text(
-                                site.root,
-                                overflow: TextOverflow.ellipsis,
-                                style: monospace.copyWith(fontSize: 11.5),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 16,
+                                runSpacing: 6,
+                                children: [
+                                  _Info(
+                                    label: '类型',
+                                    value: _kindLabel(site.kind),
+                                  ),
+                                  _Info(
+                                    label: '域名',
+                                    value: site.domains.isEmpty
+                                        ? '—'
+                                        : site.domains.join(', '),
+                                  ),
+                                  _Info(
+                                    label: '目标',
+                                    value: site.summaryTarget.isEmpty
+                                        ? '—'
+                                        : site.summaryTarget,
+                                    mono: true,
+                                  ),
+                                  _Info(
+                                    label: '端口',
+                                    value: site.listen.toString(),
+                                  ),
+                                ],
                               ),
-                            ),
-                            SizedBox(
-                              width: 90,
-                              child: Text(
-                                site.listen.isEmpty ? '-' : site.listen,
-                                style: monospace.copyWith(fontSize: 11.5),
-                              ),
-                            ),
-                            StatusPill(
-                              text: site.enabled ? '已启用' : '已停用',
-                              good: site.enabled,
-                            ),
-                            const SizedBox(width: 10),
-                            Switch(
-                              value: site.enabled,
-                              onChanged: (value) => _toggle(site, value),
-                            ),
-                            IconButton(
-                              tooltip: '删除站点',
-                              onPressed: () => _delete(site),
-                              icon: const Icon(Icons.delete_outline, size: 18),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -331,3 +508,57 @@ class _SitesPageState extends State<SitesPage> {
     );
   }
 }
+
+class _RuntimeOption {
+  const _RuntimeOption({
+    required this.id,
+    required this.name,
+    required this.status,
+    required this.port,
+  });
+
+  final String id;
+  final String name;
+  final String status;
+  final int? port;
+}
+
+class _Info extends StatelessWidget {
+  const _Info({required this.label, required this.value, this.mono = false});
+
+  final String label;
+  final String value;
+  final bool mono;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$label ',
+          style: TextStyle(fontSize: 10.5, color: hampanelMuted),
+        ),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 260),
+          child: Text(
+            value,
+            overflow: TextOverflow.ellipsis,
+            style: mono
+                ? monospace.copyWith(fontSize: 11)
+                : const TextStyle(fontSize: 11.5),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String _kindLabel(String kind) => switch (kind) {
+  'reverse_proxy' => '反向代理',
+  'runtime' => '运行环境',
+  'subsite' => '子网站',
+  'tcp_proxy' => 'TCP 代理',
+  'udp_proxy' => 'UDP 代理',
+  _ => '静态网站',
+};

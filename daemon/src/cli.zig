@@ -15,6 +15,7 @@ const log = @import("log.zig");
 const version = @import("version.zig");
 const update = @import("update.zig");
 const engine_mod = @import("runtime/engine.zig");
+const exec = @import("shared").exec;
 const notify = @import("notify.zig");
 const validate = @import("shared").validate;
 
@@ -194,6 +195,7 @@ fn cmdInit(allocator: std.mem.Allocator, opts: *Options) !u8 {
     applyOverrides(&cfg, opts.*);
     log.setLevelName(cfg.log_level);
     _ = detectContainer(a, &cfg);
+    _ = detectWebServer(a, &cfg);
 
     const endpoint_raw = opts.endpoint orelse {
         std.debug.print("init requires --endpoint HOST[:PORT]\n", .{});
@@ -453,6 +455,28 @@ fn detectContainer(allocator: std.mem.Allocator, cfg: *config.Config) bool {
     }
 }
 
+fn detectWebServer(allocator: std.mem.Allocator, cfg: *config.Config) bool {
+    if (cfg.web_server.len > 0) return false;
+    if (exec.commandExists(allocator, "nginx")) {
+        const probe = exec.run(allocator, &.{ "nginx", "-v" }, 4096) catch null;
+        if (probe != null and probe.?.exit_code == 0) {
+            cfg.web_server = "nginx";
+            log.info("web server configured as nginx", .{});
+            return true;
+        }
+    }
+    if (exec.commandExists(allocator, "caddy")) {
+        const probe = exec.run(allocator, &.{ "caddy", "version" }, 4096) catch null;
+        if (probe != null and probe.?.exit_code == 0) {
+            cfg.web_server = "caddy";
+            log.info("web server configured as caddy", .{});
+            return true;
+        }
+    }
+    log.warn("no supported web server detected; set \"web_server\" to nginx or caddy", .{});
+    return false;
+}
+
 fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -461,9 +485,11 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     var cfg = try config.Config.load(a, opts.config_path);
     applyOverrides(&cfg, opts.*);
     log.setLevelName(cfg.log_level);
-    if (detectContainer(a, &cfg)) {
+    const container_changed = detectContainer(a, &cfg);
+    const web_changed = detectWebServer(a, &cfg);
+    if (container_changed or web_changed) {
         cfg.save(a, opts.config_path) catch |err| {
-            log.warn("failed to persist container engine: {s}", .{@errorName(err)});
+            log.warn("failed to persist detected services: {s}", .{@errorName(err)});
         };
     }
 

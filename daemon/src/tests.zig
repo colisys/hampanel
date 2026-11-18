@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 
 test {
     _ = @import("config.zig");
@@ -10,6 +11,9 @@ test {
     _ = @import("runtime/environments.zig");
     _ = @import("runtime/docker_settings.zig");
     _ = @import("runtime/engine.zig");
+    _ = @import("runtime/site_store.zig");
+    _ = @import("runtime/site_nginx.zig");
+    _ = @import("api/sites.zig");
     _ = @import("jobs.zig");
     _ = @import("api/runtimes.zig");
     _ = @import("log.zig");
@@ -122,3 +126,70 @@ test "container engine JSON list parser" {
     try std.testing.expectEqual(@as(usize, 2), docker.len);
     try std.testing.expectEqualStrings("paused", docker[1].object.get("State").?.string);
 }
+
+test "site store and nginx renderer round trip" {
+    const site_store = @import("runtime/site_store.zig");
+    const site_nginx = @import("runtime/site_nginx.zig");
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var random: [4]u8 = undefined;
+    compat.randomBytes(&random);
+    const data_dir = try std.fmt.allocPrint(allocator, "/tmp/hampanel-site-test-{s}", .{std.fmt.bytesToHex(random, .lower)});
+    defer compat.cwd().deleteTree(data_dir) catch {};
+    try compat.cwd().makePath(data_dir);
+
+    const static_site = site_store.Site{
+        .name = "demo",
+        .kind = "static",
+        .domains = &.{"example.com"},
+        .root = "/var/www/demo",
+        .listen = 8080,
+        .tls = .{ .enabled = true, .certificate = "/tmp/demo/cert.pem", .key = "/tmp/demo/key.pem" },
+        .rate_limit = .{ .enabled = true, .rps = 20, .burst = 40, .connections = 5 },
+        .cors = .{ .enabled = true, .origins = &.{"https://app.example.com"} },
+        .hotlink = .{ .enabled = true, .extensions = &.{ "png", "jpg" } },
+        .redirects = &.{.{ .from = "/old", .to = "/new", .code = 301 }},
+    };
+    _ = try site_store.save(allocator, data_dir, static_site);
+    const loaded = try site_store.load(allocator, data_dir, "demo");
+    try std.testing.expectEqualStrings("example.com", loaded.domains[0]);
+    try std.testing.expectEqual(@as(u16, 8080), loaded.listen);
+    const all = try site_store.list(allocator, data_dir);
+    try std.testing.expectEqual(@as(usize, 1), all.len);
+
+    const rendered = try site_nginx.render(allocator, loaded, "/tmp/demo");
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "server_name example.com;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "listen 443 ssl http2;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "limit_req_zone") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "location ~* \\.(png|jpg)$") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "location = /old") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "Access-Control-Allow-Origin") != null);
+
+    const plain_site = site_store.Site{ .name = "plain", .kind = "static", .domains = &.{"plain.local"}, .root = "/tmp/plain" };
+    try std.testing.expect(!plain_site.tls.enabled);
+    _ = try site_nginx.render(allocator, plain_site, "/tmp/plain");
+
+    const proxy_site = site_store.Site{
+        .name = "proxy",
+        .kind = "reverse_proxy",
+        .domains = &.{"api.example.com"},
+        .listen = 8081,
+        .proxy = .{
+            .upstreams = &.{ .{ .address = "127.0.0.1:3000" }, .{ .address = "127.0.0.1:3001", .weight = 2 } },
+            .load_balance = "least_conn",
+            .websocket = true,
+            .preserve_host = true,
+        },
+    };
+    _ = try site_store.save(allocator, data_dir, proxy_site);
+    const proxy_loaded = try site_store.load(allocator, data_dir, "proxy");
+    const proxy_rendered = try site_nginx.render(allocator, proxy_loaded, "/tmp/proxy");
+    try std.testing.expect(std.mem.indexOf(u8, proxy_rendered, "upstream hampanel_proxy") != null);
+    try std.testing.expect(std.mem.indexOf(u8, proxy_rendered, "least_conn;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, proxy_rendered, "proxy_pass http://hampanel_proxy;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, proxy_rendered, "map $http_upgrade $hampanel_upgrade_proxy") != null);
+}
+

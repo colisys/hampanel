@@ -97,7 +97,12 @@ pub const routes = [_]router.Route{
     .{ .method = .POST, .pattern = "/api/v1/sites", .handler = sites.create },
     .{ .method = .POST, .pattern = "/api/v1/sites/reload", .handler = sites.reload },
     .{ .method = .POST, .pattern = "/api/v1/sites/:name/toggle", .handler = sites.toggle },
+    .{ .method = .GET, .pattern = "/api/v1/sites/:name", .handler = sites.show },
+    .{ .method = .PUT, .pattern = "/api/v1/sites/:name", .handler = sites.update },
     .{ .method = .DELETE, .pattern = "/api/v1/sites/:name", .handler = sites.destroy },
+    .{ .method = .POST, .pattern = "/api/v1/sites/:name/certificate", .handler = sites.uploadCertificate },
+    .{ .method = .POST, .pattern = "/api/v1/sites/:name/basic-auth", .handler = sites.updateBasicAuth },
+    .{ .method = .GET, .pattern = "/api/v1/sites/:name/logs", .handler = sites.logs },
 
     .{ .method = .GET, .pattern = "/api/v1/docker/containers", .handler = docker.containers },
     .{ .method = .POST, .pattern = "/api/v1/docker/containers", .handler = docker.create },
