@@ -117,7 +117,7 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    showAppSnackBar(context, 
       SnackBar(content: Text(message)),
     );
   }
@@ -155,7 +155,7 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       final output = (map['output'] as String? ?? '').trim();
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnackBar(context, 
         SnackBar(
           content: Text(
             map['ok'] == true

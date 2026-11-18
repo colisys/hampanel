@@ -266,7 +266,7 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
       if (!mounted) return;
       await _load();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      showAppSnackBar(context, 
         SnackBar(
           content: const Text('Podman 配置已保存；重启容器管理器后生效'),
           action: SnackBarAction(label: '立即重启', onPressed: _restart),
@@ -454,8 +454,7 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    showAppSnackBar(context, SnackBar(content: Text(message)));
   }
 
   @override

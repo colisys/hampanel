@@ -236,8 +236,9 @@ class _RuntimesPageState extends State<RuntimesPage> {
   ];
 
   int get _categoryIndex {
-    final index = _categoryLabels.indexOf(_category);
-    return index < 0 ? 0 : index;
+    if (_category == '全部') return 0;
+    final index = _presets.indexWhere((preset) => preset.id == _category);
+    return index < 0 ? 0 : index + 1;
   }
 
   String _categoryId(String label) {

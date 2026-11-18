@@ -97,12 +97,10 @@ class _JobDialogState extends State<_JobDialog> {
       await file.parent.create(recursive: true);
       await file.writeAsBytes(bytes);
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('已保存到 ${file.path}')));
+      showAppSnackBar(context, SnackBar(content: Text('已保存到 ${file.path}')));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(describeError(error))));
+      showAppSnackBar(context, SnackBar(content: Text(describeError(error))));
     }
   }
 

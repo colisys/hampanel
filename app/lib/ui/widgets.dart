@@ -352,6 +352,15 @@ class StatusPill extends StatelessWidget {
   }
 }
 
+/// Shows a snackbar after removing the current one, so a stale toast cannot
+/// keep every later message queued and invisible.
+void showAppSnackBar(BuildContext context, SnackBar snackBar) {
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  if (messenger == null) return;
+  messenger.removeCurrentSnackBar();
+  messenger.showSnackBar(snackBar);
+}
+
 Future<bool> confirmDialog(
   BuildContext context, {
   required String title,
