@@ -17,7 +17,8 @@ import '../core/models/recycle_entry.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
-const double _editorHeaderHeight = 48;
+const double _editorToolbarHeight = 47;
+const double _historyHeaderHeight = 48;
 
 enum CodeLanguage {
   plain('文本'),
@@ -92,7 +93,7 @@ class CodeEditorPaneState extends State<CodeEditorPane> {
       children: [
         if (widget.showToolbar)
           Container(
-            height: _editorHeaderHeight,
+            height: _editorToolbarHeight,
             padding: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
               color: hampanelSurfaceAlt,
@@ -366,23 +367,29 @@ class _CodeEditorPageState extends State<CodeEditorPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 8, 6),
-          child: Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  '文件历史',
-                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+        SizedBox(
+          height: _historyHeaderHeight,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 8, 0),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    '文件历史',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
-              ),
-              IconButton(
-                tooltip: '刷新',
-                visualDensity: VisualDensity.compact,
-                onPressed: _loadHistory,
-                icon: const Icon(Icons.refresh, size: 18),
-              ),
-            ],
+                IconButton(
+                  tooltip: '刷新',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _loadHistory,
+                  icon: const Icon(Icons.refresh, size: 18),
+                ),
+              ],
+            ),
           ),
         ),
         const Divider(height: 1),
