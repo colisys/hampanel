@@ -19,7 +19,7 @@ pub fn install(ctx: *context.Context) anyerror!void {
         return;
     };
     log.info("waf: installed ok={}", .{outcome.ok});
-    try ctx.json(outcome);
+    try ctx.jsonStatus(if (outcome.ok) 200 else 500, outcome);
 }
 
 pub fn configure(ctx: *context.Context) anyerror!void {
@@ -72,7 +72,6 @@ pub fn configure(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
-    if (!outcome.ok) ctx.response.status = 400;
     var mode_buf: [96]u8 = undefined;
     var host_buf: [96]u8 = undefined;
     log.info("waf: configured mode={s} listen={s}:{d} ok={}", .{
@@ -81,7 +80,7 @@ pub fn configure(ctx: *context.Context) anyerror!void {
         body.listen_port,
         outcome.ok,
     });
-    try ctx.json(outcome);
+    try ctx.jsonStatus(if (outcome.ok) 200 else 400, outcome);
 }
 
 pub fn start(ctx: *context.Context) anyerror!void {
@@ -89,9 +88,8 @@ pub fn start(ctx: *context.Context) anyerror!void {
         fail(ctx, err);
         return;
     };
-    if (!outcome.ok) ctx.response.status = 502;
     log.info("waf: started ok={}", .{outcome.ok});
-    try ctx.json(outcome);
+    try ctx.jsonStatus(if (outcome.ok) 200 else 502, outcome);
 }
 
 pub fn stop(ctx: *context.Context) anyerror!void {

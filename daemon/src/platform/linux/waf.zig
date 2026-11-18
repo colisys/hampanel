@@ -293,16 +293,15 @@ fn startInternal(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
 
     const Box = struct {
         child: std.process.Child,
-        allocator: std.mem.Allocator,
         fn wait(self: *@This()) void {
             _ = self.child.wait(compat.io()) catch {};
-            self.allocator.destroy(self);
+            std.heap.page_allocator.destroy(self);
         }
     };
-    const boxed = try allocator.create(Box);
-    boxed.* = .{ .child = child, .allocator = allocator };
+    const boxed = try std.heap.page_allocator.create(Box);
+    boxed.* = .{ .child = child };
     const thread = std.Thread.spawn(.{}, Box.wait, .{boxed}) catch null;
-    if (thread) |handle| handle.detach() else allocator.destroy(boxed);
+    if (thread) |handle| handle.detach() else std.heap.page_allocator.destroy(boxed);
 
     compat.sleep(400 * std.time.ns_per_ms);
     if (!pidAlive(pid)) {
@@ -687,16 +686,15 @@ fn spawnDetached(allocator: std.mem.Allocator, argv: []const []const u8, pid_pat
     try writeFile(pid_path, pid_text, 0o600);
     const Box = struct {
         child: std.process.Child,
-        allocator: std.mem.Allocator,
         fn wait(self: *@This()) void {
             _ = self.child.wait(compat.io()) catch {};
-            self.allocator.destroy(self);
+            std.heap.page_allocator.destroy(self);
         }
     };
-    const boxed = allocator.create(Box) catch return pid;
-    boxed.* = .{ .child = child, .allocator = allocator };
+    const boxed = std.heap.page_allocator.create(Box) catch return pid;
+    boxed.* = .{ .child = child };
     const thread = std.Thread.spawn(.{}, Box.wait, .{boxed}) catch null;
-    if (thread) |handle| handle.detach() else allocator.destroy(boxed);
+    if (thread) |handle| handle.detach() else std.heap.page_allocator.destroy(boxed);
     return pid;
 }
 
