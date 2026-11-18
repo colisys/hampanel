@@ -38,9 +38,17 @@ pub fn isUpgrade(req: request.Request) bool {
 
 pub fn writeUpgrade(conn: *Conn, req: request.Request, allocator: std.mem.Allocator) Error!void {
     if (!isUpgrade(req)) return error.NotWebSocket;
+    const version_raw = req.header("sec-websocket-version") orelse "";
+    if (!std.mem.eql(u8, std.mem.trim(u8, version_raw, " \t"), "13")) {
+        return error.ProtocolError;
+    }
     const key_raw = req.header("sec-websocket-key") orelse return error.MissingKey;
     const key = std.mem.trim(u8, key_raw, " \t");
     if (key.len == 0) return error.MissingKey;
+    const decoded_len = std.base64.standard.Decoder.calcSizeForSlice(key) catch {
+        return error.ProtocolError;
+    };
+    if (decoded_len != 16) return error.ProtocolError;
 
     const accept = try acceptKey(allocator, key);
     defer allocator.free(accept);
@@ -93,11 +101,16 @@ pub fn readFrame(conn: *Conn, allocator: std.mem.Allocator, max_payload: usize) 
         length = std.mem.readInt(u64, &ext, .big);
     }
 
+    if ((length & (@as(u64, 1) << 63)) != 0) return error.ProtocolError;
+    if (!masked) return error.ProtocolError;
+    if (opcode == .close or opcode == .ping or opcode == .pong) {
+        if (!fin or length > 125) return error.ProtocolError;
+    }
     if (length > max_payload) return error.FrameTooLarge;
     const size: usize = @intCast(length);
 
     var mask: [4]u8 = .{ 0, 0, 0, 0 };
-    if (masked) conn.readFull(&mask) catch return error.Io;
+    conn.readFull(&mask) catch return error.Io;
 
     const payload = allocator.alloc(u8, size) catch return error.OutOfMemory;
     if (size > 0) conn.readFull(payload) catch return error.Io;

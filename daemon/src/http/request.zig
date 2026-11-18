@@ -1,6 +1,7 @@
 const std = @import("std");
 const Conn = @import("../net/conn.zig").Conn;
 const url = @import("../util/url.zig");
+const validate = @import("validate.zig");
 
 pub const Method = enum {
     GET,
@@ -80,12 +81,13 @@ pub fn read(conn: *Conn, allocator: std.mem.Allocator, max_body: usize) ReadErro
 
     const method = std.meta.stringToEnum(Method, method_raw) orelse return error.BadRequest;
 
+    if (!validate.validTarget(target)) return error.BadRequest;
     const minor: u8 = blk: {
-        if (std.mem.startsWith(u8, version, "HTTP/1.")) {
-            const raw_minor = version["HTTP/1.".len..];
-            break :blk std.fmt.parseInt(u8, raw_minor, 10) catch return error.BadRequest;
-        }
-        break :blk 1;
+        if (!std.mem.startsWith(u8, version, "HTTP/1.")) return error.BadRequest;
+        const raw_minor = version["HTTP/1.".len..];
+        const parsed = std.fmt.parseInt(u8, raw_minor, 10) catch return error.BadRequest;
+        if (parsed > 1) return error.BadRequest;
+        break :blk parsed;
     };
 
     var path = target;
@@ -112,8 +114,15 @@ pub fn read(conn: *Conn, allocator: std.mem.Allocator, max_body: usize) ReadErro
         const colon = std.mem.indexOfScalar(u8, line, ':') orelse return error.BadRequest;
         const name = std.mem.trim(u8, line[0..colon], " \t");
         const value = std.mem.trim(u8, line[colon + 1 ..], " \t");
-        if (name.len == 0) return error.BadRequest;
+        if (!validate.validHeaderName(name) or !validate.validHeaderValue(value)) {
+            return error.BadRequest;
+        }
         try headers.append(.{ .name = name, .value = value });
+    }
+
+    if (minor >= 1) {
+        const host = findHeader(headers.items, "host") orelse return error.BadRequest;
+        if (host.len == 0) return error.BadRequest;
     }
 
     const connection = findHeader(headers.items, "connection");
@@ -128,8 +137,17 @@ pub fn read(conn: *Conn, allocator: std.mem.Allocator, max_body: usize) ReadErro
     var body: []const u8 = "";
     if (findHeader(headers.items, "transfer-encoding")) |_| return error.BadRequest;
 
-    if (findHeader(headers.items, "content-length")) |raw_len| {
-        const length = std.fmt.parseInt(usize, std.mem.trim(u8, raw_len, " \t"), 10) catch return error.BadRequest;
+    var content_lengths: usize = 0;
+    var content_length_raw: ?[]const u8 = null;
+    for (headers.items) |entry| {
+        if (std.ascii.eqlIgnoreCase(entry.name, "content-length")) {
+            content_lengths += 1;
+            content_length_raw = entry.value;
+        }
+    }
+    if (content_lengths > 1) return error.BadRequest;
+    if (content_length_raw) |raw_len| {
+        const length = validate.parseContentLength(raw_len) orelse return error.BadRequest;
         if (length > max_body) return error.BodyTooLarge;
         if (findHeader(headers.items, "expect")) |expect| {
             if (hasTokenIn(expect, "100-continue")) {

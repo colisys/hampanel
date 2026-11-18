@@ -30,7 +30,12 @@ pub const Context = struct {
         const op_no_compression: u64 = 0x00020000;
         const op_no_renegotiation: u64 = 0x40000000;
         const op_cipher_server_preference: u64 = 0x00400000;
-        _ = c.SSL_CTX_set_options(ctx, op_no_compression | op_no_renegotiation | op_cipher_server_preference);
+        const op_no_ticket: u64 = 0x00004000;
+        _ = c.SSL_CTX_set_options(
+            ctx,
+            op_no_compression | op_no_renegotiation |
+                op_cipher_server_preference | op_no_ticket,
+        );
         _ = c.SSL_CTX_set_mode(ctx, c.SSL_MODE_RELEASE_BUFFERS);
 
         if (c.SSL_CTX_use_certificate_chain_file(ctx, cert_z.ptr) != 1) return fail("load server certificate");

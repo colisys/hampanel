@@ -2,6 +2,7 @@ const std = @import("std");
 const compat = @import("compat");
 const Conn = @import("../net/conn.zig").Conn;
 const version = @import("../version.zig");
+const validate = @import("validate.zig");
 
 pub const Header = struct {
     name: []const u8,
@@ -18,7 +19,14 @@ pub const Response = struct {
     close: bool = false,
 };
 
-pub fn statusText(status: u16) []const u8 {
+pub fn writeHeader(writer: anytype, name: []const u8, value: []const u8) !void {
+    if (!validate.validHeaderName(name) or !validate.validHeaderValue(value)) {
+        return error.InvalidHeader;
+    }
+    try writer.print("{s}: {s}\r\n", .{ name, value });
+}
+
+fn statusText(status: u16) []const u8 {
     return switch (status) {
         200 => "OK",
         201 => "Created",
@@ -41,7 +49,12 @@ pub fn statusText(status: u16) []const u8 {
     };
 }
 
-pub fn write(conn: *Conn, resp: Response, keep_alive: bool) !void {
+pub fn write(
+    conn: *Conn,
+    resp: Response,
+    keep_alive: bool,
+    head_only: bool,
+) !void {
     var file: ?compat.File = null;
     defer if (file) |f| f.close();
 
@@ -57,18 +70,18 @@ pub fn write(conn: *Conn, resp: Response, keep_alive: bool) !void {
     defer head.deinit();
     const writer = &head.writer;
     try writer.print("HTTP/1.1 {d} {s}\r\n", .{ resp.status, statusText(resp.status) });
-    try writer.print("Server: {s}\r\n", .{version.user_agent});
-    try writer.print("Content-Type: {s}\r\n", .{resp.content_type});
+    try writeHeader(writer, "Server", version.user_agent);
+    try writeHeader(writer, "Content-Type", resp.content_type);
     try writer.print("Content-Length: {d}\r\n", .{body_length});
-    try writer.print("Cache-Control: no-store\r\n", .{});
-    try writer.print("X-Content-Type-Options: nosniff\r\n", .{});
-    try writer.print("Connection: {s}\r\n", .{if (keep_alive and !resp.close) "keep-alive" else "close"});
-    for (resp.extra) |h| {
-        try writer.print("{s}: {s}\r\n", .{ h.name, h.value });
-    }
+    try writeHeader(writer, "Cache-Control", "no-store");
+    try writeHeader(writer, "X-Content-Type-Options", "nosniff");
+    try writeHeader(writer, "Connection", if (keep_alive and !resp.close) "keep-alive" else "close");
+    for (resp.extra) |h| try writeHeader(writer, h.name, h.value);
     try writer.print("\r\n", .{});
 
     try conn.writeAll(head.written());
+
+    if (head_only) return;
 
     if (resp.file_path != null) {
         var buffer: [64 * 1024]u8 = undefined;
@@ -94,4 +107,14 @@ pub fn write(conn: *Conn, resp: Response, keep_alive: bool) !void {
             compat.deleteFileAbsolute(path) catch {};
         }
     }
+}
+
+test "response header rejects CRLF" {
+    var head: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer head.deinit();
+    try std.testing.expectError(
+        error.InvalidHeader,
+        writeHeader(&head.writer, "X-Test", "ok\r\nInjected: 1"),
+    );
+    try writeHeader(&head.writer, "X-Test", "ok");
 }

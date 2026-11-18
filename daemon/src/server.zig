@@ -13,6 +13,8 @@ const audit = @import("audit.zig");
 const log = @import("log.zig");
 const timeutil = @import("util/time.zig");
 const prefix = @import("util/prefix.zig");
+const validate = @import("http/validate.zig");
+const socket_timeout = @import("net/socket_timeout.zig");
 const redact = @import("util/redact.zig");
 
 pub fn serve(app: *app_mod.App) !void {
@@ -51,6 +53,7 @@ fn handleConnection(app: *app_mod.App, connection: std.Io.net.Stream) void {
     defer _ = app.active_connections.fetchSub(1, .monotonic);
     defer connection.close(io);
 
+    socket_timeout.set(connection.socket.handle, 30_000, 60_000);
     const ssl = app.tls.accept(connection.socket.handle) catch return;
     var conn = Conn.init(ssl);
     defer conn.close();
@@ -75,6 +78,7 @@ fn handleConnection(app: *app_mod.App, connection: std.Io.net.Stream) void {
         notify.emit(app.db, .login, "面板登录", body);
     }
 
+    var served: usize = 0;
     while (true) {
         var arena = std.heap.ArenaAllocator.init(app.allocator);
         defer arena.deinit();
@@ -106,6 +110,12 @@ fn handleConnection(app: *app_mod.App, connection: std.Io.net.Stream) void {
             sendNotFound(&conn);
             return;
         };
+        if (!validate.safeRoutePath(route_path)) {
+            log.warn("unsafe request path from {s}", .{identity.cn()});
+            sendPlain(&conn, 400, "invalid path");
+            return;
+        }
+        served += 1;
 
         var ctx = context.Context{
             .app = app,
@@ -142,8 +152,15 @@ fn handleConnection(app: *app_mod.App, connection: std.Io.net.Stream) void {
             return;
         }
 
+        const keep_alive =
+            req.keep_alive and !ctx.response.close and served < 1000;
         if (!ctx.sent) {
-            http_response.write(&conn, ctx.response, req.keep_alive and !ctx.response.close) catch return;
+            http_response.write(
+                &conn,
+                ctx.response,
+                keep_alive,
+                req.method == .HEAD,
+            ) catch return;
             ctx.sent = true;
         }
 
@@ -166,7 +183,7 @@ fn handleConnection(app: *app_mod.App, connection: std.Io.net.Stream) void {
             notify.emit(app.db, .ai_command, "AI 执行操作", body);
         }
 
-        if (!req.keep_alive or ctx.response.close) return;
+        if (!keep_alive) return;
     }
 }
 
@@ -232,7 +249,7 @@ fn logRequest(
 
 fn sendNotFound(conn: *Conn) void {
     const body = "{\"code\":\"not_found\",\"message\":\"not found\"}";
-    http_response.write(conn, .{ .status = 404, .body = body }, false) catch {};
+    http_response.write(conn, .{ .status = 404, .body = body }, false, false) catch {};
 }
 
 fn sendPlain(conn: *Conn, status: u16, message: []const u8) void {
@@ -242,7 +259,7 @@ fn sendPlain(conn: *Conn, status: u16, message: []const u8) void {
         "{{\"code\":\"bad_request\",\"message\":\"{s}\"}}",
         .{message},
     ) catch return;
-    http_response.write(conn, .{ .status = status, .body = body }, false) catch {};
+    http_response.write(conn, .{ .status = status, .body = body }, false, false) catch {};
 }
 
 fn isMutation(method: http_request.Method) bool {

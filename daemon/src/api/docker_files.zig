@@ -1,4 +1,5 @@
 const std = @import("std");
+const http_validate = @import("../http/validate.zig");
 const compat = @import("compat");
 const context = @import("context.zig");
 const platform = @import("../platform/mod.zig");
@@ -220,7 +221,7 @@ pub fn download(ctx: *context.Context) anyerror!void {
     }
 
     const name = compat.path.basename(path);
-    const disposition = try std.fmt.allocPrint(ctx.arena, "attachment; filename=\"{s}\"", .{name});
+    const disposition = try http_validate.contentDisposition(ctx.arena, name);
     const headers = try ctx.arena.alloc(http_response.Header, 1);
     headers[0] = .{ .name = "Content-Disposition", .value = disposition };
     ctx.response = .{

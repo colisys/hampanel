@@ -4,7 +4,10 @@ const std = @import("std");
 /// Returns null when the request did not carry the prefix.
 pub fn strip(prefix: []const u8, path: []const u8) ?[]const u8 {
     if (prefix.len == 0) return path;
-    if (!std.mem.startsWith(u8, path, prefix)) return null;
+    if (path.len < prefix.len) return null;
+    var diff: u8 = 0;
+    for (prefix, path[0..prefix.len]) |a, b| diff |= a ^ b;
+    if (diff != 0) return null;
     const rest = path[prefix.len..];
     if (rest.len > 0 and rest[0] != '/') return null;
     if (rest.len == 0) return "/";

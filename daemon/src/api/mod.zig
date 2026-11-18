@@ -232,3 +232,17 @@ pub const routes = [_]router.Route{
     .{ .method = .DELETE, .pattern = "/api/v1/waf/typesafe/key", .handler = waf.clearTypesafeKey },
     .{ .method = .GET, .pattern = "/api/v1/waf/geo/catalog", .handler = waf.geoCatalog },
 };
+
+test "routes are unique" {
+    for (routes, 0..) |a, i| {
+        for (routes[i + 1 ..]) |b| {
+            if (a.method == b.method and std.mem.eql(u8, a.pattern, b.pattern)) {
+                std.debug.print("duplicate route: {s} {s}\n", .{
+                    @tagName(a.method),
+                    a.pattern,
+                });
+                return error.DuplicateRoute;
+            }
+        }
+    }
+}
