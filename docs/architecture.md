@@ -133,9 +133,7 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 | GET | `/files/versions/content?path=&id=` | 版本内容 |
 | POST | `/files/versions/restore` | 恢复历史版本 |
 | GET | `/waf` | WAF 边缘状态 |
-| POST | `/waf/install` | xcaddy 构建 Caddy+Coraza |
 | POST | `/waf/config` | 保存/校验 WAF 边缘配置 |
-| POST | `/waf/start` / `/waf/stop` | 启停 WAF 边缘 |
 | GET | `/waf/logs` | WAF 访问日志 |
 | GET | `/waf/geo/catalog` | GeoIP / GeoSite 分类目录 |
 | POST / DELETE | `/waf/typesafe/key` | TypeSafe 风险复检密钥 |
@@ -178,19 +176,14 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 | GET | `/logs/sources` | 可查看日志源 |
 | GET | `/logs/tail?source=&lines=` | 日志尾部 |
 | GET | `/audit` | 面板审计记录 |
+| GET / POST | `/tasks`、`/tasks/:id`、`/tasks/events` | 异步任务：提交、查询、取消、SSE 推送 |
 | GET | `/store/apps` | Docker 应用目录与部署状态 |
 | GET | `/store/apps/:slug` | 应用详情与 Compose 状态 |
-| POST | `/store/apps/:slug/deploy` | 渲染参数并 `compose up -d` |
 | POST | `/store/apps/:slug/start` / `stop` | 启动 / 停止 |
 | GET | `/store/apps/:slug/logs` | Compose 日志 |
 | DELETE | `/store/apps/:slug?volumes=` | 卸载（可选删除数据卷） |
 | GET | `/store/packages` | 包管理器与精选工具状态 |
-| POST | `/store/packages/refresh` | 刷新软件源索引 |
-| POST | `/store/packages/:id/install` | 安装白名单工具 |
-| POST | `/store/packages/custom` | 安装自定义包名（经包管理器白名单校验） |
 | GET | `/store/nix` | Nix 状态与白名单目标 |
-| POST | `/store/nix/build` | `nix build` 白名单属性 |
-| POST | `/store/nix/run` | `nix run` 白名单属性 |
 | GET | `/ssh` | sshd 状态与生效配置 |
 | POST | `/ssh/config` | 写入 drop-in、`sshd -t` 校验并重载 |
 | GET | `/ssh/keys?user=` | authorized_keys 列表 |
@@ -200,12 +193,11 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 | POST | `/ssh/logging` | 切换 syslog / rsyslog 文件模式 |
 | GET | `/ssh/logs?source=&lines=` | journald / auth.log / 文件日志 |
 | GET | `/software` | 支持软件的安装/初始化/运行状态 |
-| POST | `/software/:id/initialize` | 停止、写入托管配置并启动（确认后调用） |
 | GET | `/fail2ban` | Fail2ban 状态、jail、封禁 IP |
 | POST | `/fail2ban/ban` / `unban` | 封禁 / 解封 IP |
 | POST | `/fail2ban/config` | 更新 maxretry / bantime / findtime 并重载 |
 | GET / PUT | `/docker/settings` | Docker 守护进程配置（加速、私有仓库、IPv6、日志、iptables、Live Restore、Cgroup、NVIDIA、Socket） |
-| GET / POST | `/runtimes`、`/runtimes/catalog`、`/runtimes/:id/*` | 运行环境与扩展、配置、进程管理 |
+| GET | `/runtimes`、`/runtimes/catalog`、`/runtimes/:id/*` | 运行环境与扩展、配置、进程管理（写操作见任务接口） |
 | GET | `/host/settings` | 主机设置状态（swap / NTP / GRUB / hosts） |
 | POST | `/host/swap`、`/host/swap-device` | 启用交换文件或已有块设备 |
 | POST | `/host/ntp`、`/host/grub` | NTP 同步开关、GRUB2 默认启动项 |

@@ -20,8 +20,10 @@
 | adminer | Adminer | 端口 |
 | code-server | code-server | 端口、密码 |
 
-部署时 daemon 会在 `<data_dir>/apps/<slug>/compose.yml` 生成 Compose 文件
+部署通过 `POST /api/v1/tasks` `kind=store.deploy` `params={"slug":"<应用>","params":{...}}`
+提交；daemon 在 `<data_dir>/apps/<slug>/compose.yml` 生成 Compose 文件
 （权限 `0600`），并以 `docker compose -p hampanel-<slug> up -d` 启动。
+生成的密码等实际参数写入任务的 `result`，部署日志走任务输出。
 数据使用命名卷，卸载时默认保留；选择「卸载并删除数据」才会执行 `down -v`。
 
 ### 参数与安全
@@ -47,9 +49,9 @@ Git、cURL、Wget、htop、Vim、tmux、jq、unzip、rsync、tree、ncdu、zstd�
 fail2ban、rsyslog、Docker、Podman 等。安装命令由后端根据管理器生成，API 只接受工具 ID。
 
 - `GET /api/v1/store/packages`
-- `POST /api/v1/store/packages/refresh`
-- `POST /api/v1/store/packages/:id/install`
-- `POST /api/v1/store/packages/custom` `{ "name": "<包名>" }`：安装目录未收录的工具，
+- `POST /api/v1/tasks` `kind=package.refresh`
+- `POST /api/v1/tasks` `kind=package.install` `params={"id":"<工具 ID>"}`
+- `POST /api/v1/tasks` `kind=package.custom` `params={"name":"<包名>"}`：安装目录未收录的工具，
   包名仍需通过字符白名单校验（不接受空格、选项或 shell 元字符）。
 
 Windows 后端返回“不支持”，不会调用任意命令。
@@ -68,8 +70,10 @@ Windows 后端返回“不支持”，不会调用任意命令。
 
 检测 `nix` 与 flakes 支持，允许对精选属性执行：
 
-- `POST /api/v1/store/nix/build` `{ "target": "jq" }` → `nix build --no-link --print-out-paths nixpkgs#jq`
-- `POST /api/v1/store/nix/run` `{ "target": "hello", "args": [] }` → `nix run nixpkgs#hello`
+- `POST /api/v1/tasks` `kind=nix.build` `params={"target":"jq"}` → `nix build --no-link --print-out-paths nixpkgs#jq`
+- `POST /api/v1/tasks` `kind=nix.run` `params={"target":"hello","args":[]}` → `nix run nixpkgs#hello`
+
+两类操作都走任务接口，见 [tasks.md](tasks.md)。
 
 目标可以是内置白名单（hello / jq / ripgrep / fd / bat / htop / tree / cowsay），
 也可以填写自定义 nixpkgs 属性名（只允许包名字符，不含表达式语法），
