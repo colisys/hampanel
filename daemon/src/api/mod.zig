@@ -203,7 +203,6 @@ pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/ssh/logs", .handler = ssh.logs },
 
     .{ .method = .GET, .pattern = "/api/v1/software", .handler = software.list },
-    .{ .method = .POST, .pattern = "/api/v1/software/:id/initialize", .handler = software.initialize },
 
     .{ .method = .GET, .pattern = "/api/v1/fail2ban", .handler = software.fail2banStatus },
     .{ .method = .POST, .pattern = "/api/v1/fail2ban/ban", .handler = software.fail2banBan },

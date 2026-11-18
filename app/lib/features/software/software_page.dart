@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
@@ -135,20 +137,20 @@ class _SoftwarePageState extends State<SoftwarePage>
   Future<void> _initialize(SoftwareItem item) async {
     final confirmed = await _showInitializeDialog(item);
     if (!confirmed) return;
+    if (!mounted) return;
     setState(() => _initializingId = item.id);
     try {
-      final json = await _api.postJson(
-        '/api/v1/software/${item.id}/initialize',
-        const <String, dynamic>{},
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'software.initialize',
+        title: '初始化 ${item.name}',
+        params: {'id': item.id},
       );
-      final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
-      await showOutputDialog(
-        context,
-        map['ok'] == true ? '${item.name} 初始化完成' : '${item.name} 初始化未完成',
-        map['output'] as String? ?? '',
-      );
-      await _load();
+      _toast('已提交任务：${task.title}');
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
     } catch (error) {
       _toast(describeError(error));
     } finally {

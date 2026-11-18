@@ -15,6 +15,7 @@ pub fn register(manager: *tasks.Manager) !void {
     try manager.register(.{ .kind = "runtime.rebuild", .lock_key = "runtime", .handler = runtimeRebuild });
     try manager.register(.{ .kind = "runtime.extensions", .lock_key = "runtime", .handler = runtimeExtensions });
     try manager.register(.{ .kind = "runtime.action", .lock_key = "runtime", .handler = runtimeAction });
+    try manager.register(.{ .kind = "software.initialize", .lock_key = "software", .handler = softwareInitialize });
 }
 
 fn stringParam(ctx: *tasks.Context, key: []const u8) ![]const u8 {
@@ -255,4 +256,17 @@ fn runtimeAction(ctx: *tasks.Context) !void {
         return error.InvalidParams;
     try ctx.write(outcome.output);
     if (!outcome.ok) return error.RuntimeActionFailed;
+}
+
+fn softwareInitialize(ctx: *tasks.Context) !void {
+    const id = try stringParam(ctx, "id");
+    if (id.len == 0) return error.InvalidParams;
+    try ctx.setPhase("initializing");
+    const outcome = platform.software.initialize(
+        ctx.allocator,
+        ctx.manager.data_dir,
+        id,
+    ) catch |err| return err;
+    try ctx.write(outcome.output);
+    if (!outcome.ok) return error.SoftwareInitializeFailed;
 }
