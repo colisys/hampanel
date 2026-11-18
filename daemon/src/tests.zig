@@ -152,6 +152,7 @@ test "site store and nginx renderer round trip" {
         .cors = .{ .enabled = true, .origins = &.{"https://app.example.com"} },
         .hotlink = .{ .enabled = true, .extensions = &.{ "png", "jpg" } },
         .redirects = &.{.{ .from = "/old", .to = "/new", .code = 301 }},
+        .rewrites = &.{.{ .pattern = "^/legacy/(.*)$", .replacement = "/$1", .flag = "last" }},
     };
     _ = try site_store.save(allocator, data_dir, static_site);
     const loaded = try site_store.load(allocator, data_dir, "demo");
@@ -166,6 +167,7 @@ test "site store and nginx renderer round trip" {
     try std.testing.expect(std.mem.indexOf(u8, rendered, "limit_req_zone") != null);
     try std.testing.expect(std.mem.indexOf(u8, rendered, "location ~* \\.(png|jpg)$") != null);
     try std.testing.expect(std.mem.indexOf(u8, rendered, "location = /old") != null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "rewrite ^/legacy/(.*)$ /$1 last;") != null);
     try std.testing.expect(std.mem.indexOf(u8, rendered, "Access-Control-Allow-Origin") != null);
 
     const plain_site = site_store.Site{ .name = "plain", .kind = "static", .domains = &.{"plain.local"}, .root = "/tmp/plain" };
@@ -212,6 +214,7 @@ test "site caddy and stream renderers" {
         .basic_auth = .{ .enabled = true, .users = &.{.{ .username = "admin", .password_hash = "$2a$14$hash" }} },
         .cors = .{ .enabled = true, .origins = &.{"https://app.example.com"}, .methods = &.{"GET"} },
         .redirects = &.{.{ .from = "/old", .to = "/new", .code = 301 }},
+        .rewrites = &.{.{ .pattern = "^/legacy/(.*)$", .replacement = "/$1", .flag = "last" }},
         .proxy = .{ .upstreams = &.{.{ .address = "127.0.0.1:3000" }}, .load_balance = "least_conn" },
     };
     const caddy_out = try site_caddy.render(allocator, caddy_site, "/tmp/caddy");
@@ -221,6 +224,8 @@ test "site caddy and stream renderers" {
     try std.testing.expect(std.mem.indexOf(u8, caddy_out, "lb_policy least_conn") != null);
     try std.testing.expect(std.mem.indexOf(u8, caddy_out, "basicauth") != null);
     try std.testing.expect(std.mem.indexOf(u8, caddy_out, "redir /old /new 301") != null);
+    try std.testing.expect(std.mem.indexOf(u8, caddy_out, "@rewrite_0 path_regexp ^/legacy/(.*)$") != null);
+    try std.testing.expect(std.mem.indexOf(u8, caddy_out, "rewrite @rewrite_0 /{re.rewrite_0.1}") != null);
     try std.testing.expect(std.mem.indexOf(u8, caddy_out, "Access-Control-Allow-Origin") != null);
 
     var caddy_bad = caddy_site;

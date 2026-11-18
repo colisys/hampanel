@@ -555,6 +555,13 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
           : ListView(
               padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
               children: [
+                if (_detail?.webserver == 'caddy')
+                  _section('引擎说明', [
+                    Text(
+                      'Caddy 模式：限流、防盗链、真实 IP 和独立错误日志暂不支持；这些配置项仅在 Nginx 下生效。',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: hampanelMuted),
+                    ),
+                  ]),
                 _section('基本信息', [
                   _kindField(),
                   _gap(),

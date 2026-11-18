@@ -117,7 +117,7 @@ class _SitesPageState extends State<SitesPage> {
                     controller: rootController,
                     decoration: const InputDecoration(labelText: '站点根目录'),
                   ),
-                if (kind == 'reverse_proxy')
+                if (kind == 'reverse_proxy' || kind == 'tcp_proxy' || kind == 'udp_proxy')
                   TextField(
                     controller: targetController,
                     decoration: const InputDecoration(
@@ -190,7 +190,7 @@ class _SitesPageState extends State<SitesPage> {
     if (kind == 'static' || kind == 'subsite') {
       body['root'] = rootController.text.trim();
     }
-    if (kind == 'reverse_proxy') {
+    if (kind == 'reverse_proxy' || kind == 'tcp_proxy' || kind == 'udp_proxy') {
       body['proxy_target'] = targetController.text.trim();
     }
     if (kind == 'runtime') {
