@@ -5,6 +5,8 @@ class FileEntry {
     required this.kind,
     required this.size,
     required this.mode,
+    required this.owner,
+    required this.group,
     required this.uid,
     required this.gid,
     required this.modifiedMs,
@@ -16,6 +18,8 @@ class FileEntry {
   final String kind;
   final int size;
   final String mode;
+  final String owner;
+  final String group;
   final int uid;
   final int gid;
   final int modifiedMs;
@@ -29,6 +33,8 @@ class FileEntry {
     kind: json['kind'] as String? ?? 'file',
     size: (json['size'] as num?)?.toInt() ?? 0,
     mode: json['mode'] as String? ?? '-',
+    owner: json['owner'] as String? ?? '',
+    group: json['group'] as String? ?? '',
     uid: (json['uid'] as num?)?.toInt() ?? 0,
     gid: (json['gid'] as num?)?.toInt() ?? 0,
     modifiedMs: (json['modified_ms'] as num?)?.toInt() ?? 0,

@@ -611,6 +611,18 @@ class _FilesPageState extends State<FilesPage> {
                   ),
                   const SizedBox(height: 2),
                   Text(
+                    entry.owner.isEmpty
+                        ? entry.mode
+                        : '${entry.owner}:${entry.group} · ${entry.mode}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: monospace.copyWith(
+                      fontSize: 10.5,
+                      color: hampanelMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
                     '${entry.isDir ? '目录' : formatBytes(entry.size)}'
                     ' · ${formatDateTime(entry.modifiedMs)}',
                     maxLines: 1,
@@ -666,6 +678,7 @@ class _FilesPageState extends State<FilesPage> {
           SizedBox(width: 10),
           Expanded(flex: 5, child: Text('名称', style: style)),
           Expanded(flex: 2, child: Text('大小', style: style)),
+          Expanded(flex: 3, child: Text('用户/组', style: style)),
           Expanded(flex: 2, child: Text('权限', style: style)),
           Expanded(flex: 3, child: Text('修改时间', style: style)),
           SizedBox(width: 40),
@@ -702,6 +715,15 @@ class _FilesPageState extends State<FilesPage> {
               flex: 2,
               child: Text(
                 entry.isDir ? '-' : formatBytes(entry.size),
+                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+              ),
+            ),
+            Expanded(
+              flex: 3,
+              child: Text(
+                entry.owner.isEmpty ? '—' : '${entry.owner}:${entry.group}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               ),
             ),

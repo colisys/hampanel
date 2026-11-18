@@ -7,6 +7,7 @@ const versions = @import("../versions.zig");
 const http_response = @import("../http/response.zig");
 const log = @import("../log.zig");
 const redact = @import("../util/redact.zig");
+const accounts_util = @import("../util/accounts.zig");
 
 const Entry = struct {
     name: []const u8,
@@ -14,6 +15,8 @@ const Entry = struct {
     kind: []const u8,
     size: u64,
     mode: []const u8,
+    owner: []const u8,
+    group: []const u8,
     uid: u32,
     gid: u32,
     modified_ms: i64,
@@ -30,12 +33,23 @@ pub fn list(ctx: *context.Context) anyerror!void {
     };
     defer dir.close();
 
+    const accounts = accounts_util.load(a) catch null;
     var entries = std.array_list.Managed(Entry).init(a);
     var it = dir.iterate();
     while (try it.next()) |item| {
         if (entries.items.len >= 3000) break;
         const full = try compat.path.join(a, &.{ path, item.name });
         const meta = platform.files.stat(a, full) catch null;
+        const uid = if (meta) |m| m.uid else 0;
+        const gid = if (meta) |m| m.gid else 0;
+        const owner = if (!platform.is_windows)
+            if (accounts) |acc| (acc.user(uid) orelse try std.fmt.allocPrint(a, "{d}", .{uid})) else try std.fmt.allocPrint(a, "{d}", .{uid})
+        else
+            "";
+        const group = if (!platform.is_windows)
+            if (accounts) |acc| (acc.group(gid) orelse try std.fmt.allocPrint(a, "{d}", .{gid})) else try std.fmt.allocPrint(a, "{d}", .{gid})
+        else
+            "";
 
         try entries.append(.{
             .name = try a.dupe(u8, item.name),
@@ -43,8 +57,10 @@ pub fn list(ctx: *context.Context) anyerror!void {
             .kind = if (meta) |m| m.kind else kindName(item.kind),
             .size = if (meta) |m| m.size else 0,
             .mode = if (meta) |m| m.mode else "----------",
-            .uid = if (meta) |m| m.uid else 0,
-            .gid = if (meta) |m| m.gid else 0,
+            .owner = owner,
+            .group = group,
+            .uid = uid,
+            .gid = gid,
             .modified_ms = if (meta) |m| m.modified_ms else 0,
             .symlink = if (meta) |m| m.symlink else item.kind == .sym_link,
         });
