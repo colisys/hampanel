@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:xterm/xterm.dart';
 
 import '../../core/api_client.dart';
+import '../../core/client_settings.dart';
 import '../../core/models/docker.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
@@ -27,6 +29,7 @@ class ContainerTerminalDialog extends StatefulWidget {
 
 class _ContainerTerminalDialogState extends State<ContainerTerminalDialog> {
   final _focus = FocusNode();
+  final _controller = TerminalController();
   late final Terminal _terminal;
   WebSocket? _socket;
   StreamSubscription<dynamic>? _subscription;
@@ -36,6 +39,7 @@ class _ContainerTerminalDialogState extends State<ContainerTerminalDialog> {
   @override
   void initState() {
     super.initState();
+    unawaited(ClientSettings.instance.load());
     _terminal = Terminal(maxLines: 8000);
     _terminal.onOutput = (data) {
       if (_connected) _socket?.add(data);
@@ -114,9 +118,28 @@ class _ContainerTerminalDialogState extends State<ContainerTerminalDialog> {
   @override
   void dispose() {
     _focus.dispose();
+    _controller.dispose();
     _subscription?.cancel();
     _socket?.close();
     super.dispose();
+  }
+
+  Future<void> _copy() async {
+    final selection = _controller.selection;
+    final text = selection != null
+        ? _terminal.buffer.getText(selection)
+        : _terminal.buffer.getText();
+    if (text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: text));
+  }
+
+  Future<void> _paste() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text;
+    if (text == null || text.isEmpty) return;
+    _terminal.paste(text);
+    _controller.clearSelection();
+    _focus.requestFocus();
   }
 
   @override
@@ -140,6 +163,19 @@ class _ContainerTerminalDialogState extends State<ContainerTerminalDialog> {
                   _connected ? 'Ctrl+D 退出' : '',
                   style: TextStyle(fontSize: 11, color: hampanelMuted),
                 ),
+                const SizedBox(width: 4),
+                IconButton(
+                  tooltip: '复制（有选中内容时仅复制选中）',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _copy,
+                  icon: const Icon(Icons.copy_all_outlined, size: 16),
+                ),
+                IconButton(
+                  tooltip: '粘贴',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _connected ? _paste : null,
+                  icon: const Icon(Icons.content_paste_outlined, size: 16),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -155,8 +191,15 @@ class _ContainerTerminalDialogState extends State<ContainerTerminalDialog> {
                   padding: const EdgeInsets.all(8),
                   child: TerminalView(
                     _terminal,
+                    controller: _controller,
                     focusNode: _focus,
                     autofocus: true,
+                    textStyle: TerminalStyle(
+                      fontSize: ClientSettings.instance.terminal.fontSize,
+                      height: ClientSettings.instance.terminal.lineHeight,
+                      fontFamily: kMonoFamily,
+                      fontFamilyFallback: kMonoFallback,
+                    ),
                     padding: const EdgeInsets.all(4),
                   ),
                 ),

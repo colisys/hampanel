@@ -143,16 +143,8 @@ class CodeEditorPaneState extends State<CodeEditorPane> {
             autofocus: false,
             style: re.CodeEditorStyle(
               fontSize: 13,
-              fontFamily: 'FiraCode',
-              fontFamilyFallback: const [
-                'DejaVu Sans Mono',
-                'JetBrains Mono',
-                'Noto Sans Mono',
-                'monospace',
-                'Liberation Mono',
-                'Consolas',
-                'Menlo',
-              ],
+              fontFamily: kMonoFamily,
+              fontFamilyFallback: kMonoFallback,
               fontHeight: 1.5,
               textColor: hampanelInk,
               hintTextColor: hampanelMuted,

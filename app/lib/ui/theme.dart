@@ -100,30 +100,35 @@ const List<String> _sansFallback = [
   'sans-serif',
 ];
 
+/// 内嵌的 Fira Code 是代码与终端的默认字族；它不含 CJK 字形，
+/// 因此按字形回落到系统等宽/黑体，避免中文显示成方框。
+const String kMonoFamily = 'FiraCode';
+
+const List<String> kMonoFallback = [
+  'DejaVu Sans Mono',
+  'Noto Sans Mono CJK SC',
+  'Noto Sans CJK SC',
+  'Source Han Sans SC',
+  'PingFang SC',
+  'Microsoft YaHei',
+  'JetBrains Mono',
+  'Noto Sans Mono',
+  'Liberation Mono',
+  'Consolas',
+  'Menlo',
+  'monospace',
+];
+
 const TextStyle monospace = TextStyle(
-  fontFamily: 'DejaVu Sans Mono',
-  fontFamilyFallback: [
-    'JetBrains Mono',
-    'Noto Sans Mono',
-    'monospace',
-    'Liberation Mono',
-    'Consolas',
-    'Menlo',
-  ],
+  fontFamily: kMonoFamily,
+  fontFamilyFallback: kMonoFallback,
   fontSize: 12.5,
   height: 1.45,
 );
 
 TextStyle get mangaKicker => TextStyle(
-  fontFamily: 'DejaVu Sans Mono',
-  fontFamilyFallback: const [
-    'JetBrains Mono',
-    'Noto Sans Mono',
-    'monospace',
-    'Liberation Mono',
-    'Consolas',
-    'Menlo',
-  ],
+  fontFamily: kMonoFamily,
+  fontFamilyFallback: kMonoFallback,
   fontSize: 10.5,
   fontWeight: FontWeight.w700,
   letterSpacing: 1.4,
@@ -317,7 +322,11 @@ ThemeData buildHampanelTheme() {
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         foregroundColor: hampanelInk,
-        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        textStyle: const TextStyle(
+          fontFamily: _sansFamily,
+          fontFamilyFallback: _sansFallback,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(
