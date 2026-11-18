@@ -7,6 +7,7 @@ void main() {
 [storage]
 driver = "overlay"
 graphroot = "/var/lib/containers/storage"
+transient_store = false
 mountopt = "nodev"
 mount_program = "/usr/bin/fuse-overlayfs"
 volume_path = "/var/lib/containers/storage/volumes"
@@ -26,7 +27,6 @@ inodes = 12345
       mountOpt: 'nodev',
       overlaySize: '10g',
       overlayInodes: '12345',
-      transientStore: false,
       ignoreChownErrors: true,
     );
 
@@ -34,7 +34,7 @@ inodes = 12345
     expect(output, isNot(contains('ignore_chown_errors = true')));
     expect(output, contains('inodes = "12345"'));
     expect(output, isNot(contains('inodes = 12345')));
-    expect(output, contains('transient_store = false'));
+    expect(output, isNot(contains('transient_store')));
     expect(output, contains('mountopt = "nodev"'));
     expect(output, contains('mount_program = "/usr/bin/fuse-overlayfs"'));
 
@@ -63,7 +63,6 @@ ignore_chown_errors = false
       mountOpt: '',
       overlaySize: '',
       overlayInodes: '',
-      transientStore: false,
       ignoreChownErrors: false,
     );
     expect(RegExp(r'ignore_chown_errors\s*=').allMatches(output).length, 1);

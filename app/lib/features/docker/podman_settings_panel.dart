@@ -184,12 +184,6 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
           '',
         );
       }
-      _fillText(storage, 'storage.transient_store', '');
-      _flags['storage.transient_store'] = _boolValue(
-        storage,
-        'storage.transient_store',
-        false,
-      );
       _fillText(storage, 'storage.options.overlay.mount_program', '');
       _fillText(storage, 'storage.options.overlay.size', '');
       _fillText(storage, 'storage.options.overlay.inodes', '');
@@ -403,17 +397,19 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
 
   String _renderRegistries() {
     final out = StringBuffer()..writeln('# Managed by Hampanel');
-    _tomlList(
-      out,
-      'unqualified-search-registries',
-      _c('unqualified-search-registries').text,
-    );
+    final search = _lines(_c('unqualified-search-registries').text)
+        .map(normalizeRegistryLocation)
+        .where(_validRegistryLocation)
+        .join('\n');
+    _tomlList(out, 'unqualified-search-registries', search);
     _tomlString(
       out,
       'short-name-mode',
       _select['short-name-mode'] ?? 'enforcing',
     );
-    for (final registry in _lines(_c('hampanel.insecure').text)) {
+    for (final raw in _lines(_c('hampanel.insecure').text)) {
+      final registry = normalizeRegistryLocation(raw);
+      if (!_validRegistryLocation(registry)) continue;
       out
         ..writeln()
         ..writeln('[[registry]]')
@@ -424,9 +420,11 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
     for (final line in _lines(_c('hampanel.mirrors').text)) {
       final index = line.indexOf('=');
       if (index <= 0) continue;
-      final source = line.substring(0, index).trim();
-      final mirror = line.substring(index + 1).trim();
-      if (source.isEmpty || mirror.isEmpty) continue;
+      final source = normalizeRegistryLocation(line.substring(0, index));
+      final mirror = normalizeRegistryLocation(line.substring(index + 1));
+      if (!_validRegistryLocation(source) || !_validRegistryLocation(mirror)) {
+        continue;
+      }
       out
         ..writeln()
         ..writeln('[[registry]]')
@@ -450,7 +448,6 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
     mountOpt: _c('storage.options.overlay.mountopt').text.trim(),
     overlaySize: _c('storage.options.overlay.size').text.trim(),
     overlayInodes: _c('storage.options.overlay.inodes').text.trim(),
-    transientStore: _flags['storage.transient_store'] == true,
     ignoreChownErrors:
         _flags['storage.options.overlay.ignore_chown_errors'] == true,
   );
@@ -546,7 +543,7 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
             decoration: const InputDecoration(
               labelText: '受信任的 HTTP 仓库',
               hintText: 'registry.internal:5000',
-              helperText: '每行一个；会写入 registries.conf.d，标记 insecure',
+              helperText: '每行一个 host[:port]；不要带 http(s)://，会标记 insecure',
             ),
           ),
           const SizedBox(height: 10),
@@ -556,8 +553,8 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
             maxLines: 5,
             decoration: const InputDecoration(
               labelText: '仓库镜像（源=镜像）',
-              hintText: 'docker.io=https://mirror.example.com',
-              helperText: '每行一个；用于 registry.mirror',
+              hintText: 'docker.io=mirror.example.com',
+              helperText: '每行一个；地址不要带 http(s)://，用于 registry.mirror',
             ),
           ),
         ]),
@@ -917,13 +914,6 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('临时存储'),
-            value: _flags['storage.transient_store'] ?? false,
-            onChanged: (value) =>
-                setState(() => _flags['storage.transient_store'] = value),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
             title: const Text('忽略 chown 错误'),
             subtitle: const Text('overlay.ignore_chown_errors'),
             value:
@@ -1102,11 +1092,28 @@ List<String> _lines(String text) => text
     .where((line) => line.isNotEmpty)
     .toList();
 
+/// registries.conf `location`/`prefix` are bare registry locations; URI
+/// schemes are rejected by Podman ("URI schemes are not supported").
+String normalizeRegistryLocation(String value) {
+  var result = value.trim();
+  if (result.isEmpty) return '';
+  result = result.replaceFirst(RegExp(r'^[a-zA-Z][a-zA-Z0-9+.\-]*://'), '');
+  while (result.endsWith('/')) {
+    result = result.substring(0, result.length - 1);
+  }
+  return result.trim();
+}
+
+bool _validRegistryLocation(String value) =>
+    value.isNotEmpty &&
+    !value.contains(RegExp(r'\s')) &&
+    !value.contains('://');
+
 /// Patches `/etc/containers/storage.conf` with types that containers/storage
 /// actually decodes. `ignore_chown_errors` and `inodes` are *string* values
-/// (`"true"`/`"false"`, quoted sizes), while `transient_store` is a native
-/// boolean. Top-level `mountopt`, `mount_program` and `volume_path` do not
-/// exist in the storage table and are removed.
+/// (`"true"`/`"false"`, quoted sizes). Top-level `mountopt`,
+/// `mount_program`, `volume_path` and the obsolete `transient_store` key do
+/// not decode on current containers/storage releases and are removed.
 String patchPodmanStorageToml(
   String source, {
   required String driver,
@@ -1118,7 +1125,6 @@ String patchPodmanStorageToml(
   required String mountOpt,
   required String overlaySize,
   required String overlayInodes,
-  required bool transientStore,
   required bool ignoreChownErrors,
 }) {
   var output = source;
@@ -1131,12 +1137,7 @@ String patchPodmanStorageToml(
     'rootless_storage_path',
     rootlessStoragePath.isEmpty ? null : _quote(rootlessStoragePath),
   );
-  output = _setToml(
-    output,
-    'storage',
-    'transient_store',
-    transientStore ? 'true' : 'false',
-  );
+  output = _removeToml(output, 'storage', 'transient_store');
   output = _removeToml(output, 'storage', 'mount_program');
   output = _removeToml(output, 'storage', 'mountopt');
   output = _removeToml(output, 'storage', 'volume_path');
