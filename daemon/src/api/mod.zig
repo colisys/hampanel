@@ -197,9 +197,6 @@ pub const routes = [_]router.Route{
     .{ .method = .DELETE, .pattern = "/api/v1/store/apps/:slug", .handler = store.remove },
 
     .{ .method = .GET, .pattern = "/api/v1/store/packages", .handler = store.packages },
-    .{ .method = .POST, .pattern = "/api/v1/store/packages/refresh", .handler = store.refreshPackages },
-    .{ .method = .POST, .pattern = "/api/v1/store/packages/custom", .handler = store.installCustom },
-    .{ .method = .POST, .pattern = "/api/v1/store/packages/:id/install", .handler = store.installPackage },
 
     .{ .method = .GET, .pattern = "/api/v1/store/nix", .handler = store.nixStatus },
 

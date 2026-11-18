@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
@@ -6,7 +8,6 @@ import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
-import 'deploy_dialog.dart';
 
 class PackagesTab extends StatefulWidget {
   const PackagesTab({super.key});
@@ -53,18 +54,17 @@ class _PackagesTabState extends State<PackagesTab> {
   Future<void> _install(PackageTool tool) async {
     setState(() => _busyId = tool.id);
     try {
-      final json = await _api.postJson(
-        '/api/v1/store/packages/${tool.id}/install',
-        const <String, dynamic>{},
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'package.install',
+        title: '安装 ${tool.name}',
+        params: {'id': tool.id},
       );
-      final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
-      if (map['ok'] == false) {
-        await showOutputDialog(context, '安装失败', map['output'] as String? ?? '');
-      } else {
-        _toast('${tool.name} 已安装');
-        await _load();
-      }
+      _toast('已提交任务：${task.title}');
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
     } catch (error) {
       _toast(describeError(error));
     } finally {
@@ -74,22 +74,13 @@ class _PackagesTabState extends State<PackagesTab> {
 
   Future<void> _refresh() async {
     try {
-      final json = await _api.postJson(
-        '/api/v1/store/packages/refresh',
-        const <String, dynamic>{},
-      );
-      final map = json as Map<String, dynamic>? ?? const {};
-      if (map['ok'] == false) {
-        if (!mounted) return;
-        await showOutputDialog(
-          context,
-          '刷新软件源失败',
-          map['output'] as String? ?? '',
-        );
-      } else {
-        _toast('软件源索引已刷新');
-      }
-      await _load();
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit('package.refresh', title: '刷新软件源');
+      if (!mounted) return;
+      _toast('已提交任务：${task.title}');
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
     } catch (error) {
       _toast(describeError(error));
     }
@@ -103,19 +94,20 @@ class _PackagesTabState extends State<PackagesTab> {
       confirmLabel: '安装',
     );
     if (name == null || name.trim().isEmpty) return;
+    if (!mounted) return;
     setState(() => _busyId = '__custom__');
     try {
-      final json = await _api.postJson('/api/v1/store/packages/custom', {
-        'name': name.trim(),
-      }, timeout: const Duration(minutes: 5));
-      final map = json as Map<String, dynamic>? ?? const {};
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'package.custom',
+        title: '安装 $name',
+        params: {'name': name.trim()},
+      );
       if (!mounted) return;
-      if (map['ok'] == false) {
-        await showOutputDialog(context, '安装失败', map['output'] as String? ?? '');
-      } else {
-        _toast('$name 已安装');
-      }
-      await _load();
+      _toast('已提交任务：${task.title}');
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
     } catch (error) {
       _toast(describeError(error));
     } finally {

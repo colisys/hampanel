@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
@@ -7,7 +9,6 @@ import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
-import 'deploy_dialog.dart';
 
 class NixTab extends StatefulWidget {
   const NixTab({super.key});
@@ -77,19 +78,17 @@ class _NixTabState extends State<NixTab> {
   Future<void> _installNix() async {
     setState(() => _busy = 'install');
     try {
-      final json = await _api.postJson(
-        '/api/v1/store/packages/nix/install',
-        const {},
-        timeout: const Duration(minutes: 10),
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'package.install',
+        title: '安装 Nix',
+        params: {'id': 'nix'},
       );
-      final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
-      await showOutputDialog(
-        context,
-        map['ok'] == true ? 'Nix 安装完成' : 'Nix 安装失败',
-        map['output'] as String? ?? '',
-      );
-      await _load();
+      showAppSnackBar(context, SnackBar(content: Text('已提交任务：${task.title}')));
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)

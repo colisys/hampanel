@@ -5,6 +5,9 @@ const platform = @import("platform/mod.zig");
 pub fn register(manager: *tasks.Manager) !void {
     try manager.register(.{ .kind = "nix.build", .lock_key = "nix", .handler = nixBuild });
     try manager.register(.{ .kind = "nix.run", .lock_key = "nix", .handler = nixRun });
+    try manager.register(.{ .kind = "package.install", .lock_key = "packages", .handler = packageInstall });
+    try manager.register(.{ .kind = "package.custom", .lock_key = "packages", .handler = packageCustom });
+    try manager.register(.{ .kind = "package.refresh", .lock_key = "packages", .handler = packageRefresh });
 }
 
 fn stringParam(ctx: *tasks.Context, key: []const u8) ![]const u8 {
@@ -68,4 +71,35 @@ fn validSubstituters(value: []const u8) bool {
         }
     }
     return true;
+}
+
+fn packageInstall(ctx: *tasks.Context) !void {
+    const id = try stringParam(ctx, "id");
+    if (id.len == 0) return error.InvalidParams;
+    try ctx.setPhase("installing");
+    const outcome = platform.packages.install(ctx.allocator, id) catch |err| {
+        return err;
+    };
+    try ctx.write(outcome.output);
+    if (!outcome.ok) return error.PackageInstallFailed;
+}
+
+fn packageCustom(ctx: *tasks.Context) !void {
+    const name = try stringParam(ctx, "name");
+    if (name.len == 0) return error.InvalidParams;
+    try ctx.setPhase("installing");
+    const outcome = platform.packages.installCustom(ctx.allocator, name) catch |err| {
+        return err;
+    };
+    try ctx.write(outcome.output);
+    if (!outcome.ok) return error.PackageInstallFailed;
+}
+
+fn packageRefresh(ctx: *tasks.Context) !void {
+    try ctx.setPhase("refreshing");
+    const outcome = platform.packages.refresh(ctx.allocator) catch |err| {
+        return err;
+    };
+    try ctx.write(outcome.output);
+    if (!outcome.ok) return error.PackageRefreshFailed;
 }

@@ -228,6 +228,25 @@ class TaskCenter extends ChangeNotifier {
     throw lastError ?? Exception('提交任务失败');
   }
 
+
+  Future<TaskSummary?> waitFor(String id) {
+    final existing = _tasks[id];
+    if (existing != null && !existing.active) {
+      return Future<TaskSummary?>.value(existing);
+    }
+    final completer = Completer<TaskSummary?>();
+    void listener() {
+      final task = _tasks[id];
+      if (task != null && !task.active) {
+        removeListener(listener);
+        if (!completer.isCompleted) completer.complete(task);
+      }
+    }
+
+    addListener(listener);
+    return completer.future;
+  }
+
   Future<void> cancel(String id) async {
     await api.postJson('/api/v1/tasks/$id/cancel', null, timeout: const Duration(seconds: 10));
   }
