@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
@@ -99,19 +101,18 @@ class _DockerPageState extends State<DockerPage> {
     final label = package == 'podman' ? 'Podman' : 'Docker';
     setState(() => _installing = true);
     try {
-      final json = await _api.postJson(
-        '/api/v1/store/packages/$package/install',
-        const <String, dynamic>{},
-        timeout: const Duration(minutes: 5),
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'package.install',
+        title: '安装 $label',
+        params: {'id': package},
       );
-      final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
-      if (map['ok'] == false) {
-        _toast(map['output'] as String? ?? '$label 安装失败');
-      } else {
-        _toast('$label 已安装，正在重新检测');
-      }
-      await _checkConnection();
+      _toast('已提交任务：${task.title}');
+      unawaited(center.waitFor(task.id).then((_) async {
+        if (!mounted) return;
+        await _checkConnection();
+      }));
     } catch (error) {
       _toast(describeError(error));
     } finally {
