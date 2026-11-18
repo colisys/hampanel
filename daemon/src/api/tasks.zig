@@ -42,6 +42,18 @@ pub fn create(ctx: *context.Context) anyerror!void {
         ctx.fail(400, "bad_task", "kind is required");
         return;
     }
+    const allowed = ctx.app.task_limits.allow(
+        ctx.arena,
+        ctx.peer_cn,
+        max_submissions_per_minute,
+        60 * 1000,
+        compat.milliTimestamp(),
+    ) catch true;
+    if (!allowed) {
+        ctx.fail(429, "too_many_submissions", "task submission rate exceeded");
+        return;
+    }
+
     const params = if (body.params) |value|
         std.json.Stringify.valueAlloc(ctx.arena, value, .{}) catch {
             ctx.fail(400, "bad_task", "params must be JSON");
@@ -200,6 +212,8 @@ const http_response = @import("../http/response.zig");
 const log = @import("../log.zig");
 
 const max_sse_connections = 32;
+const max_streams_per_client = 4;
+const max_submissions_per_minute = 30;
 const sse_lifetime_ms: i64 = 30 * 60 * 1000;
 
 pub fn events(ctx: *context.Context) anyerror!void {
@@ -210,6 +224,11 @@ pub fn events(ctx: *context.Context) anyerror!void {
         return;
     }
     defer _ = ctx.app.sse_connections.fetchSub(1, .acq_rel);
+    if (!(ctx.app.stream_clients.acquire(ctx.app.allocator, ctx.peer_cn, max_streams_per_client) catch true)) {
+        ctx.fail(503, "too_many_streams", "too many event streams for this client");
+        return;
+    }
+    defer ctx.app.stream_clients.release(ctx.app.allocator, ctx.peer_cn);
 
     ctx.hijacked = true;
     http_response.beginEventStream(ctx.conn) catch return;
@@ -262,6 +281,11 @@ pub fn outputEvents(ctx: *context.Context) anyerror!void {
         return;
     }
     defer _ = ctx.app.sse_connections.fetchSub(1, .acq_rel);
+    if (!(ctx.app.stream_clients.acquire(ctx.app.allocator, ctx.peer_cn, max_streams_per_client) catch true)) {
+        ctx.fail(503, "too_many_streams", "too many event streams for this client");
+        return;
+    }
+    defer ctx.app.stream_clients.release(ctx.app.allocator, ctx.peer_cn);
 
     ctx.hijacked = true;
     http_response.beginEventStream(ctx.conn) catch return;

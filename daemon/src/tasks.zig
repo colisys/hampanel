@@ -142,6 +142,7 @@ pub const Manager = struct {
     specs: std.StringHashMap(Spec),
     stopping: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     scheduler: ?std.Thread = null,
+    last_prune: i64 = 0,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -422,6 +423,74 @@ pub const Manager = struct {
         return true;
     }
 
+    pub fn prune(self: *Manager) !void {
+        try self.pruneWithCap(max_finished);
+    }
+
+    pub fn pruneWithCap(self: *Manager, keep: usize) !void {
+        const now = compat.milliTimestamp();
+        const stale = try self.selectExpired(now - ttl_ms);
+        defer self.allocator.free(stale);
+        for (stale) |item| try self.drop(item.id, item.output_path);
+        const excess = try self.excessFinished(keep);
+        defer self.allocator.free(excess);
+        for (excess) |item| try self.drop(item.id, item.output_path);
+    }
+
+    const Prunable = struct { id: []u8, output_path: []u8 };
+
+    fn selectExpired(self: *Manager, cutoff: i64) ![]Prunable {
+        return self.selectPrunable(
+            "SELECT id, output_path FROM tasks WHERE finished_at IS NOT NULL " ++
+                "AND updated_at < ?1 ORDER BY updated_at ASC LIMIT 200",
+            &.{.{ .int = cutoff }},
+        );
+    }
+
+    fn excessFinished(self: *Manager, keep: usize) ![]Prunable {
+        return self.selectPrunable(
+            "SELECT id, output_path FROM tasks WHERE finished_at IS NOT NULL " ++
+                "ORDER BY updated_at DESC LIMIT -1 OFFSET ?1",
+            &.{.{ .int = @intCast(keep) }},
+        );
+    }
+
+    fn selectPrunable(self: *Manager, sql: []const u8, args: []const db.Value) ![]Prunable {
+        self.database.lock();
+        defer self.database.unlock();
+        var statement = try self.database.prepareUnlocked(sql);
+        defer statement.deinit();
+        try statement.bind(args);
+        var items = std.array_list.Managed(Prunable).init(self.allocator);
+        errdefer {
+            for (items.items) |item| {
+                self.allocator.free(item.id);
+                self.allocator.free(item.output_path);
+            }
+            items.deinit();
+        }
+        while (try statement.step()) {
+            try items.append(.{
+                .id = try self.allocator.dupe(u8, statement.columnText(0)),
+                .output_path = try self.allocator.dupe(u8, statement.columnText(1)),
+            });
+        }
+        return items.items;
+    }
+
+    fn drop(self: *Manager, id: []const u8, output_path: []const u8) !void {
+        defer {
+            self.allocator.free(id);
+            self.allocator.free(output_path);
+        }
+        self.mutex.lockUncancelable(compat.io());
+        const busy = self.active.get(id) != null;
+        self.mutex.unlock(compat.io());
+        if (busy) return;
+        try self.database.execute("DELETE FROM tasks WHERE id = ?1", &.{.{ .text = id }});
+        if (output_path.len > 0) compat.deleteFileAbsolute(output_path) catch {};
+    }
+
     pub fn dismiss(self: *Manager, id: []const u8) !bool {
         const detail = try self.get(self.allocator, id) orelse return false;
         defer self.freeDetail(detail);
@@ -457,6 +526,11 @@ pub const Manager = struct {
     fn schedulerLoop(self: *Manager) void {
         while (!self.stopping.load(.acquire)) {
             self.runQueued() catch |err| log.warn("task scheduler: {s}", .{@errorName(err)});
+            const now = compat.milliTimestamp();
+            if (now - self.last_prune >= 5 * 60 * 1000) {
+                self.last_prune = now;
+                self.prune() catch |err| log.warn("task prune: {s}", .{@errorName(err)});
+            }
             compat.sleep(250 * std.time.ns_per_ms);
         }
     }
@@ -822,4 +896,84 @@ test "tasks can be canceled while running" {
     try waitStatus(manager, summary.id, .running, 3000);
     try std.testing.expect(manager.cancel(summary.id));
     try waitStatus(manager, summary.id, .canceled, 3000);
+}
+
+test "task pruning removes expired finished tasks and their output" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(dir);
+    const db_path = try std.fs.path.join(allocator, &.{ dir, "hampanel.db" });
+    defer allocator.free(db_path);
+
+    var database = try db.Db.open(db_path);
+    defer database.close();
+    try @import("migrations.zig").migrate(allocator, &database);
+
+    const manager = try Manager.init(std.heap.smp_allocator, &database, dir);
+    defer manager.deinit();
+    try manager.register(.{ .kind = "test.echo", .handler = testEcho });
+    try manager.start();
+
+    const summary = try manager.create(
+        std.heap.smp_allocator,
+        "test.echo",
+        "echo",
+        "{\"message\":\"keep\"}",
+        "",
+        "test",
+    );
+    try waitStatus(manager, summary.id, .succeeded, 3000);
+
+    const detail = (try manager.get(std.heap.smp_allocator, summary.id)).?;
+    const output_path = try std.heap.smp_allocator.dupe(u8, detail.output_path);
+    defer std.heap.smp_allocator.free(output_path);
+    manager.freeDetail(detail);
+
+    // Age the task past the retention window and prune it.
+    try database.execute(
+        "UPDATE tasks SET finished_at = ?1, updated_at = ?1 WHERE id = ?2",
+        &.{ .{ .int = compat.milliTimestamp() - ttl_ms - 1000 }, .{ .text = summary.id } },
+    );
+    try manager.prune();
+
+    const removed = (try manager.get(std.heap.smp_allocator, summary.id)) == null;
+    try std.testing.expect(removed);
+    const file = compat.openFileAbsolute(output_path, .{});
+    try std.testing.expect(file == error.FileNotFound);
+}
+
+test "task pruning keeps the newest finished tasks within the cap" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(dir);
+    const db_path = try std.fs.path.join(allocator, &.{ dir, "hampanel.db" });
+    defer allocator.free(db_path);
+
+    var database = try db.Db.open(db_path);
+    defer database.close();
+    try @import("migrations.zig").migrate(allocator, &database);
+
+    const manager = try Manager.init(std.heap.smp_allocator, &database, dir);
+    defer manager.deinit();
+
+    const names = [_][]const u8{ "first", "second", "third", "fourth" };
+    const now = compat.milliTimestamp();
+    for (names, 0..) |name, index| {
+        try database.execute(
+            "INSERT INTO tasks(id, kind, title, status, params, output_path, " ++
+                "idempotency_key, lock_key, owner_cn, created_at, finished_at, updated_at) " ++
+                "VALUES(?1, 'test.echo', 'echo', 'succeeded', '{}', '', '', '', 'test', ?2, ?2, ?2)",
+            &.{ .{ .text = name }, .{ .int = now - 4_000 + @as(i64, @intCast(index)) * 1000 } },
+        );
+    }
+
+    try manager.pruneWithCap(2);
+    try std.testing.expect((try manager.get(std.heap.smp_allocator, "fourth")) != null);
+    try std.testing.expect((try manager.get(std.heap.smp_allocator, "third")) != null);
+    try std.testing.expect((try manager.get(std.heap.smp_allocator, "second")) == null);
+    try std.testing.expect((try manager.get(std.heap.smp_allocator, "first")) == null);
 }

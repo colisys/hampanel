@@ -530,6 +530,8 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     };
 
     defer app.deinitUpdateConfig();
+    defer app.stream_clients.deinit(allocator);
+    defer app.task_limits.deinit(allocator);
 
     log.info("hampaneld {s} starting (GPL-3.0-or-later)", .{version.version});
     notify.startMonitor(&database);
