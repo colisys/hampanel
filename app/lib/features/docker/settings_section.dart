@@ -162,7 +162,7 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
                 ? (output.isEmpty ? 'Docker 配置已保存；重启 Docker 后生效' : output)
                 : (output.isEmpty ? '保存失败' : output),
           ),
-          action: map['ok'] == true
+          action: map['ok'] == true && map['restart_required'] == true
               ? SnackBarAction(label: '立即重启', onPressed: _restart)
               : null,
         ),

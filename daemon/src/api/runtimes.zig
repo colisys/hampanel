@@ -484,6 +484,16 @@ pub fn dockerSettingsSave(ctx: *context.Context) anyerror!void {
         ctx.fail(400, "bad_socket", "invalid docker socket path");
         return;
     }
+    const current_socket = engine_mod.socketFromDb(ctx.arena, ctx.app.db);
+    if (!std.mem.eql(u8, current_socket, body.socket_path)) {
+        try ctx.app.db.setSetting("docker.socket_path", body.socket_path);
+        try ctx.json(.{ .ok = true, .output = "Endpoint saved; local daemon configuration unchanged", .restart_required = false });
+        return;
+    }
+    engine_mod.restartSupported(ctx.arena, .{ .name = "docker", .podman = false }, current_socket) catch |err| {
+        ctx.fail(501, "unsupported", @errorName(err));
+        return;
+    };
     const settings = docker_settings.Settings{
         .registry_mirrors = body.registry_mirrors,
         .insecure_registries = body.insecure_registries,
@@ -523,66 +533,17 @@ pub fn dockerSettingsSave(ctx: *context.Context) anyerror!void {
 }
 
 pub fn engineRestart(ctx: *context.Context) anyerror!void {
-    var engine = ctx.app.config.container;
-    if (engine.len == 0) {
-        const socket = engine_mod.socketFromDb(ctx.arena, ctx.app.db);
-        const detected = engine_mod.detect(ctx.arena, socket) catch |err| {
-            ctx.fail(501, "engine_unavailable", @errorName(err));
-            return;
-        };
-        engine = detected.name;
-    }
-    var socket_result: exec.Result = undefined;
-    var service_result: exec.Result = undefined;
-    var ok = false;
-    var output: []const u8 = "";
-
-    if (std.mem.eql(u8, engine, "podman")) {
-        socket_result = exec.run(
-            ctx.arena,
-            &.{ "systemctl", "restart", "podman.socket" },
-            2 * 1024 * 1024,
-        ) catch |err| {
-            ctx.fail(502, "restart_failed", @errorName(err));
-            return;
-        };
-        service_result = exec.run(
-            ctx.arena,
-            &.{ "systemctl", "restart", "podman.service" },
-            2 * 1024 * 1024,
-        ) catch |err| {
-            ctx.fail(502, "restart_failed", @errorName(err));
-            return;
-        };
-        ok = socket_result.ok() and service_result.ok();
-        output = try std.mem.concat(ctx.arena, u8, &.{
-            socket_result.stderr,
-            socket_result.stdout,
-            service_result.stderr,
-            service_result.stdout,
-        });
-    } else if (std.mem.eql(u8, engine, "docker")) {
-        service_result = exec.run(
-            ctx.arena,
-            &.{ "systemctl", "restart", "docker" },
-            2 * 1024 * 1024,
-        ) catch |err| {
-            ctx.fail(502, "restart_failed", @errorName(err));
-            return;
-        };
-        ok = service_result.ok();
-        output = try std.mem.concat(ctx.arena, u8, &.{
-            service_result.stderr,
-            service_result.stdout,
-        });
-    } else {
-        ctx.fail(409, "unsupported_engine", "container engine is not Docker or Podman");
+    const socket = engine_mod.socketFromDb(ctx.arena, ctx.app.db);
+    const engine = engine_mod.detect(ctx.arena, socket) catch |err| {
+        ctx.fail(501, "unsupported", @errorName(err));
         return;
-    }
-
-    if (!ok) ctx.response.status = 502;
-    log.info("engine: restart engine={s} ok={}", .{ engine, ok });
-    try ctx.json(.{ .ok = ok, .engine = engine, .output = output });
+    };
+    const result = engine_mod.restart(ctx.arena, engine, socket) catch |err| {
+        ctx.fail(501, "unsupported", @errorName(err));
+        return;
+    };
+    if (!result.ok()) ctx.response.status = 502;
+    try ctx.json(.{ .ok = result.ok(), .output = if (result.stderr.len > 0) result.stderr else result.stdout });
 }
 
 fn requireId(ctx: *context.Context) ?[]const u8 {

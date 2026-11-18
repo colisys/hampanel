@@ -208,7 +208,7 @@ pub fn build(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!validBuildBody(ctx, body.tag, body.dockerfile)) return;
-    if (body.context_path.len == 0 or body.context_path[0] != '/') {
+    if (!std.fs.path.isAbsolute(body.context_path) or std.mem.indexOfScalar(u8, body.context_path, 0) != null) {
         ctx.fail(400, "bad_context", "context_path must be absolute");
         return;
     }
@@ -376,40 +376,53 @@ pub fn search(ctx: *context.Context) anyerror!void {
     }
 
     const record = registry_record.?;
-    if (record.username.len == 0 or record.secret.len == 0 or
-        std.mem.indexOfScalar(u8, record.username, '"') != null or
-        std.mem.indexOfScalar(u8, record.secret, '"') != null)
-    {
-        ctx.fail(400, "missing_credentials", "私有源检索需要无引号的用户名和密码");
-        return;
-    }
-    const url = try std.fmt.allocPrint(ctx.arena, "{s}://{s}/v2/_catalog?n=100", .{ record.protocol, record.host });
-    const config = try std.fmt.allocPrint(ctx.arena, "user = \"{s}:{s}\"\n", .{ record.username, record.secret });
-    const result = exec.runWith(ctx.arena, &.{ "curl", "-fsS", "--config", "-", url }, .{
-        .stdin = config,
-        .max_output = max_output,
-    }) catch {
-        ctx.fail(502, "curl_failed", "unable to query registry catalog");
-        return;
-    };
-    if (!result.ok()) {
-        ctx.fail(502, "registry_failed", textOf(result));
-        return;
-    }
-    const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, result.stdout, .{}) catch {
-        ctx.fail(502, "registry_failed", "invalid registry response");
-        return;
-    };
+    // Never follow registry-controlled redirects or Link URLs with credentials.
+    // Catalog pagination stays on the configured origin using an encoded cursor.
+    const credentials = try std.fmt.allocPrint(ctx.arena, "{s}:{s}", .{ record.username, record.secret });
+    const encoded = try ctx.arena.alloc(u8, std.base64.standard.Encoder.calcSize(credentials.len));
+    _ = std.base64.standard.Encoder.encode(encoded, credentials);
+    const config = try std.fmt.allocPrint(ctx.arena, "header = \"Authorization: Basic {s}\"\n", .{encoded});
     var results = std.array_list.Managed([]const u8).init(ctx.arena);
-    if (value == .object) {
-        if (value.object.get("repositories")) |repos| {
-            if (repos == .array) {
-                for (repos.array.items) |repo| {
-                    if (repo != .string) continue;
-                    if (std.mem.indexOf(u8, repo.string, term) != null) try results.append(repo.string);
-                }
-            }
+    var last: []const u8 = "";
+    var page: usize = 0;
+    while (page < 100) : (page += 1) {
+        const cursor = try encodeCursor(ctx.arena, last);
+        const url = try std.fmt.allocPrint(ctx.arena, "{s}://{s}/v2/_catalog?n=100&last={s}", .{ record.protocol, record.host, cursor });
+        const result = try exec.runWith(ctx.arena, &.{ "curl", "-q", "-fsS", "--max-time", "30", "--proto", "=http,https", "--config", "-", url }, .{
+            .stdin = config,
+            .max_output = max_output,
+        });
+        if (!result.ok()) {
+            ctx.fail(502, "registry_failed", "unable to query registry catalog");
+            return;
         }
+        const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, result.stdout, .{}) catch {
+            ctx.fail(502, "registry_failed", "invalid registry response");
+            return;
+        };
+        const repos = if (value == .object) value.object.get("repositories") else null;
+        if (repos == null or repos.? != .array) {
+            ctx.fail(502, "registry_failed", "invalid catalog");
+            return;
+        }
+        if (repos.?.array.items.len == 0) break;
+        const previous = last;
+        for (repos.?.array.items) |repo| {
+            if (repo != .string or !validate.isImageRef(repo.string)) {
+                ctx.fail(502, "registry_failed", "invalid repository");
+                return;
+            }
+            last = repo.string;
+            if (std.mem.indexOf(u8, repo.string, term) != null) try results.append(repo.string);
+        }
+        if (std.mem.eql(u8, previous, last)) {
+            ctx.fail(502, "registry_failed", "catalog pagination did not advance");
+            return;
+        }
+    }
+    if (page == 100) {
+        ctx.fail(502, "registry_failed", "catalog pagination limit exceeded");
+        return;
     }
     try ctx.json(.{ .repositories = results.items, .source = record.host });
 }
@@ -507,4 +520,31 @@ fn boolean(value: std.json.Value, key: []const u8) bool {
 fn textOf(result: exec.Result) []const u8 {
     if (result.stderr.len > 0) return result.stderr;
     return result.stdout;
+}
+
+fn encodeCursor(a: std.mem.Allocator, text: []const u8) ![]const u8 {
+    var out = std.array_list.Managed(u8).init(a);
+    errdefer out.deinit();
+    const hex = "0123456789ABCDEF";
+    for (text) |ch| {
+        if (std.ascii.isAlphanumeric(ch) or ch == '-' or ch == '_' or ch == '.' or ch == '~') {
+            try out.append(ch);
+        } else {
+            try out.appendSlice(&.{ '%', hex[ch >> 4], hex[ch & 15] });
+        }
+    }
+    return out.toOwnedSlice();
+}
+
+test "catalog cursor cannot change origin or inject query parameters" {
+    const cursor = try encodeCursor(std.testing.allocator, "a/b&last=//evil%20");
+    defer std.testing.allocator.free(cursor);
+    try std.testing.expectEqualStrings("a%2Fb%26last%3D%2F%2Fevil%2520", cursor);
+}
+
+test "build context platform absolute paths" {
+    try std.testing.expect(std.fs.path.isAbsoluteWindows("C:\\work"));
+    try std.testing.expect(!std.fs.path.isAbsoluteWindows("C:work"));
+    try std.testing.expect(std.fs.path.isAbsolutePosix("/work"));
+    try std.testing.expect(!std.fs.path.isAbsolutePosix("work"));
 }

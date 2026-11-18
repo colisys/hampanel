@@ -162,9 +162,13 @@ class _ContainerFilesDialogState extends State<ContainerFilesDialog> {
     );
     if (!ok) return;
     try {
-      await _api.postJson('$_base/delete', {
+      final json = await _api.postJson('$_base/delete', {
         'paths': [_join(entry.name)],
       });
+      final map = json as Map<String, dynamic>;
+      if (map['ok'] != true) {
+        throw StateError(map['output'] as String? ?? '删除失败');
+      }
       await _load(_path);
     } catch (error) {
       _toast(describeError(error));

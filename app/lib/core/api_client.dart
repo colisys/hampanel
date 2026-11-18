@@ -98,7 +98,8 @@ class ApiClient {
     String path,
     Object? body, {
     Map<String, String>? query,
-  }) => _send('PUT', path, body: body, query: query);
+    Duration timeout = const Duration(seconds: 30),
+  }) => _send('PUT', path, body: body, query: query, timeout: timeout);
 
   Future<dynamic> deleteJson(String path, {Map<String, String>? query}) =>
       _send('DELETE', path, query: query);

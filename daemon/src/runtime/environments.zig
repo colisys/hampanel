@@ -247,20 +247,23 @@ pub fn configSave(
     content: []const u8,
 ) !Outcome {
     const environment = (try get(allocator, database, id)) orelse return error.NotFound;
-    database.lock();
-    var statement = try database.prepareUnlocked(
-        "UPDATE runtime_config_files SET content = ?1, updated_at = ?2 WHERE environment_id = ?3 AND path = ?4",
-    );
-    defer statement.deinit();
-    try statement.bind(&.{
-        .{ .text = content },
-        .{ .int = compat.timestamp() },
-        .{ .text = id },
-        .{ .text = file_path },
-    });
-    _ = try statement.step();
-    const changed = database.changes();
-    database.unlock();
+    const changed = update: {
+        database.lock();
+        defer database.unlock();
+        var statement = try database.prepareUnlocked(
+            "UPDATE runtime_config_files SET content = ?1, updated_at = ?2 WHERE environment_id = ?3 AND path = ?4",
+        );
+        defer statement.deinit();
+        try statement.bind(&.{
+            .{ .text = content },
+            .{ .int = compat.timestamp() },
+            .{ .text = id },
+            .{ .text = file_path },
+        });
+        _ = try statement.step();
+        const count = database.changes();
+        break :update count;
+    };
     if (changed == 0) return error.ConfigNotFound;
 
     try writeConfigFile(allocator, data_dir, id, file_path, content);

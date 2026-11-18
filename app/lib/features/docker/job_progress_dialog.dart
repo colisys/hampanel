@@ -39,6 +39,7 @@ class _JobDialogState extends State<_JobDialog> {
   DockerJob? _job;
   String? _error;
   Timer? _timer;
+  bool _loading = false;
 
   @override
   void initState() {
@@ -48,6 +49,8 @@ class _JobDialogState extends State<_JobDialog> {
   }
 
   Future<void> _load() async {
+    if (_loading) return;
+    _loading = true;
     try {
       final json = await widget.api.getJson(
         '/api/v1/docker/jobs/${widget.jobId}',
@@ -62,7 +65,8 @@ class _JobDialogState extends State<_JobDialog> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = describeError(error));
-      _timer?.cancel();
+    } finally {
+      _loading = false;
     }
   }
 
@@ -178,7 +182,7 @@ class _JobDialogState extends State<_JobDialog> {
         ),
       ),
       actions: [
-        if (job != null && job.resultPath.isNotEmpty && !job.running)
+        if (job != null && job.resultPath.isNotEmpty && job.status == 'succeeded')
           TextButton(onPressed: () => _download(), child: const Text('下载产物')),
         TextButton(
           onPressed: () => Navigator.pop(context),

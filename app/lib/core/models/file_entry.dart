@@ -57,6 +57,15 @@ class FileContent {
   final bool truncated;
   final String content;
 
+  void requireEditable() {
+    if (truncated) {
+      throw StateError('文件内容已截断，禁止在线保存，请下载完整文件后编辑');
+    }
+    if (encoding != 'utf8') {
+      throw StateError('二进制文件不支持在线编辑，请使用下载');
+    }
+  }
+
   factory FileContent.fromJson(Map<String, dynamic> json) => FileContent(
     path: json['path'] as String? ?? '',
     size: (json['size'] as num?)?.toInt() ?? 0,

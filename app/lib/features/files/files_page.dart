@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
 import '../../core/format.dart';
+import '../../core/file_results.dart';
 import '../../core/models/file_entry.dart';
 import '../../core/models/recycle_entry.dart';
 import '../../core/native_files.dart';
@@ -89,10 +90,7 @@ class _FilesPageState extends State<FilesPage> {
         query: {'path': entry.path},
       );
       final content = FileContent.fromJson(json as Map<String, dynamic>);
-      if (content.encoding != 'utf8') {
-        _toast('二进制文件不支持在线编辑，请使用下载');
-        return;
-      }
+      content.requireEditable();
       if (!mounted) return;
       final edited = await Navigator.of(context).push<String>(
         MaterialPageRoute(
@@ -199,10 +197,11 @@ class _FilesPageState extends State<FilesPage> {
     );
     if (!ok) return;
     try {
-      await _api.postJson('/api/v1/files/delete', {
+      final result = await _api.postJson('/api/v1/files/delete', {
         'paths': [entry.path],
       });
       await _load(_path);
+      requireDeleted(result, [entry.path]);
       _toast('已移入回收站');
     } catch (error) {
       _toast(describeError(error));

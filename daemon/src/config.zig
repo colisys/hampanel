@@ -52,9 +52,18 @@ pub const Config = struct {
         }
         const body = try std.json.Stringify.valueAlloc(allocator, self, .{ .whitespace = .indent_2 });
         defer allocator.free(body);
-        var file = try compat.cwd().createFile(path, .{ .mode = 0o600 });
-        defer file.close();
-        try file.writeAll(body);
-        try file.writeAll("\n");
+        var random: [16]u8 = undefined;
+        compat.randomBytes(&random);
+        const temporary = try std.fmt.allocPrint(allocator, "{s}.{s}.tmp", .{ path, std.fmt.bytesToHex(random, .lower) });
+        defer allocator.free(temporary);
+        var file = try compat.cwd().createFile(temporary, .{ .mode = 0o600, .exclusive = true });
+        defer compat.cwd().deleteFile(temporary) catch {};
+        {
+            defer file.close();
+            try file.writeAll(body);
+            try file.writeAll("\n");
+            try file.inner.sync(compat.io());
+        }
+        try compat.cwd().rename(temporary, path);
     }
 };

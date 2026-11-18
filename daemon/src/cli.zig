@@ -194,7 +194,7 @@ fn cmdInit(allocator: std.mem.Allocator, opts: *Options) !u8 {
     var cfg = try config.Config.load(a, opts.config_path);
     applyOverrides(&cfg, opts.*);
     log.setLevelName(cfg.log_level);
-    _ = detectContainer(a, &cfg);
+    _ = detectContainer(a, &cfg, "");
     _ = detectWebServer(a, &cfg);
 
     const endpoint_raw = opts.endpoint orelse {
@@ -439,12 +439,12 @@ fn cmdUpdate(allocator: std.mem.Allocator, opts: *Options) !u8 {
     return 0;
 }
 
-fn detectContainer(allocator: std.mem.Allocator, cfg: *config.Config) bool {
+fn detectContainer(allocator: std.mem.Allocator, cfg: *config.Config, socket: []const u8) bool {
     if (cfg.container.len > 0) {
         engine_mod.setPreferred(cfg.container);
         return false;
     }
-    if (engine_mod.autoDetect(allocator, "")) |engine| {
+    if (engine_mod.autoDetect(allocator, socket)) |engine| {
         cfg.container = allocator.dupe(u8, engine.name) catch "";
         engine_mod.setPreferred(cfg.container);
         log.info("container engine configured as {s}", .{engine.name});
@@ -485,13 +485,6 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     var cfg = try config.Config.load(a, opts.config_path);
     applyOverrides(&cfg, opts.*);
     log.setLevelName(cfg.log_level);
-    const container_changed = detectContainer(a, &cfg);
-    const web_changed = detectWebServer(a, &cfg);
-    if (container_changed or web_changed) {
-        cfg.save(a, opts.config_path) catch |err| {
-            log.warn("failed to persist detected services: {s}", .{@errorName(err)});
-        };
-    }
 
     if (!pki.exists(a, cfg.tls_dir)) {
         std.debug.print("PKI not found in {s}; run `hampaneld init --endpoint HOST` first\n", .{cfg.tls_dir});
@@ -511,6 +504,14 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     defer database.close();
     try migrations.migrate(a, &database);
 
+    const container_changed = detectContainer(a, &cfg, engine_mod.socketFromDb(a, &database));
+    const web_changed = detectWebServer(a, &cfg);
+    if (container_changed or web_changed) {
+        cfg.save(a, opts.config_path) catch |err| {
+            log.warn("failed to persist detected services: {s}", .{@errorName(err)});
+        };
+    }
+
     const audit_log = try audit.Log.init(allocator, &database);
     var app = app_mod.App{
         .allocator = allocator,
@@ -522,6 +523,8 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
         .pki = paths,
         .audit = audit_log,
     };
+
+    defer app.deinitUpdateConfig();
 
     log.info("hampaneld {s} starting (GPL-3.0-or-later)", .{version.version});
     notify.startMonitor(&database);

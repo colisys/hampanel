@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
+import '../../core/models/file_entry.dart';
 import '../../ui/collapsible.dart';
 import '../../ui/layout.dart';
 import '../../ui/theme.dart';
@@ -31,6 +32,7 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
 
   bool _loading = true;
   bool _saving = false;
+  bool _loaded = false;
   bool _restarting = false;
   String? _error;
 
@@ -54,6 +56,7 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
   Future<void> _load() async {
     setState(() {
       _loading = true;
+      _loaded = false;
       _error = null;
     });
     try {
@@ -171,7 +174,10 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
         false,
       );
 
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _loaded = true;
+      });
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -188,8 +194,9 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
         query: {'path': path},
       );
       final map = json as Map<String, dynamic>;
-      if ((map['encoding'] as String? ?? 'utf8') != 'utf8') return '';
-      return map['content'] as String? ?? '';
+      final content = FileContent.fromJson(map);
+      content.requireEditable();
+      return content.content;
     } on ApiException catch (error) {
       if (error.status == 404) return '';
       rethrow;
@@ -235,16 +242,17 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
   }
 
   Future<void> _save() async {
+    if (!_loaded || _loading || _saving) return;
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
+      final storage = _patchStorage(await _read(_storagePath));
       await _ensureDir('/etc/containers/containers.conf.d');
       await _ensureDir('/etc/containers/registries.conf.d');
       await _write(_containersDropIn, _renderContainers());
       await _write(_registriesDropIn, _renderRegistries());
-      final storage = _patchStorage(await _read(_storagePath));
       if (storage.trim().isNotEmpty) {
         await _write(_storagePath, storage);
       }
@@ -411,7 +419,7 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
           runSpacing: 8,
           children: [
             FilledButton.icon(
-              onPressed: _saving ? null : _save,
+              onPressed: _saving || !_loaded ? null : _save,
               icon: _saving
                   ? const SizedBox(
                       width: 14,

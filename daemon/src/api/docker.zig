@@ -111,6 +111,7 @@ pub fn overview(ctx: *context.Context) anyerror!void {
             .running = running,
             .stopped = stopped,
             .restarting = restarting,
+            .failed = failed,
             .@"error" = failed,
         },
         .compose = composeCount(ctx, engine, socket),

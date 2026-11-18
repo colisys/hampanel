@@ -342,7 +342,7 @@ pub fn upload(ctx: *context.Context) anyerror!void {
     compat.randomBytes(&random);
     const temp_name = try std.fmt.allocPrint(ctx.arena, ".hampanel-upload-{s}", .{std.fmt.bytesToHex(random, .lower)});
 
-    var temp = parent_dir.createFile(temp_name, .{ .truncate = true, .mode = 0o644 }) catch |err| {
+    var temp = parent_dir.createFile(temp_name, .{ .exclusive = true, .mode = 0o644 }) catch |err| {
         ctx.fail(400, "write_failed", @errorName(err));
         return;
     };

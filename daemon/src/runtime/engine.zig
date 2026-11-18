@@ -107,12 +107,67 @@ pub fn run(
 
     var env = try compat.cloneEnv(allocator);
     defer env.deinit();
-    try env.put(if (engine.podman) "CONTAINER_HOST" else "DOCKER_HOST", socket);
+    try env.put(hostVariable(engine, argv), socket);
     return exec.runWith(allocator, argv, .{
         .environ_map = &env,
         .stdin = options.stdin,
         .max_output = options.max_output,
     });
+}
+
+pub fn restartSupported(a: std.mem.Allocator, engine: Engine, socket: []const u8) !void {
+    const os = @import("builtin").os.tag;
+    if (os != .linux and os != .windows) return error.UnsupportedPlatform;
+    var endpoint = socket;
+    if (endpoint.len == 0) endpoint = compat.getEnv(if (engine.podman) "CONTAINER_HOST" else "DOCKER_HOST") orelse "";
+    if (endpoint.len == 0 and !engine.podman) {
+        const probe = try exec.run(a, &.{ "docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}" }, 4096);
+        if (!probe.ok()) return error.UnknownEndpoint;
+        endpoint = std.mem.trim(u8, probe.stdout, " \r\n\t");
+    }
+    if (!localServiceEndpoint(engine.podman, os == .windows, endpoint)) return error.UnsupportedEndpoint;
+    const info = try run(a, engine, endpoint, &.{ engine.name, "info", "--format", if (engine.podman) "{{.Host.Security.Rootless}}" else "{{json .SecurityOptions}}" }, .{});
+    if (!info.ok()) return error.UnknownRootlessState;
+    const security = std.mem.trim(u8, info.stdout, " \r\n\t");
+    if (engine.podman) {
+        if (!std.mem.eql(u8, security, "false")) return error.UnsupportedRootless;
+    } else {
+        const value = std.json.parseFromSliceLeaky(std.json.Value, a, security, .{}) catch return error.UnknownRootlessState;
+        if (value != .array) return error.UnknownRootlessState;
+        for (value.array.items) |item| {
+            if (item != .string) return error.UnknownRootlessState;
+            if (containsIgnoreCase(item.string, "rootless")) return error.UnsupportedRootless;
+        }
+    }
+    const service = if (os == .windows)
+        try exec.run(a, &.{ "powershell.exe", "-NoProfile", "-Command", "Get-Service docker -ErrorAction Stop | Out-Null" }, 4096)
+    else
+        try exec.run(a, &.{ "systemctl", "show", "--property=LoadState", "--value", if (engine.podman) "podman.service" else "docker.service" }, 4096);
+    if (!service.ok() or (os != .windows and !std.mem.eql(u8, std.mem.trim(u8, service.stdout, " \r\n\t"), "loaded"))) return error.UnsupportedServiceManager;
+}
+
+pub fn localServiceEndpoint(podman: bool, windows: bool, endpoint: []const u8) bool {
+    if (windows) return !podman and std.mem.eql(u8, endpoint, "npipe:////./pipe/docker_engine");
+    if (podman) return std.mem.eql(u8, endpoint, "unix:///run/podman/podman.sock");
+    return std.mem.eql(u8, endpoint, "unix:///var/run/docker.sock") or std.mem.eql(u8, endpoint, "unix:///run/docker.sock");
+}
+
+pub fn restart(a: std.mem.Allocator, engine: Engine, socket: []const u8) !exec.Result {
+    try restartSupported(a, engine, socket);
+    return if (@import("builtin").os.tag == .windows)
+        exec.run(a, &.{ "powershell.exe", "-NoProfile", "-Command", "Restart-Service docker -ErrorAction Stop" }, 1024 * 1024)
+    else
+        exec.run(a, &.{ "systemctl", "restart", if (engine.podman) "podman.service" else "docker.service" }, 1024 * 1024);
+}
+
+test "restart rejects remote rootless and unknown endpoints" {
+    try std.testing.expect(localServiceEndpoint(false, false, "unix:///var/run/docker.sock"));
+    try std.testing.expect(localServiceEndpoint(true, false, "unix:///run/podman/podman.sock"));
+    try std.testing.expect(localServiceEndpoint(false, true, "npipe:////./pipe/docker_engine"));
+    for ([_][]const u8{ "", "tcp://remote:2375", "ssh://host", "unix:///run/user/1000/docker.sock" }) |endpoint| {
+        try std.testing.expect(!localServiceEndpoint(false, false, endpoint));
+        try std.testing.expect(!localServiceEndpoint(true, false, endpoint));
+    }
 }
 
 pub fn composeCommand(
@@ -161,4 +216,15 @@ fn probeIndicatesUnsupported(result: exec.Result) bool {
         if (containsIgnoreCase(result.stderr, needle)) return true;
     }
     return false;
+}
+
+pub fn hostVariable(engine: Engine, argv: []const []const u8) []const u8 {
+    if (argv.len > 0 and std.mem.eql(u8, argv[0], "docker-compose")) return "DOCKER_HOST";
+    return if (engine.podman) "CONTAINER_HOST" else "DOCKER_HOST";
+}
+
+test "compose provider selects endpoint variable" {
+    const podman = Engine{ .name = "podman", .podman = true };
+    try std.testing.expectEqualStrings("DOCKER_HOST", hostVariable(podman, &.{"docker-compose"}));
+    try std.testing.expectEqualStrings("CONTAINER_HOST", hostVariable(podman, &.{"podman-compose"}));
 }

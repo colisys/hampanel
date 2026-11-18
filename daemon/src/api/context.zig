@@ -32,7 +32,7 @@ pub const Context = struct {
     }
 
     pub fn json(self: *Context, value: anytype) !void {
-        try self.jsonStatus(200, value);
+        try self.jsonStatus(self.response.status, value);
     }
 
     pub fn jsonStatus(self: *Context, status: u16, value: anytype) !void {
@@ -66,3 +66,20 @@ pub const Context = struct {
         });
     }
 };
+
+test "json preserves explicit and default response status" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var ctx: Context = undefined;
+    ctx.arena = arena.allocator();
+    ctx.response = .{};
+    try ctx.json(.{ .ok = true });
+    try std.testing.expectEqual(@as(u16, 200), ctx.response.status);
+    for ([_]u16{ 502, 201 }) |status| {
+        ctx.response.status = status;
+        try ctx.json(.{ .ok = false });
+        try std.testing.expectEqual(status, ctx.response.status);
+        try std.testing.expectEqualStrings("application/json", ctx.response.content_type);
+        try std.testing.expectEqualStrings("{\"ok\":false}", ctx.response.body);
+    }
+}

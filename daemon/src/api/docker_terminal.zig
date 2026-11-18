@@ -54,7 +54,12 @@ pub fn ws(ctx: *context.Context) anyerror!void {
     const rows = parseDimension(try ctx.query("rows"), 32, 5, 200);
 
     var argv = std.array_list.Managed([]const u8).init(ctx.arena);
-    try argv.appendSlice(&.{ engine.name, "exec", "-it", id, shell });
+    try argv.append(engine.name);
+    if (socket.len > 0) {
+        try argv.append(if (engine.podman) "--url" else "--host");
+        try argv.append(socket);
+    }
+    try argv.appendSlice(&.{ "exec", "-it", id, shell });
 
     var term = platform.spawnTerminalArgv(ctx.arena, argv.items, cols, rows) catch |err| {
         if (err == error.Unsupported) {

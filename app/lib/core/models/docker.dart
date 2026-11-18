@@ -321,7 +321,7 @@ class DockerOverview {
       running: (containers['running'] as num?)?.toInt() ?? 0,
       stopped: (containers['stopped'] as num?)?.toInt() ?? 0,
       restarting: (containers['restarting'] as num?)?.toInt() ?? 0,
-      failed: (containers['failed'] as num?)?.toInt() ?? 0,
+      failed: ((containers['failed'] ?? containers['error']) as num?)?.toInt() ?? 0,
       compose: (json['compose'] as num?)?.toInt() ?? 0,
       images: (json['images'] as num?)?.toInt() ?? 0,
       networks: (json['networks'] as num?)?.toInt() ?? 0,
@@ -371,7 +371,8 @@ class DockerComposeProject {
         files: ((json['files'] as List<dynamic>?) ?? const [])
             .whereType<String>()
             .toList(),
-        configFiles: ((json['config_files'] as List<dynamic>?) ?? const [])
+        configFiles: ((json['config_files'] as List<dynamic>?) ??
+                (json['files'] as List<dynamic>?) ?? const [])
             .whereType<String>()
             .toList(),
       );

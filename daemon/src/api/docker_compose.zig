@@ -48,7 +48,7 @@ pub fn index(ctx: *context.Context) anyerror!void {
             .name = external.name,
             .dir = "",
             .source_dir = "",
-            .files = &.{},
+            .files = external.config_files,
             .adopted = false,
             .managed = false,
             .status = external.status,
@@ -170,10 +170,11 @@ pub fn update(ctx: *context.Context) anyerror!void {
         ctx.fail(400, "bad_content", "invalid compose content");
         return;
     }
-    const previous = readMain(ctx, project) catch "";
-    try writeMain(ctx, project.dir, body.content);
+    if (project.files.len == 0) return error.InvalidComposeFiles;
+    const previous = try readMain(ctx, project);
+    try writeFile(ctx, project.dir, project.files[0], body.content);
     if (!(try validateProject(ctx, project.dir, project.files))) {
-        writeMain(ctx, project.dir, previous) catch {};
+        writeFile(ctx, project.dir, project.files[0], previous) catch {};
         ctx.fail(400, "invalid_compose", "compose 校验失败");
         return;
     }

@@ -275,7 +275,7 @@ pub fn reload(ctx: *context.Context) anyerror!void {
         };
         break :blk .{ .ok = result.ok, .output = result.output };
     };
-    if (!outcome.ok) try ctx.jsonStatus(502, .{ .ok = outcome.ok, .output = outcome.output });
+    try ctx.jsonStatus(if (outcome.ok) 200 else 502, .{ .ok = outcome.ok, .output = outcome.output });
 }
 
 pub fn uploadCertificate(ctx: *context.Context) anyerror!void {

@@ -36,6 +36,7 @@ const Job = struct {
     finished_at: ?i64 = null,
     result_path: ?[]const u8 = null,
     pid: ?u32 = null,
+    cancel_requested: bool = false,
     mutex: std.Io.Mutex = .init,
 };
 
@@ -67,24 +68,40 @@ pub fn start(options: Options) ![]const u8 {
     errdefer gpa.free(id);
 
     const job = try gpa.create(Job);
+    errdefer gpa.destroy(job);
+    const kind = try gpa.dupe(u8, options.kind);
+    errdefer gpa.free(kind);
+    const label = try gpa.dupe(u8, options.label);
+    errdefer gpa.free(label);
+    const result_path = if (options.result_path) |path| try gpa.dupe(u8, path) else null;
+    errdefer if (result_path) |path| gpa.free(path);
     job.* = .{
         .id = id,
-        .kind = try gpa.dupe(u8, options.kind),
-        .label = try gpa.dupe(u8, options.label),
+        .kind = kind,
+        .label = label,
         .output = std.array_list.Managed(u8).init(gpa),
         .started_at = compat.timestamp(),
-        .result_path = if (options.result_path) |path| try gpa.dupe(u8, path) else null,
+        .result_path = result_path,
     };
 
     const argv = try gpa.alloc([]const u8, options.argv.len);
-    for (options.argv, 0..) |arg, index| argv[index] = try gpa.dupe(u8, arg);
+    errdefer gpa.free(argv);
+    var copied: usize = 0;
+    errdefer for (argv[0..copied]) |arg| gpa.free(arg);
+    for (options.argv, 0..) |arg, index| {
+        argv[index] = try gpa.dupe(u8, arg);
+        copied += 1;
+    }
 
     const task = try gpa.create(Task);
+    errdefer gpa.destroy(task);
+    const socket = try gpa.dupe(u8, options.socket);
+    errdefer gpa.free(socket);
     task.* = .{
         .job = job,
         .argv = argv,
         .engine = options.engine,
-        .socket = try gpa.dupe(u8, options.socket),
+        .socket = socket,
     };
 
     registry_mutex.lockUncancelable(compat.io());
@@ -104,10 +121,10 @@ pub fn start(options: Options) ![]const u8 {
 
 pub fn get(allocator: std.mem.Allocator, id: []const u8) !?Snapshot {
     registry_mutex.lockUncancelable(compat.io());
+    defer registry_mutex.unlock(compat.io());
     ensureLocked();
     pruneLocked();
     const found = registry.get(id);
-    registry_mutex.unlock(compat.io());
     const job = found orelse return null;
 
     job.mutex.lockUncancelable(compat.io());
@@ -129,20 +146,16 @@ pub fn get(allocator: std.mem.Allocator, id: []const u8) !?Snapshot {
 
 pub fn cancel(id: []const u8) bool {
     registry_mutex.lockUncancelable(compat.io());
+    defer registry_mutex.unlock(compat.io());
     ensureLocked();
-    const found = registry.get(id);
-    registry_mutex.unlock(compat.io());
-    const job = found orelse return false;
-
+    const job = registry.get(id) orelse return false;
     job.mutex.lockUncancelable(compat.io());
-    const pid = job.pid;
-    const running = job.status == .running;
-    job.mutex.unlock(compat.io());
-    if (!running) return false;
-
+    defer job.mutex.unlock(compat.io());
+    if (job.status != .running) return false;
     if (builtin.os.tag != .windows) {
-        if (pid) |value| {
-            std.posix.kill(@intCast(value), std.posix.SIG.KILL) catch return false;
+        if (job.pid) |pid| {
+            std.posix.kill(@intCast(pid), std.posix.SIG.KILL) catch return false;
+            job.cancel_requested = true;
             return true;
         }
     }
@@ -161,10 +174,17 @@ fn worker(task: *Task) void {
 
     var env_map: ?std.process.Environ.Map = null;
     if (task.socket.len > 0) {
-        env_map = compat.cloneEnv(gpa) catch null;
+        env_map = compat.cloneEnv(gpa) catch {
+            finish(task.job, .failed, null);
+            return;
+        };
         if (env_map) |*map| {
-            const key = if (task.engine.podman) "CONTAINER_HOST" else "DOCKER_HOST";
-            map.put(key, task.socket) catch {};
+            const key = engine_mod.hostVariable(task.engine, task.argv);
+            map.put(key, task.socket) catch {
+                map.deinit();
+                finish(task.job, .failed, null);
+                return;
+            };
         }
     }
     defer if (env_map) |*map| map.deinit();
@@ -245,7 +265,7 @@ fn append(job: *Job, bytes: []const u8) void {
 fn finish(job: *Job, status: Status, exit_code: ?u8) void {
     job.mutex.lockUncancelable(compat.io());
     defer job.mutex.unlock(compat.io());
-    job.status = status;
+    job.status = if (job.cancel_requested) .cancelled else status;
     job.exit_code = exit_code;
     job.finished_at = compat.timestamp();
     job.pid = null;
@@ -267,7 +287,17 @@ fn pruneLocked() void {
         const expired = job.status != .running and job.finished_at != null and
             now - job.finished_at.? > ttl_seconds;
         job.mutex.unlock(compat.io());
-        if (expired) _ = registry.remove(entry.key_ptr.*);
+        if (expired) {
+            _ = registry.remove(job.id);
+            const allocator = std.heap.page_allocator;
+            allocator.free(job.id);
+            allocator.free(job.kind);
+            allocator.free(job.label);
+            if (job.result_path) |path| allocator.free(path);
+            job.output.deinit();
+            allocator.destroy(job);
+            iterator = registry.iterator();
+        }
     }
 }
 
@@ -278,4 +308,20 @@ fn statusName(status: Status) []const u8 {
         .failed => "failed",
         .cancelled => "cancelled",
     };
+}
+
+test "cancelled worker retains cancelled terminal status" {
+    var job = Job{
+        .id = "test",
+        .kind = "test",
+        .label = "test",
+        .output = std.array_list.Managed(u8).init(std.testing.allocator),
+        .started_at = 0,
+        .cancel_requested = true,
+    };
+    defer job.output.deinit();
+    finish(&job, .failed, 255);
+    try std.testing.expectEqual(Status.cancelled, job.status);
+    try std.testing.expect(job.finished_at != null);
+    try std.testing.expect(job.pid == null);
 }

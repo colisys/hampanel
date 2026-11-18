@@ -1101,6 +1101,7 @@ class _ExtensionsDialogState extends State<_ExtensionsDialog> {
       final result = await widget.api.putJson(
         '/api/v1/runtimes/${widget.env.id}/extensions',
         {'extensions': _selected.toList()},
+        timeout: const Duration(minutes: 10),
       );
       final map = result as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
@@ -1677,6 +1678,7 @@ class _RuntimeExtensionsTabState extends State<_RuntimeExtensionsTab> {
       final json = await widget.api.putJson(
         '/api/v1/runtimes/${widget.env.id}/extensions',
         {'extensions': _selected.toList()..sort()},
+        timeout: const Duration(minutes: 10),
       );
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;

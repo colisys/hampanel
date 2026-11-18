@@ -82,10 +82,11 @@ class _ImagesSectionState extends State<ImagesSection> {
     await _pullReference(reference.trim());
   }
 
-  Future<void> _pullReference(String reference) async {
+  Future<void> _pullReference(String reference, {String? registryId}) async {
     try {
       final json = await _api.postJson('/api/v1/docker/images/pull', {
         'reference': reference,
+        if (registryId != null && registryId.isNotEmpty) 'registry_id': registryId,
       });
       final map = json as Map<String, dynamic>? ?? const {};
       final jobId = map['job_id'] as String?;
@@ -269,11 +270,13 @@ class _ImagesSectionState extends State<ImagesSection> {
   }
 
   Future<void> _search() async {
-    final reference = await showDialog<String>(
+    final reference = await showDialog<({String reference, String registryId})>(
       context: context,
       builder: (context) => _SearchDialog(api: _api, registries: _registries),
     );
-    if (reference != null) await _pullReference(reference);
+    if (reference != null) {
+      await _pullReference(reference.reference, registryId: reference.registryId);
+    }
   }
 
   Future<void> _prune({required bool all}) async {
@@ -674,6 +677,8 @@ class _SearchDialog extends StatefulWidget {
 class _SearchDialogState extends State<_SearchDialog> {
   final _term = TextEditingController();
   String _registryId = '';
+  String _resultRegistryId = '';
+  String _source = '';
   List<DockerImageSearchResult> _results = const [];
   List<String> _repositories = const [];
   bool _loading = false;
@@ -687,6 +692,7 @@ class _SearchDialogState extends State<_SearchDialog> {
 
   Future<void> _search() async {
     final term = _term.text.trim();
+    final registryId = _registryId;
     if (term.isEmpty) return;
     setState(() {
       _loading = true;
@@ -697,19 +703,21 @@ class _SearchDialogState extends State<_SearchDialog> {
         '/api/v1/docker/images/search',
         query: {
           'term': term,
-          if (_registryId.isNotEmpty) 'registry_id': _registryId,
+          if (registryId.isNotEmpty) 'registry_id': registryId,
         },
       );
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       setState(() {
+        _resultRegistryId = registryId;
+        _source = map['source'] as String? ?? 'docker.io';
         _results = ((map['results'] as List<dynamic>?) ?? const [])
             .whereType<Map<String, dynamic>>()
             .map(DockerImageSearchResult.fromJson)
             .toList();
         _repositories = ((map['repositories'] as List<dynamic>?) ?? const [])
             .whereType<String>()
-            .map((repo) => repo.contains(':') ? repo : '$repo:latest')
+            .map((repo) => '$_source/$repo:latest')
             .toList();
         _loading = false;
       });
@@ -810,7 +818,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                               ),
                             ),
                             onTap: () =>
-                                Navigator.pop(context, '${result.name}:latest'),
+                                Navigator.pop(context, (reference: '$_source/${result.name}:latest', registryId: _resultRegistryId)),
                           ),
                         for (final repository in _repositories)
                           ListTile(
@@ -820,7 +828,7 @@ class _SearchDialogState extends State<_SearchDialog> {
                               size: 18,
                             ),
                             title: Text(repository),
-                            onTap: () => Navigator.pop(context, repository),
+                            onTap: () => Navigator.pop(context, (reference: repository, registryId: _resultRegistryId)),
                           ),
                       ],
                     ),

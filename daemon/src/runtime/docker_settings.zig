@@ -118,7 +118,10 @@ pub fn apply(allocator: std.mem.Allocator, settings: Settings, restart: bool) !O
     }
 
     const path = configPath();
-    const existing_text = compat.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch null;
+    const existing_text = compat.cwd().readFileAlloc(allocator, path, 1024 * 1024) catch |err| switch (err) {
+        error.FileNotFound => null,
+        else => return err,
+    };
 
     var root: std.json.Value = .{ .object = .empty };
     if (existing_text) |text| {
@@ -126,7 +129,8 @@ pub fn apply(allocator: std.mem.Allocator, settings: Settings, restart: bool) !O
             .ignore_unknown_fields = true,
             .allocate = .alloc_always,
         })) |value| {
-            if (value == .object) root = value;
+            if (value != .object) return error.InvalidDaemonJson;
+            root = value;
         } else |_| {
             return error.InvalidDaemonJson;
         }
@@ -226,12 +230,13 @@ pub fn apply(allocator: std.mem.Allocator, settings: Settings, restart: bool) !O
     if (!restart) return .{ .ok = true, .output = "daemon.json 已写入；重启 Docker 后生效" };
 
     const result = if (builtin.os.tag == .windows)
-        try exec.run(allocator, &.{ "powershell.exe", "-NoProfile", "-Command", "Restart-Service docker" }, 1024 * 1024)
+        try exec.run(allocator, &.{ "powershell.exe", "-NoProfile", "-Command", "Restart-Service docker -ErrorAction Stop" }, 1024 * 1024)
     else
         try exec.run(allocator, &.{ "systemctl", "restart", "docker" }, 1024 * 1024);
 
     return .{
         .ok = result.ok(),
+        .restart_required = !result.ok(),
         .output = if (result.ok()) "daemon.json 已写入并重启 Docker" else textOf(result),
     };
 }
