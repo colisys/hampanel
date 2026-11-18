@@ -5,6 +5,7 @@ import '../../core/format.dart';
 import '../../core/models/process_info.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 
 class ProcessesPage extends StatefulWidget {
@@ -125,10 +126,7 @@ class _ProcessesPageState extends State<ProcessesPage> {
               ),
             ),
             const SizedBox(width: 8),
-            IconButton(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
+            PageRefreshButton(onPressed: _load),
           ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
@@ -138,7 +136,7 @@ class _ProcessesPageState extends State<ProcessesPage> {
               : compact
               ? _processCards()
               : Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                  padding: pageContentPadding(context, top: 4),
                   child: Card(
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
@@ -251,7 +249,7 @@ class _ProcessesPageState extends State<ProcessesPage> {
   Widget _processCards() {
     final processes = _filtered;
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      padding: pageContentPadding(context, top: 0),
       itemCount: processes.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
@@ -391,11 +389,7 @@ class _ProcessDetailPageState extends State<ProcessDetailPage> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          IconButton(
-            tooltip: '刷新',
-            onPressed: _load,
-            icon: const Icon(Icons.refresh, size: 20),
-          ),
+          PageRefreshButton(onPressed: _load),
         ],
       ),
       body: SafeArea(
@@ -407,7 +401,7 @@ class _ProcessDetailPageState extends State<ProcessDetailPage> {
                 child: ErrorBanner(message: _error!, onRetry: _load),
               )
             : ListView(
-                padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                padding: pageContentPadding(context, top: 4),
                 children: [
                   _DetailCard(
                     title: '概览',

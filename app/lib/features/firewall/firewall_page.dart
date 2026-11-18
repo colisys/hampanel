@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/api_client.dart';
 import '../../core/models/firewall.dart';
 import '../../core/session.dart';
+import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 
@@ -157,22 +158,22 @@ class _FirewallPageState extends State<FirewallPage> {
   @override
   Widget build(BuildContext context) {
     final status = _status;
+    final compact = MediaQuery.sizeOf(context).width < 720;
     return Column(
       children: [
         PageHeader(
           title: '防火墙',
           subtitle: status == null ? '正在读取规则' : '${status.rules.length} 条规则',
           actions: [
-            OutlinedButton.icon(
-              onPressed: status?.available == true ? _addRule : null,
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('添加规则'),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
+            if (!compact) ...[
+              OutlinedButton.icon(
+                onPressed: status?.available == true ? _addRule : null,
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('添加规则'),
+              ),
+              const SizedBox(width: 8),
+            ],
+            PageRefreshButton(onPressed: _load, refreshing: _loading),
           ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
@@ -194,12 +195,7 @@ class _FirewallPageState extends State<FirewallPage> {
               : Column(
                   children: [
                     Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
-                        0,
-                        MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
-                        12,
-                      ),
+                      padding: pageContentPadding(context).copyWith(bottom: 12),
                       child: Row(
                         children: [
                           StatusPill(
@@ -227,16 +223,7 @@ class _FirewallPageState extends State<FirewallPage> {
                               message: '点击“添加规则”放行或拒绝端口。',
                             )
                           : ListView.separated(
-                              padding: EdgeInsets.fromLTRB(
-                                MediaQuery.sizeOf(context).width < 720
-                                    ? 10
-                                    : 24,
-                                0,
-                                MediaQuery.sizeOf(context).width < 720
-                                    ? 10
-                                    : 24,
-                                24,
-                              ),
+                              padding: pageContentPadding(context),
                               itemCount: status.rules.length,
                               separatorBuilder: (_, _) =>
                                   const SizedBox(height: 8),
@@ -258,81 +245,56 @@ class _FirewallPageState extends State<FirewallPage> {
                                 return Card(
                                   child: Padding(
                                     padding: EdgeInsets.all(compact ? 12 : 14),
-                                    child: compact
-                                        ? Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      rule.to,
-                                                      maxLines: 2,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: monospace,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  StatusPill(
-                                                    text: rule.action,
-                                                    good: allowed,
-                                                  ),
-                                                  deleteButton,
-                                                ],
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                rule.to,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: monospace,
                                               ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                '来源 ${rule.from}',
-                                                style: TextStyle(
-                                                  fontSize: 11.5,
-                                                  color: hampanelMuted,
-                                                ),
-                                              ),
-                                              if (rule.raw
-                                                  .trim()
-                                                  .isNotEmpty) ...[
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  rule.raw,
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    fontSize: 10.5,
-                                                    color: hampanelMuted,
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
-                                          )
-                                        : Row(
-                                            children: [
-                                              SizedBox(
-                                                width: 200,
-                                                child: Text(
-                                                  rule.to,
-                                                  style: monospace,
-                                                ),
-                                              ),
-                                              StatusPill(
-                                                text: rule.action,
-                                                good: allowed,
-                                              ),
-                                              const SizedBox(width: 14),
-                                              Expanded(
-                                                child: Text(
-                                                  '来源 ${rule.from}',
-                                                  style: TextStyle(
-                                                    fontSize: 11.5,
-                                                    color: hampanelMuted,
-                                                  ),
-                                                ),
-                                              ),
-                                              deleteButton,
-                                            ],
+                                            ),
+                                            const SizedBox(width: 8),
+                                            StatusPill(
+                                              text: rule.action,
+                                              good: allowed,
+                                            ),
+                                            deleteButton,
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            '来源 ${rule.from}',
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              color: hampanelMuted,
+                                            ),
                                           ),
+                                        ),
+                                        if (rule.raw.trim().isNotEmpty) ...[
+                                          const SizedBox(height: 4),
+                                          Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: Text(
+                                              rule.raw,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 10.5,
+                                                color: hampanelMuted,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    )
                                   ),
                                 );
                               },
@@ -341,6 +303,16 @@ class _FirewallPageState extends State<FirewallPage> {
                   ],
                 ),
         ),
+        if (compact)
+          ActionDock(
+            actions: [
+              ActionDockItem(
+                icon: Icons.add,
+                label: '添加规则',
+                onPressed: status?.available == true ? _addRule : null,
+              ),
+            ],
+          ),
       ],
     );
   }

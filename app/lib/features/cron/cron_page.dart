@@ -3,8 +3,10 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/api_client.dart';
 import '../../core/models/cron.dart';
 import '../../core/session.dart';
+import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
+import 'cron_builder.dart';
 
 class CronPage extends StatefulWidget {
   const CronPage({super.key});
@@ -52,43 +54,39 @@ class _CronPageState extends State<CronPage> {
   }
 
   Future<void> _add() async {
-    final scheduleController = TextEditingController(text: '0 3 * * *');
+    var schedule = '0 3 * * *';
     final commandController = TextEditingController();
     final submitted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('新增计划任务'),
         content: DialogBody(
-          maxWidth: 560,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: scheduleController,
-                style: monospace,
-                decoration: const InputDecoration(
-                  labelText: 'Cron 表达式',
-                  hintText: '0 3 * * * 或 @daily',
+          maxWidth: 680,
+          maxHeight: 620,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                CronBuilder(
+                  initial: schedule,
+                  onChanged: (value) => schedule = value,
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: commandController,
-                style: monospace,
-                decoration: const InputDecoration(
-                  labelText: '命令',
-                  hintText: '/usr/local/bin/backup.sh',
+                const SizedBox(height: 12),
+                TextField(
+                  controller: commandController,
+                  style: monospace,
+                  decoration: const InputDecoration(
+                    labelText: '命令',
+                    hintText: '/usr/local/bin/backup.sh',
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
+                const SizedBox(height: 10),
+                Text(
                   'Linux 写入面板托管的 root crontab 区块；Windows 映射为任务计划程序。',
                   style: TextStyle(fontSize: 11, color: hampanelMuted),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         actions: [
@@ -107,7 +105,7 @@ class _CronPageState extends State<CronPage> {
     if (submitted == true) {
       try {
         await _api.postJson('/api/v1/cron', {
-          'schedule': scheduleController.text.trim(),
+          'schedule': schedule.trim(),
           'command': commandController.text.trim(),
         });
         await _load();
@@ -115,7 +113,6 @@ class _CronPageState extends State<CronPage> {
         _toast(describeError(error));
       }
     }
-    scheduleController.dispose();
     commandController.dispose();
   }
 
@@ -144,22 +141,22 @@ class _CronPageState extends State<CronPage> {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 720;
     return Column(
       children: [
         PageHeader(
           title: '计划任务',
           subtitle: '${_entries.length} 个由面板托管的任务',
           actions: [
-            OutlinedButton.icon(
-              onPressed: _add,
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('新增任务'),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
+            if (!compact) ...[
+              OutlinedButton.icon(
+                onPressed: _add,
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('新增任务'),
+              ),
+              const SizedBox(width: 8),
+            ],
+            PageRefreshButton(onPressed: _load, refreshing: _loading),
           ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
@@ -177,7 +174,7 @@ class _CronPageState extends State<CronPage> {
                   ),
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                  padding: pageContentPadding(context),
                   itemCount: _entries.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
@@ -224,6 +221,16 @@ class _CronPageState extends State<CronPage> {
                   },
                 ),
         ),
+        if (compact)
+          ActionDock(
+            actions: [
+              ActionDockItem(
+                icon: Icons.add,
+                label: '新增任务',
+                onPressed: _add,
+              ),
+            ],
+          ),
       ],
     );
   }

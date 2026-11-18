@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/api_client.dart';
 import '../../core/models/site.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
+import '../../ui/log_viewer.dart';
 import '../../ui/widgets.dart';
 
 class SiteDetailPage extends StatefulWidget {
@@ -433,34 +435,19 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
     try {
       final json = await widget.api.getJson(
         '/api/v1/sites/${widget.siteName}/logs',
-        query: {'kind': kind, 'lines': '300'},
+        query: {'kind': kind, 'lines': '500'},
       );
       if (!mounted) return;
       final map = json as Map<String, dynamic>? ?? const {};
       final lines = ((map['lines'] as List<dynamic>?) ?? const [])
           .whereType<String>()
           .join('\n');
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(kind == 'error' ? '错误日志' : '访问日志'),
-          content: DialogBody(
-            maxWidth: 820,
-            maxHeight: 540,
-            child: SingleChildScrollView(
-              child: SelectableText(
-                lines.isEmpty ? '暂无日志' : lines,
-                style: monospace.copyWith(fontSize: 11.5),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('关闭'),
-            ),
-          ],
-        ),
+      await showLogViewerDialog(
+        context,
+        title: kind == 'error' ? '错误日志' : '访问日志',
+        content: lines,
+        path: map['path'] as String?,
+        emptyMessage: '暂无日志',
       );
     } catch (error) {
       _toast(describeError(error));
@@ -522,11 +509,7 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
             onPressed: _detail == null ? null : _previewConfig,
             icon: const Icon(Icons.code, size: 20),
           ),
-          IconButton(
-            tooltip: '刷新',
-            onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh, size: 20),
-          ),
+          PageRefreshButton(onPressed: _load),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton.icon(
@@ -553,7 +536,7 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
           : _site == null
           ? const SizedBox.shrink()
           : ListView(
-              padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+              padding: pageContentPadding(context, top: 12).copyWith(bottom: 32),
               children: [
                 if (_detail?.webserver == 'caddy')
                   _section('引擎说明', [

@@ -4,7 +4,8 @@ import '../../core/api_client.dart';
 import '../../core/format.dart';
 import '../../core/models/log_source.dart';
 import '../../core/session.dart';
-import '../../ui/theme.dart';
+import '../../ui/layout.dart';
+import '../../ui/log_viewer.dart';
 import '../../ui/widgets.dart';
 
 class LogsPage extends StatefulWidget {
@@ -20,7 +21,9 @@ class _LogsPageState extends State<LogsPage> {
   String _content = '';
   bool _loading = true;
   bool _loadingContent = false;
+  bool _truncated = false;
   String? _error;
+  String? _path;
   int _lines = 200;
 
   @override
@@ -76,6 +79,8 @@ class _LogsPageState extends State<LogsPage> {
           : (map['content'] as String? ?? '');
       setState(() {
         _content = content;
+        _path = map['path'] as String?;
+        _truncated = map['truncated'] == true;
         _error = null;
         _loadingContent = false;
       });
@@ -94,14 +99,17 @@ class _LogsPageState extends State<LogsPage> {
       children: [
         PageHeader(
           title: '日志',
-          subtitle: '面板审计与系统日志尾部',
+          subtitle: '面板审计与系统日志 · 内容/级别/时间筛选',
           actions: [
             SizedBox(
-              width: 190,
+              width: 180,
               child: DropdownButtonFormField<String>(
                 initialValue: _selected,
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: '日志源'),
+                decoration: const InputDecoration(
+                  labelText: '日志源',
+                  isDense: true,
+                ),
                 items: [
                   for (final source in _sources)
                     DropdownMenuItem(
@@ -120,15 +128,19 @@ class _LogsPageState extends State<LogsPage> {
             ),
             const SizedBox(width: 8),
             SizedBox(
-              width: 120,
+              width: 96,
               child: DropdownButtonFormField<int>(
                 initialValue: _lines,
-                decoration: const InputDecoration(labelText: '行数'),
+                decoration: const InputDecoration(
+                  labelText: '行数',
+                  isDense: true,
+                ),
                 items: const [
                   DropdownMenuItem(value: 100, child: Text('100')),
                   DropdownMenuItem(value: 200, child: Text('200')),
                   DropdownMenuItem(value: 500, child: Text('500')),
                   DropdownMenuItem(value: 1000, child: Text('1000')),
+                  DropdownMenuItem(value: 2000, child: Text('2000')),
                 ],
                 onChanged: (value) {
                   setState(() => _lines = value ?? 200);
@@ -136,10 +148,10 @@ class _LogsPageState extends State<LogsPage> {
                 },
               ),
             ),
-            const SizedBox(width: 8),
-            IconButton(
+            const SizedBox(width: 4),
+            PageRefreshButton(
               onPressed: _loadTail,
-              icon: const Icon(Icons.refresh, size: 20),
+              refreshing: _loadingContent,
             ),
           ],
         ),
@@ -149,33 +161,11 @@ class _LogsPageState extends State<LogsPage> {
           child: _loading
               ? const LoadingView()
               : Padding(
-                  padding: EdgeInsets.fromLTRB(24, 4, 24, 24),
-                  child: Card(
-                    child: Stack(
-                      children: [
-                        if (_content.trim().isEmpty)
-                          EmptyState(
-                            icon: Icons.receipt_long_outlined,
-                            title: '暂无日志内容',
-                            message: '该日志源为空或尚未生成。',
-                          )
-                        else
-                          SingleChildScrollView(
-                            padding: const EdgeInsets.all(16),
-                            child: SelectableText(_content, style: monospace),
-                          ),
-                        if (_loadingContent)
-                          const Positioned(
-                            top: 12,
-                            right: 12,
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          ),
-                      ],
-                    ),
+                  padding: pageContentPadding(context),
+                  child: LogViewer(
+                    content: _content,
+                    path: _path,
+                    truncated: _truncated,
                   ),
                 ),
         ),

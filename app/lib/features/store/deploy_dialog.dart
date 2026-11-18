@@ -24,7 +24,7 @@ Future<Map<String, String>?> showDeployDialog(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '容器通过 Docker Compose 启动。端口冲突或镜像拉取失败会在结果中显示。',
+              '容器通过当前容器引擎（Docker/Podman）的 Compose 启动。端口冲突或镜像拉取失败会在结果中显示。',
               style: TextStyle(
                 fontSize: 11.5,
                 color: hampanelMuted,

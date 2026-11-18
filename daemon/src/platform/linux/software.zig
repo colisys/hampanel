@@ -38,32 +38,49 @@ pub fn list(allocator: std.mem.Allocator, data_dir: []const u8) ![]Item {
         .manage_hint = "初始化后可在此管理 jail、封禁 IP 与阈值。",
     });
 
-    const nginx_version = nginxVersion(allocator);
+    const clam_version = commandVersion(allocator, "clamdscan", &.{"--version"});
+    const clam_active = serviceActive(allocator, "clamav-daemon");
     try items.append(.{
-        .id = "nginx",
-        .name = "Nginx",
-        .description = "Web 服务器与反向代理；初始化后由「网站」页面管理站点。",
-        .installed = nginx_version.len > 0,
-        .initialized = stateExists(allocator, data_dir, "nginx"),
-        .needs_initialization = nginx_version.len > 0 and !stateExists(allocator, data_dir, "nginx"),
-        .active = serviceActive(allocator, "nginx"),
-        .version = nginx_version,
-        .service = "nginx",
-        .manage_hint = "初始化后请使用「网站」页面创建、启停与重载站点。",
+        .id = "clamav",
+        .name = "ClamAV",
+        .description = "开源杀毒引擎，管理 clamd/freshclam 服务与配置。",
+        .installed = clam_version.len > 0,
+        .initialized = clam_active,
+        .needs_initialization = clam_version.len > 0 and !clam_active,
+        .active = clam_active,
+        .version = clam_version,
+        .service = "clamav-daemon",
+        .manage_hint = "初始化后可以直接编辑 clamd.conf / freshclam.conf。",
     });
 
-    const docker_version = dockerVersion(allocator);
+    const supervisor_version = commandVersion(allocator, "supervisord", &.{"--version"});
+    const supervisor_active = serviceActive(allocator, "supervisor");
     try items.append(.{
-        .id = "docker",
-        .name = "Docker",
-        .description = "容器运行时；由「容器」与「应用商店」页面直接管理，无需改写配置。",
-        .installed = docker_version.len > 0,
-        .initialized = docker_version.len > 0,
-        .needs_initialization = false,
-        .active = docker_version.len > 0,
-        .version = docker_version,
-        .service = "docker",
-        .manage_hint = "使用「容器」页面或「应用商店」管理容器与 Compose 应用。",
+        .id = "supervisord",
+        .name = "Supervisord",
+        .description = "进程监督器，管理 supervisord 服务与 conf.d 配置。",
+        .installed = supervisor_version.len > 0,
+        .initialized = supervisor_active,
+        .needs_initialization = supervisor_version.len > 0 and !supervisor_active,
+        .active = supervisor_active,
+        .version = supervisor_version,
+        .service = "supervisor",
+        .manage_hint = "初始化后可以直接编辑 supervisord.conf 与 conf.d。",
+    });
+
+    const pureftpd_version = commandVersion(allocator, "pure-ftpd", &.{"--version"});
+    const pureftpd_active = serviceActive(allocator, "pure-ftpd");
+    try items.append(.{
+        .id = "pure-ftpd",
+        .name = "Pure-FTPD",
+        .description = "轻量 FTP 服务，管理 pure-ftpd 服务与配置文件。",
+        .installed = pureftpd_version.len > 0,
+        .initialized = pureftpd_active,
+        .needs_initialization = pureftpd_version.len > 0 and !pureftpd_active,
+        .active = pureftpd_active,
+        .version = pureftpd_version,
+        .service = "pure-ftpd",
+        .manage_hint = "初始化后可以直接编辑 pure-ftpd.conf。",
     });
 
     return items.toOwnedSlice();
@@ -74,10 +91,14 @@ pub fn initialize(allocator: std.mem.Allocator, data_dir: []const u8, id: []cons
         const result = try fail2ban.initialize(allocator, data_dir);
         return .{ .ok = result.ok, .output = result.output };
     }
-    if (std.mem.eql(u8, id, "nginx")) return initializeNginx(allocator, data_dir);
-    if (std.mem.eql(u8, id, "docker")) {
-        if (dockerVersion(allocator).len == 0) return error.NotInstalled;
-        return .{ .ok = true, .output = "Docker 无需初始化，可直接使用容器管理。" };
+    if (std.mem.eql(u8, id, "clamav")) {
+        return initializeService(allocator, "clamav-daemon", "clamdscan");
+    }
+    if (std.mem.eql(u8, id, "supervisord")) {
+        return initializeService(allocator, "supervisor", "supervisord");
+    }
+    if (std.mem.eql(u8, id, "pure-ftpd")) {
+        return initializeService(allocator, "pure-ftpd", "pure-ftpd");
     }
     return error.UnknownSoftware;
 }
@@ -115,6 +136,31 @@ fn initializeNginx(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome 
         .ok = true,
         .output = "初始化完成：已停止 nginx，创建面板托管目录并通过校验后重新启动（已设置开机自启）。",
     };
+}
+
+fn initializeService(allocator: std.mem.Allocator, service: []const u8, binary: []const u8) !Outcome {
+    if (commandVersion(allocator, binary, &.{"--version"}).len == 0) return error.NotInstalled;
+    const enable = exec.run(allocator, &.{ "systemctl", "enable", "--now", service }, 512 * 1024) catch
+        return error.ServiceManagerUnavailable;
+    const start = if (!enable.ok())
+        exec.run(allocator, &.{ "systemctl", "start", service }, 512 * 1024) catch null
+    else
+        null;
+    const primary = if (!enable.ok() and start != null) start.? else enable;
+    return .{
+        .ok = primary.ok(),
+        .output = textOf(primary, if (primary.ok()) "服务已启动" else "服务启动失败"),
+    };
+}
+
+fn commandVersion(allocator: std.mem.Allocator, command: []const u8, args: []const []const u8) []const u8 {
+    var argv = std.array_list.Managed([]const u8).init(allocator);
+    argv.append(command) catch return "";
+    argv.appendSlice(args) catch return "";
+    const result = exec.run(allocator, argv.items, 64 * 1024) catch return "";
+    const raw = if (result.stderr.len > 0) result.stderr else result.stdout;
+    const line_end = std.mem.indexOfScalar(u8, raw, '\n') orelse raw.len;
+    return std.mem.trim(u8, raw[0..line_end], " \t\r");
 }
 
 fn nginxVersion(allocator: std.mem.Allocator) []const u8 {

@@ -6,6 +6,7 @@ import '../../core/models/file_entry.dart';
 import '../../core/models/recycle_entry.dart';
 import '../../core/native_files.dart';
 import '../../core/session.dart';
+import '../../ui/code_editor.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../recycle/recycle_page.dart';
@@ -92,59 +93,47 @@ class _FilesPageState extends State<FilesPage> {
         return;
       }
       if (!mounted) return;
-      final controller = TextEditingController(text: content.content);
-      final save = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(entry.name),
-          content: DialogBody(
-            maxWidth: 820,
-            maxHeight: 560,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '保存前会把当前内容保存为历史版本（存储在面板数据目录，不会写入文件所在目录）。',
-                  style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    expands: true,
-                    maxLines: null,
-                    minLines: null,
-                    textAlignVertical: TextAlignVertical.top,
-                    style: monospace,
-                    decoration: const InputDecoration(alignLabelWithHint: true),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('保存'),
-            ),
-          ],
-        ),
+      final edited = await showCodeEditorDialog(
+        context,
+        title: entry.name,
+        initialText: content.content,
+        language: _codeLanguageForPath(entry.path),
+        description:
+            '保存前会把当前内容保存为历史版本（存储在面板数据目录，不会写入文件所在目录）。',
       );
-      if (save == true) {
-        await _api.putJson('/api/v1/files/content', {
-          'path': entry.path,
-          'content': controller.text,
-        });
-        _toast('已保存 ${entry.name}');
-      }
-      controller.dispose();
+      if (edited == null || edited == content.content) return;
+      await _api.putJson('/api/v1/files/content', {
+        'path': entry.path,
+        'content': edited,
+      });
+      _toast('已保存 ${entry.name}');
     } catch (error) {
       _toast(describeError(error));
     }
+  }
+
+  CodeLanguage _codeLanguageForPath(String path) {
+    final name = path.toLowerCase();
+    if (name.endsWith('.toml')) return CodeLanguage.toml;
+    if (name.endsWith('.yaml') || name.endsWith('.yml')) {
+      return CodeLanguage.yaml;
+    }
+    if (name.endsWith('.json')) return CodeLanguage.json;
+    if (name.endsWith('.sh') || name.endsWith('.bash')) {
+      return CodeLanguage.bash;
+    }
+    if (name.endsWith('.properties')) return CodeLanguage.properties;
+    if (name.contains('nginx')) return CodeLanguage.nginx;
+    if (name.endsWith('dockerfile') || name.endsWith('.dockerfile')) {
+      return CodeLanguage.dockerfile;
+    }
+    if (name.endsWith('.conf') ||
+        name.endsWith('.ini') ||
+        name.endsWith('.service') ||
+        name.endsWith('.socket')) {
+      return CodeLanguage.ini;
+    }
+    return CodeLanguage.plain;
   }
 
   Future<void> _createFile() async {

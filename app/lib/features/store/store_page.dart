@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import 'docker_apps_tab.dart';
 import 'nix_tab.dart';
@@ -15,7 +16,7 @@ class StorePage extends StatelessWidget {
       child: Column(
         children: [
           Padding(
-            padding: EdgeInsets.fromLTRB(24, 20, 24, 8),
+            padding: pageContentPadding(context, top: 20).copyWith(bottom: 8),
             child: Row(
               children: [
                 Expanded(

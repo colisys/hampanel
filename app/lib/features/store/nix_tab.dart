@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../core/models/nix_status.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 import 'deploy_dialog.dart';
 
@@ -135,7 +136,7 @@ class _NixTabState extends State<NixTab> {
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+      padding: pageContentPadding(context, top: 8),
       children: [
         PanelCard(
           title: 'Nix 环境',

@@ -2,6 +2,7 @@ const std = @import("std");
 const compat = @import("compat");
 const catalog = @import("catalog.zig");
 const exec = @import("shared").exec;
+const engine_mod = @import("../runtime/engine.zig");
 
 pub const Outcome = struct {
     ok: bool,
@@ -31,18 +32,10 @@ pub fn installed(allocator: std.mem.Allocator, data_dir: []const u8, app: *const
     return true;
 }
 
-fn composeCommand(allocator: std.mem.Allocator) ![]const []const u8 {
-    if (exec.run(allocator, &.{ "docker", "compose", "version" }, 64 * 1024) catch null) |result| {
-        if (result.ok()) return &.{ "docker", "compose" };
-    }
-    if (exec.run(allocator, &.{ "docker-compose", "version" }, 64 * 1024) catch null) |result| {
-        if (result.ok()) return &.{"docker-compose"};
-    }
-    return error.ComposeUnavailable;
-}
-
 fn composeArgs(
     allocator: std.mem.Allocator,
+    engine: engine_mod.Engine,
+    socket: []const u8,
     data_dir: []const u8,
     app: *const catalog.App,
     extra: []const []const u8,
@@ -52,20 +45,22 @@ fn composeArgs(
     const project = try std.fmt.allocPrint(allocator, "hampanel-{s}", .{app.slug});
 
     var argv = std.array_list.Managed([]const u8).init(allocator);
-    try argv.appendSlice(try composeCommand(allocator));
+    try argv.appendSlice(try engine_mod.composeCommand(allocator, engine, socket));
     try argv.appendSlice(&.{ "-f", path, "-p", project });
     try argv.appendSlice(extra);
     return argv.items;
 }
 
-pub fn status(allocator: std.mem.Allocator, data_dir: []const u8, app: *const catalog.App) !Outcome {
-    const argv = try composeArgs(allocator, data_dir, app, &.{"ps"});
-    var result = exec.run(allocator, argv, 2 * 1024 * 1024) catch return error.ComposeUnavailable;
+pub fn status(allocator: std.mem.Allocator, engine: engine_mod.Engine, socket: []const u8, data_dir: []const u8, app: *const catalog.App) !Outcome {
+    const argv = try composeArgs(allocator, engine, socket, data_dir, app, &.{"ps"});
+    var result = engine_mod.run(allocator, engine, socket, argv, .{ .max_output = 2 * 1024 * 1024 }) catch return error.ComposeUnavailable;
     return .{ .ok = result.ok(), .output = textOf(result) };
 }
 
 pub fn deploy(
     allocator: std.mem.Allocator,
+    engine: engine_mod.Engine,
+    socket: []const u8,
     data_dir: []const u8,
     app: *const catalog.App,
     provided: *const std.StringHashMap([]const u8),
@@ -95,8 +90,8 @@ pub fn deploy(
     defer file.close();
     try file.writeAll(rendered);
 
-    const argv = try composeArgs(allocator, data_dir, app, &.{ "up", "-d" });
-    var result = exec.run(allocator, argv, 4 * 1024 * 1024) catch return error.ComposeUnavailable;
+    const argv = try composeArgs(allocator, engine, socket, data_dir, app, &.{ "up", "-d" });
+    var result = engine_mod.run(allocator, engine, socket, argv, .{ .max_output = 4 * 1024 * 1024 }) catch return error.ComposeUnavailable;
 
     return .{
         .ok = result.ok(),
@@ -106,32 +101,32 @@ pub fn deploy(
     };
 }
 
-pub fn start(allocator: std.mem.Allocator, data_dir: []const u8, app: *const catalog.App) !Outcome {
-    const argv = try composeArgs(allocator, data_dir, app, &.{"start"});
-    var result = exec.run(allocator, argv, 2 * 1024 * 1024) catch return error.ComposeUnavailable;
+pub fn start(allocator: std.mem.Allocator, engine: engine_mod.Engine, socket: []const u8, data_dir: []const u8, app: *const catalog.App) !Outcome {
+    const argv = try composeArgs(allocator, engine, socket, data_dir, app, &.{"start"});
+    var result = engine_mod.run(allocator, engine, socket, argv, .{ .max_output = 2 * 1024 * 1024 }) catch return error.ComposeUnavailable;
     return .{ .ok = result.ok(), .output = textOf(result) };
 }
 
-pub fn stop(allocator: std.mem.Allocator, data_dir: []const u8, app: *const catalog.App) !Outcome {
-    const argv = try composeArgs(allocator, data_dir, app, &.{"stop"});
-    var result = exec.run(allocator, argv, 2 * 1024 * 1024) catch return error.ComposeUnavailable;
+pub fn stop(allocator: std.mem.Allocator, engine: engine_mod.Engine, socket: []const u8, data_dir: []const u8, app: *const catalog.App) !Outcome {
+    const argv = try composeArgs(allocator, engine, socket, data_dir, app, &.{"stop"});
+    var result = engine_mod.run(allocator, engine, socket, argv, .{ .max_output = 2 * 1024 * 1024 }) catch return error.ComposeUnavailable;
     return .{ .ok = result.ok(), .output = textOf(result) };
 }
 
-pub fn logs(allocator: std.mem.Allocator, data_dir: []const u8, app: *const catalog.App, lines: usize) !Outcome {
+pub fn logs(allocator: std.mem.Allocator, engine: engine_mod.Engine, socket: []const u8, data_dir: []const u8, app: *const catalog.App, lines: usize) !Outcome {
     const tail = try std.fmt.allocPrint(allocator, "{d}", .{lines});
-    const argv = try composeArgs(allocator, data_dir, app, &.{ "logs", "--tail", tail });
-    var result = exec.run(allocator, argv, 4 * 1024 * 1024) catch return error.ComposeUnavailable;
+    const argv = try composeArgs(allocator, engine, socket, data_dir, app, &.{ "logs", "--tail", tail });
+    var result = engine_mod.run(allocator, engine, socket, argv, .{ .max_output = 4 * 1024 * 1024 }) catch return error.ComposeUnavailable;
     return .{
         .ok = result.ok(),
         .output = try std.mem.concat(allocator, u8, &.{ result.stdout, result.stderr }),
     };
 }
 
-pub fn remove(allocator: std.mem.Allocator, data_dir: []const u8, app: *const catalog.App, volumes: bool) !Outcome {
+pub fn remove(allocator: std.mem.Allocator, engine: engine_mod.Engine, socket: []const u8, data_dir: []const u8, app: *const catalog.App, volumes: bool) !Outcome {
     const extra: []const []const u8 = if (volumes) &.{ "down", "-v" } else &.{"down"};
-    const argv = try composeArgs(allocator, data_dir, app, extra);
-    var result = exec.run(allocator, argv, 2 * 1024 * 1024) catch return error.ComposeUnavailable;
+    const argv = try composeArgs(allocator, engine, socket, data_dir, app, extra);
+    var result = engine_mod.run(allocator, engine, socket, argv, .{ .max_output = 2 * 1024 * 1024 }) catch return error.ComposeUnavailable;
     const ok = result.ok();
 
     if (ok) {

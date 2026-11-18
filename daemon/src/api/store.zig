@@ -2,6 +2,7 @@ const std = @import("std");
 const context = @import("context.zig");
 const catalog = @import("../store/catalog.zig");
 const store = @import("../store/apps.zig");
+const engine_mod = @import("../runtime/engine.zig");
 const platform = @import("../platform/mod.zig");
 const errutil = @import("../util/errors.zig");
 const log = @import("../log.zig");
@@ -36,7 +37,11 @@ pub fn appDetail(ctx: *context.Context) anyerror!void {
         return;
     };
 
-    const status = store.status(ctx.arena, ctx.app.config.data_dir, app) catch null;
+    const engine_ctx = engineContext(ctx);
+    const status = if (engine_ctx) |value|
+        store.status(ctx.arena, value.engine, value.socket, ctx.app.config.data_dir, app) catch null
+    else
+        null;
     try ctx.json(.{
         .app = view(ctx.arena, ctx.app.config.data_dir, app),
         .status = if (status) |value| value.output else "",
@@ -73,7 +78,18 @@ pub fn deploy(ctx: *context.Context) anyerror!void {
         }
     }
 
-    const result = store.deploy(ctx.arena, data_dir, app, &values) catch |err| {
+    const engine_ctx = engineContext(ctx) orelse {
+        ctx.fail(501, "engine_unavailable", "未检测到 Docker 或 Podman");
+        return;
+    };
+    const result = store.deploy(
+        ctx.arena,
+        engine_ctx.engine,
+        engine_ctx.socket,
+        data_dir,
+        app,
+        &values,
+    ) catch |err| {
         failStore(ctx, err);
         return;
     };
@@ -104,13 +120,17 @@ pub fn stop(ctx: *context.Context) anyerror!void {
 fn simpleAction(ctx: *context.Context, start_app: bool) !void {
     const app = try requireApp(ctx);
     const data_dir = ctx.app.config.data_dir;
+    const engine_ctx = engineContext(ctx) orelse {
+        ctx.fail(501, "engine_unavailable", "未检测到 Docker 或 Podman");
+        return;
+    };
     const outcome = if (start_app)
-        store.start(ctx.arena, data_dir, app) catch |err| {
+        store.start(ctx.arena, engine_ctx.engine, engine_ctx.socket, data_dir, app) catch |err| {
             failStore(ctx, err);
             return;
         }
     else
-        store.stop(ctx.arena, data_dir, app) catch |err| {
+        store.stop(ctx.arena, engine_ctx.engine, engine_ctx.socket, data_dir, app) catch |err| {
             failStore(ctx, err);
             return;
         };
@@ -132,7 +152,18 @@ pub fn logs(ctx: *context.Context) anyerror!void {
         lines = std.math.clamp(lines, 1, 2000);
     }
 
-    const outcome = store.logs(ctx.arena, ctx.app.config.data_dir, app, lines) catch |err| {
+    const engine_ctx = engineContext(ctx) orelse {
+        ctx.fail(501, "engine_unavailable", "未检测到 Docker 或 Podman");
+        return;
+    };
+    const outcome = store.logs(
+        ctx.arena,
+        engine_ctx.engine,
+        engine_ctx.socket,
+        ctx.app.config.data_dir,
+        app,
+        lines,
+    ) catch |err| {
         failStore(ctx, err);
         return;
     };
@@ -146,7 +177,18 @@ pub fn remove(ctx: *context.Context) anyerror!void {
         volumes = std.mem.eql(u8, raw, "true") or std.mem.eql(u8, raw, "1");
     }
 
-    const outcome = store.remove(ctx.arena, ctx.app.config.data_dir, app, volumes) catch |err| {
+    const engine_ctx = engineContext(ctx) orelse {
+        ctx.fail(501, "engine_unavailable", "未检测到 Docker 或 Podman");
+        return;
+    };
+    const outcome = store.remove(
+        ctx.arena,
+        engine_ctx.engine,
+        engine_ctx.socket,
+        ctx.app.config.data_dir,
+        app,
+        volumes,
+    ) catch |err| {
         failStore(ctx, err);
         return;
     };
@@ -263,6 +305,17 @@ pub fn nixRun(ctx: *context.Context) anyerror!void {
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
+const EngineContext = struct {
+    engine: engine_mod.Engine,
+    socket: []const u8,
+};
+
+fn engineContext(ctx: *context.Context) ?EngineContext {
+    const socket = engine_mod.socketFromDb(ctx.arena, ctx.app.db);
+    const engine = engine_mod.detect(ctx.arena, socket) catch return null;
+    return .{ .engine = engine, .socket = socket };
+}
+
 fn view(allocator: std.mem.Allocator, data_dir: []const u8, app: *const catalog.App) AppView {
     return .{
         .slug = app.slug,
@@ -292,7 +345,7 @@ fn failStore(ctx: *context.Context, err: anyerror) void {
     } else if (errutil.named(err, "NotInstalled")) {
         ctx.fail(404, "not_installed", "app is not installed");
     } else if (errutil.named(err, "ComposeUnavailable")) {
-        ctx.fail(502, "compose_unavailable", "docker compose is not available");
+        ctx.fail(502, "compose_unavailable", "compose provider is not available; install podman-compose (Podman) or docker compose (Docker)");
     } else {
         ctx.fail(500, "store_failed", @errorName(err));
     }

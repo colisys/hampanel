@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../core/format.dart';
 import '../../core/models/recycle_entry.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 import '../store/deploy_dialog.dart';
 
@@ -132,18 +133,14 @@ class _RecyclePageState extends State<RecyclePage> {
             onPressed: _loading || _entries.isEmpty ? null : _empty,
             icon: const Icon(Icons.delete_sweep_outlined, size: 20),
           ),
-          IconButton(
-            tooltip: '刷新',
-            onPressed: _loading ? null : _load,
-            icon: const Icon(Icons.refresh, size: 20),
-          ),
+          PageRefreshButton(onPressed: _load),
         ],
       ),
       body: SafeArea(
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
+              padding: pageContentPadding(context, top: 12).copyWith(bottom: 4),
               child: Text(
                 '通过面板删除的文件与目录会先移动到面板数据目录',
                 style: TextStyle(fontSize: 12.5, color: hampanelMuted),
@@ -154,7 +151,7 @@ class _RecyclePageState extends State<RecyclePage> {
                   ? LoadingView()
                   : _error != null
                   ? SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                      padding: pageContentPadding(context, top: 8),
                       child: ErrorBanner(message: _error!, onRetry: _load),
                     )
                   : _entries.isEmpty
@@ -164,7 +161,7 @@ class _RecyclePageState extends State<RecyclePage> {
                       message: '从「文件」页面删除的内容会出现在这里，可恢复或永久删除。',
                     )
                   : ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                      padding: pageContentPadding(context, top: 4),
                       itemCount: _entries.length,
                       separatorBuilder: (_, _) => const SizedBox(height: 8),
                       itemBuilder: (context, index) => _card(_entries[index]),

@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/api_client.dart';
 import '../../core/models/docker.dart';
 import '../../core/session.dart';
+import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import 'job_progress_dialog.dart';
@@ -326,82 +327,159 @@ class _ImagesSectionState extends State<ImagesSection> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        PageHeader(
-          title: '镜像管理',
-          subtitle: '${_images.length} 个镜像 · ${_registries.length} 个源',
-          actions: [
-            FilledButton.icon(
-              onPressed: _pull,
-              icon: const Icon(Icons.download_outlined, size: 16),
-              label: const Text('拉取'),
+  Future<void> _showPruneMenu() async {
+    final value = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.delete_sweep_outlined),
+              title: const Text('清理悬空镜像'),
+              onTap: () => Navigator.pop(context, 'prune'),
             ),
-            const SizedBox(width: 6),
-            TextButton.icon(
-              onPressed: _search,
-              icon: const Icon(Icons.search, size: 16),
-              label: const Text('检索'),
+            ListTile(
+              leading: const Icon(Icons.cleaning_services_outlined),
+              title: const Text('清理未使用镜像'),
+              onTap: () => Navigator.pop(context, 'prune-all'),
             ),
-            TextButton.icon(
-              onPressed: _import,
-              icon: const Icon(Icons.file_upload_outlined, size: 16),
-              label: const Text('导入'),
-            ),
-            TextButton.icon(
-              onPressed: _build,
-              icon: const Icon(Icons.build_outlined, size: 16),
-              label: const Text('构建'),
-            ),
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_horiz, size: 18),
-              onSelected: (value) {
-                if (value == 'prune') _prune(all: false);
-                if (value == 'prune-all') _prune(all: true);
-                if (value == 'cache') _pruneCache();
-              },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'prune', child: Text('清理悬空镜像')),
-                PopupMenuItem(value: 'prune-all', child: Text('清理未使用镜像')),
-                PopupMenuItem(value: 'cache', child: Text('清理构建缓存')),
-              ],
-            ),
-            IconButton(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 20),
+            ListTile(
+              leading: const Icon(Icons.cached_outlined),
+              title: const Text('清理构建缓存'),
+              onTap: () => Navigator.pop(context, 'cache'),
             ),
           ],
         ),
-        if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
-        Expanded(
-          child: _loading
-              ? const LoadingView()
-              : _images.isEmpty
-              ? const EmptyState(
-                  icon: Icons.layers_outlined,
-                  title: '没有镜像',
-                  message: '拉取、导入或构建镜像后会显示在这里。',
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                  itemCount: _images.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    final image = _images[index];
-                    return _ImageCard(
-                      image: image,
-                      onPush: () => _push(image),
-                      onUpdate: () => _update(image),
-                      onExport: () => _export(image),
-                      onTag: () => _tag(image),
-                      onDelete: () => _delete(image),
-                    );
-                  },
-                ),
-        ),
-      ],
+      ),
+    );
+    if (!mounted || value == null) return;
+    if (value == 'prune') await _prune(all: false);
+    if (value == 'prune-all') await _prune(all: true);
+    if (value == 'cache') await _pruneCache();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 720;
+        return Column(
+          children: [
+            PageHeader(
+              title: '镜像管理',
+              subtitle: '${_images.length} 个镜像 · ${_registries.length} 个源',
+              actions: compact
+                  ? [
+                      PageRefreshButton(onPressed: _load),
+                    ]
+                  : [
+                      FilledButton.icon(
+                        onPressed: _pull,
+                        icon: const Icon(Icons.download_outlined, size: 16),
+                        label: const Text('拉取'),
+                      ),
+                      const SizedBox(width: 6),
+                      TextButton.icon(
+                        onPressed: _search,
+                        icon: const Icon(Icons.search, size: 16),
+                        label: const Text('检索'),
+                      ),
+                      TextButton.icon(
+                        onPressed: _import,
+                        icon: const Icon(Icons.file_upload_outlined, size: 16),
+                        label: const Text('导入'),
+                      ),
+                      TextButton.icon(
+                        onPressed: _build,
+                        icon: const Icon(Icons.build_outlined, size: 16),
+                        label: const Text('构建'),
+                      ),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_horiz, size: 18),
+                        onSelected: (value) {
+                          if (value == 'prune') _prune(all: false);
+                          if (value == 'prune-all') _prune(all: true);
+                          if (value == 'cache') _pruneCache();
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(
+                            value: 'prune',
+                            child: Text('清理悬空镜像'),
+                          ),
+                          PopupMenuItem(
+                            value: 'prune-all',
+                            child: Text('清理未使用镜像'),
+                          ),
+                          PopupMenuItem(
+                            value: 'cache',
+                            child: Text('清理构建缓存'),
+                          ),
+                        ],
+                      ),
+                      PageRefreshButton(onPressed: _load),
+                    ],
+            ),
+            if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
+            Expanded(
+              child: _loading
+                  ? const LoadingView()
+                  : _images.isEmpty
+                  ? const EmptyState(
+                      icon: Icons.layers_outlined,
+                      title: '没有镜像',
+                      message: '拉取、导入或构建镜像后会显示在这里。',
+                    )
+                  : ListView.separated(
+                      padding: pageContentPadding(context, top: 8),
+                      itemCount: _images.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final image = _images[index];
+                        return _ImageCard(
+                          image: image,
+                          onPush: () => _push(image),
+                          onUpdate: () => _update(image),
+                          onExport: () => _export(image),
+                          onTag: () => _tag(image),
+                          onDelete: () => _delete(image),
+                        );
+                      },
+                    ),
+            ),
+            if (compact)
+              ActionDock(
+                actions: [
+                  ActionDockItem(
+                    icon: Icons.download_outlined,
+                    label: '拉取',
+                    onPressed: _pull,
+                  ),
+                  ActionDockItem(
+                    icon: Icons.search,
+                    label: '检索',
+                    onPressed: _search,
+                  ),
+                  ActionDockItem(
+                    icon: Icons.file_upload_outlined,
+                    label: '导入',
+                    onPressed: _import,
+                  ),
+                  ActionDockItem(
+                    icon: Icons.build_outlined,
+                    label: '构建',
+                    onPressed: _build,
+                  ),
+                  ActionDockItem(
+                    icon: Icons.delete_sweep_outlined,
+                    label: '清理',
+                    onPressed: _showPruneMenu,
+                  ),
+                ],
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -423,100 +501,162 @@ class _ImageCard extends StatelessWidget {
   final VoidCallback onTag;
   final VoidCallback onDelete;
 
+  Widget _menu() {
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_horiz, size: 18),
+      onSelected: (value) {
+        switch (value) {
+          case 'push':
+            onPush();
+          case 'export':
+            onExport();
+          case 'tag':
+            onTag();
+          case 'delete':
+            onDelete();
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: 'push', child: Text('推送')),
+        PopupMenuItem(value: 'export', child: Text('导出')),
+        PopupMenuItem(value: 'tag', child: Text('标签')),
+        PopupMenuItem(value: 'delete', child: Text('删除')),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 700;
+        final icon = Icon(
+          Icons.layers_outlined,
+          size: 20,
+          color: image.inUse ? hampanelAccent : hampanelMuted,
+        );
+        final identity = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.layers_outlined,
-              size: 20,
-              color: image.inUse ? hampanelAccent : hampanelMuted,
+            Text(
+              image.reference,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 3,
+            const SizedBox(height: 3),
+            Text(
+              image.digest.isEmpty
+                  ? image.id
+                  : '${image.id} · ${image.digest}',
+              overflow: TextOverflow.ellipsis,
+              style: monospace.copyWith(fontSize: 10.5),
+            ),
+          ],
+        );
+        if (compact) {
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    image.reference,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Row(
+                    children: [
+                      icon,
+                      const SizedBox(width: 10),
+                      Expanded(child: identity),
+                      IconButton(
+                        tooltip: '更新',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: onUpdate,
+                        icon: const Icon(Icons.sync, size: 18),
+                      ),
+                      _menu(),
+                    ],
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    image.digest.isEmpty
-                        ? image.id
-                        : '${image.id} · ${image.digest}',
-                    overflow: TextOverflow.ellipsis,
-                    style: monospace.copyWith(fontSize: 10.5),
+                  const SizedBox(height: 7),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 3,
+                    children: [
+                      Text(
+                        image.size,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: hampanelMuted,
+                        ),
+                      ),
+                      Text(
+                        image.inUse ? image.usedBy.join(', ') : '未使用',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: image.inUse
+                              ? hampanelAccent
+                              : hampanelMuted,
+                        ),
+                      ),
+                      Text(
+                        image.createdAt,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: hampanelMuted,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-            SizedBox(
-              width: 90,
-              child: Text(
-                image.size,
-                style: TextStyle(fontSize: 11, color: hampanelMuted),
-              ),
-            ),
-            SizedBox(
-              width: 140,
-              child: Text(
-                image.inUse ? image.usedBy.join(', ') : '未使用',
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: image.inUse ? hampanelAccent : hampanelMuted,
+          );
+        }
+        return Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                icon,
+                const SizedBox(width: 12),
+                Expanded(flex: 3, child: identity),
+                SizedBox(
+                  width: 90,
+                  child: Text(
+                    image.size,
+                    style: TextStyle(fontSize: 11, color: hampanelMuted),
+                  ),
                 ),
-              ),
-            ),
-            SizedBox(
-              width: 150,
-              child: Text(
-                image.createdAt,
-                style: TextStyle(fontSize: 10.5, color: hampanelMuted),
-              ),
-            ),
-            IconButton(
-              tooltip: '更新',
-              onPressed: onUpdate,
-              icon: const Icon(Icons.sync, size: 17),
-            ),
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_horiz, size: 18),
-              onSelected: (value) {
-                switch (value) {
-                  case 'push':
-                    onPush();
-                  case 'export':
-                    onExport();
-                  case 'update':
-                    onUpdate();
-                  case 'tag':
-                    onTag();
-                  case 'delete':
-                    onDelete();
-                }
-              },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'push', child: Text('推送')),
-                PopupMenuItem(value: 'export', child: Text('导出')),
-                PopupMenuItem(value: 'update', child: Text('更新')),
-                PopupMenuItem(value: 'tag', child: Text('标签')),
-                PopupMenuItem(value: 'delete', child: Text('删除')),
+                SizedBox(
+                  width: 140,
+                  child: Text(
+                    image.inUse ? image.usedBy.join(', ') : '未使用',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: image.inUse ? hampanelAccent : hampanelMuted,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 150,
+                  child: Text(
+                    image.createdAt,
+                    style: TextStyle(fontSize: 10.5, color: hampanelMuted),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '更新',
+                  onPressed: onUpdate,
+                  icon: const Icon(Icons.sync, size: 17),
+                ),
+                _menu(),
               ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

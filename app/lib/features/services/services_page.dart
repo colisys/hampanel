@@ -1,12 +1,14 @@
-import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
-import '../../core/format.dart';
 import '../../core/models/service.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
+import 'service_card.dart';
+import 'service_edit_page.dart';
+import 'service_logs_page.dart';
 
 class ServicesPage extends StatefulWidget {
   const ServicesPage({super.key});
@@ -71,23 +73,24 @@ class _ServicesPageState extends State<ServicesPage> {
   }
 
   Future<void> _showLogs(ServiceInfo service) async {
-    try {
-      final json = await _api.getJson(
-        '/api/v1/services/${service.unit}/logs',
-        query: {'lines': '300'},
-      );
-      final map = json as Map<String, dynamic>;
-      if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => _ServiceLogsDialog(
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ServiceLogsPage(
+          api: _api,
           unit: service.unit,
-          text: map['lines'] as String? ?? '',
+          title: '${service.unit} 日志',
         ),
-      );
-    } catch (error) {
-      _toast(describeError(error));
-    }
+      ),
+    );
+  }
+
+  Future<void> _openEditor(ServiceInfo service) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ServiceEditPage(api: _api, service: service),
+      ),
+    );
+    await _load();
   }
 
   List<ServiceInfo> get _filtered {
@@ -108,78 +111,19 @@ class _ServicesPageState extends State<ServicesPage> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Widget _serviceMenu(ServiceInfo service) {
-    return PopupMenuButton<String>(
-      tooltip: '操作',
-      icon: const Icon(Icons.more_horiz, size: 18),
-      onSelected: (value) => _run(service, value),
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'start', child: Text('启动')),
-        PopupMenuItem(value: 'stop', child: Text('停止')),
-        PopupMenuItem(value: 'restart', child: Text('重启')),
-        PopupMenuItem(value: 'reload', child: Text('重载')),
-        PopupMenuItem(value: 'enable', child: Text('开机自启')),
-        PopupMenuItem(value: 'disable', child: Text('取消自启')),
-      ],
-    );
-  }
-
   Widget _serviceCards() {
     final services = _filtered;
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+      padding: pageContentPadding(context, top: 0),
       itemCount: services.length,
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final service = services[index];
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        service.unit,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: monospace.copyWith(fontSize: 12.5),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    StatusPill(text: service.active, good: service.running),
-                    _serviceMenu(service),
-                    IconButton(
-                      tooltip: '日志',
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => _showLogs(service),
-                      icon: const Icon(Icons.receipt_long_outlined, size: 18),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  service.description.isEmpty
-                      ? service.sub
-                      : service.description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: hampanelMuted,
-                    height: 1.45,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  service.sub,
-                  style: TextStyle(fontSize: 10.5, color: hampanelMuted),
-                ),
-              ],
-            ),
-          ),
+        return ServiceCard(
+          service: service,
+          onAction: (action) => _run(service, action),
+          onEdit: () => _openEditor(service),
+          onLogs: () => _showLogs(service),
         );
       },
     );
@@ -205,10 +149,7 @@ class _ServicesPageState extends State<ServicesPage> {
               ),
             ),
             const SizedBox(width: 8),
-            IconButton(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
+            PageRefreshButton(onPressed: _load, refreshing: _loading),
           ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
@@ -218,14 +159,12 @@ class _ServicesPageState extends State<ServicesPage> {
               : compact
               ? _serviceCards()
               : Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                  padding: pageContentPadding(context, top: 4),
                   child: Card(
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      child: SizedBox(
-                        width: 1100,
-                        child: SingleChildScrollView(
-                          child: DataTable(
+                      child: SingleChildScrollView(
+                        child: DataTable(
                             headingRowHeight: 38,
                             dataRowMinHeight: 34,
                             dataRowMaxHeight: 46,
@@ -276,53 +215,11 @@ class _ServicesPageState extends State<ServicesPage> {
                                       ),
                                     ),
                                     DataCell(
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          PopupMenuButton<String>(
-                                            tooltip: '操作',
-                                            icon: const Icon(
-                                              Icons.more_horiz,
-                                              size: 18,
-                                            ),
-                                            onSelected: (value) =>
-                                                _run(service, value),
-                                            itemBuilder: (context) => const [
-                                              PopupMenuItem(
-                                                value: 'start',
-                                                child: Text('启动'),
-                                              ),
-                                              PopupMenuItem(
-                                                value: 'stop',
-                                                child: Text('停止'),
-                                              ),
-                                              PopupMenuItem(
-                                                value: 'restart',
-                                                child: Text('重启'),
-                                              ),
-                                              PopupMenuItem(
-                                                value: 'reload',
-                                                child: Text('重载'),
-                                              ),
-                                              PopupMenuItem(
-                                                value: 'enable',
-                                                child: Text('开机自启'),
-                                              ),
-                                              PopupMenuItem(
-                                                value: 'disable',
-                                                child: Text('取消自启'),
-                                              ),
-                                            ],
-                                          ),
-                                          IconButton(
-                                            tooltip: '日志',
-                                            onPressed: () => _showLogs(service),
-                                            icon: const Icon(
-                                              Icons.receipt_long_outlined,
-                                              size: 17,
-                                            ),
-                                          ),
-                                        ],
+                                      ServiceActions(
+                                        onAction: (action) =>
+                                            _run(service, action),
+                                        onEdit: () => _openEditor(service),
+                                        onLogs: () => _showLogs(service),
                                       ),
                                     ),
                                   ],
@@ -330,135 +227,9 @@ class _ServicesPageState extends State<ServicesPage> {
                             ],
                           ),
                         ),
-                      ),
                     ),
                   ),
                 ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ServiceLogsDialog extends StatefulWidget {
-  const _ServiceLogsDialog({required this.unit, required this.text});
-
-  final String unit;
-  final String text;
-
-  @override
-  State<_ServiceLogsDialog> createState() => _ServiceLogsDialogState();
-}
-
-class _ServiceLogsDialogState extends State<_ServiceLogsDialog> {
-  final _search = TextEditingController();
-  String _query = '';
-  int _limit = 500;
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
-
-  List<String> get _allLines {
-    if (widget.text.trim().isEmpty) return const [];
-    return widget.text.split('\n');
-  }
-
-  List<String> get _visibleLines {
-    final all = _allLines;
-    final windowed = _limit > 0 && all.length > _limit
-        ? all.sublist(all.length - _limit)
-        : all;
-    if (_query.trim().isEmpty) return windowed;
-    final needle = _query.toLowerCase();
-    return windowed
-        .where((line) => line.toLowerCase().contains(needle))
-        .toList();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final all = _allLines;
-    final visible = _visibleLines;
-    return AlertDialog(
-      title: Text('${widget.unit} 日志'),
-      content: DialogBody(
-        maxWidth: 960,
-        maxHeight: 560,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            FormRow(
-              flex: const [4, 1],
-              children: [
-                TextField(
-                  controller: _search,
-                  decoration: const InputDecoration(
-                    hintText: '搜索日志内容',
-                    prefixIcon: Icon(Icons.search, size: 17),
-                    isDense: true,
-                  ),
-                  onChanged: (value) => setState(() => _query = value),
-                ),
-                DropdownButton<int>(
-                  value: _limit,
-                  underline: const SizedBox.shrink(),
-                  items: const [
-                    DropdownMenuItem(value: 200, child: Text('最后 200 行')),
-                    DropdownMenuItem(value: 500, child: Text('最后 500 行')),
-                    DropdownMenuItem(value: 1000, child: Text('最后 1000 行')),
-                    DropdownMenuItem(value: 5000, child: Text('最后 5000 行')),
-                    DropdownMenuItem(value: 0, child: Text('全部')),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() => _limit = value);
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              all.isEmpty
-                  ? '暂无日志输出'
-                  : '共 ${all.length} 行 · 显示 ${visible.length} 行',
-              style: TextStyle(fontSize: 11, color: hampanelMuted),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: hampanelSurfaceAlt,
-                  border: Border.all(color: hampanelBorder),
-                ),
-                child: SingleChildScrollView(
-                  child: SelectableText(
-                    visible.isEmpty
-                        ? '没有匹配的日志行'
-                        : localizeLogTimestamps(visible.join('\n')),
-                    style: monospace,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: visible.isEmpty
-              ? null
-              : () =>
-                    Clipboard.setData(ClipboardData(text: visible.join('\n'))),
-          child: const Text('复制显示内容'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('关闭'),
         ),
       ],
     );

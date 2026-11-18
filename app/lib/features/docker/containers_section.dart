@@ -4,6 +4,8 @@ import '../../core/api_client.dart';
 import '../../core/models/docker.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
+import '../../ui/log_viewer.dart';
 import '../../ui/widgets.dart';
 import 'container_files_dialog.dart';
 import 'container_terminal_dialog.dart';
@@ -161,33 +163,15 @@ class _ContainersSectionState extends State<ContainersSection> {
     try {
       final json = await _api.getJson(
         '/api/v1/docker/containers/${container.id}/logs',
-        query: const {'lines': '300'},
+        query: const {'lines': '500'},
       );
       final map = json as Map<String, dynamic>;
       if (!mounted) return;
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('${container.name} 日志'),
-          content: DialogBody(
-            maxWidth: 860,
-            maxHeight: 520,
-            child: SingleChildScrollView(
-              child: SelectableText(
-                (map['output'] as String? ?? '').isEmpty
-                    ? '暂无日志'
-                    : map['output'] as String,
-                style: monospace,
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('关闭'),
-            ),
-          ],
-        ),
+      await showLogViewerDialog(
+        context,
+        title: '${container.name} 日志',
+        content: map['output'] as String? ?? '',
+        emptyMessage: '暂无日志',
       );
     } catch (error) {
       _toast(describeError(error));
@@ -232,10 +216,7 @@ class _ContainersSectionState extends State<ContainersSection> {
               label: const Text('创建容器'),
             ),
             const SizedBox(width: 8),
-            IconButton(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
+            PageRefreshButton(onPressed: _load),
           ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
@@ -254,7 +235,7 @@ class _ContainersSectionState extends State<ContainersSection> {
                   ),
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                  padding: pageContentPadding(context, top: 8),
                   itemCount: _containers.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {

@@ -1,11 +1,12 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
-import '../../core/format.dart';
 import '../../core/models/ssh_logs.dart';
 import '../../core/models/ssh_status.dart';
 import '../../core/session.dart';
+import '../../ui/log_viewer.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 import '../store/deploy_dialog.dart';
 
@@ -498,15 +499,8 @@ class _SshPageState extends State<SshPage> {
               ),
             ),
           const SizedBox(height: 10),
-          Container(
-            width: double.infinity,
-            height: 340,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFF070C10),
-              borderRadius: BorderRadius.circular(3),
-              border: Border.all(color: hampanelBorder),
-            ),
+          SizedBox(
+            height: 380,
             child: _logsLoading
                 ? const LoadingView()
                 : _logsError != null
@@ -516,13 +510,11 @@ class _SshPageState extends State<SshPage> {
                       style: TextStyle(fontSize: 12, color: hampanelDanger),
                     ),
                   )
-                : SingleChildScrollView(
-                    child: SelectableText(
-                      (_sshLogs?.content ?? '').isEmpty
-                          ? '暂无日志。'
-                          : localizeLogTimestamps(_sshLogs!.content),
-                      style: monospace.copyWith(fontSize: 11.5),
-                    ),
+                : LogViewer(
+                    content: _sshLogs?.content ?? '',
+                    path: _sshLogs?.path,
+                    truncated: _sshLogs?.truncated ?? false,
+                    emptyMessage: '暂无日志。',
                   ),
           ),
         ],
@@ -552,11 +544,7 @@ class _SshPageState extends State<SshPage> {
                 index: _section,
                 onChanged: (index) => setState(() => _section = index),
               ),
-            IconButton(
-              tooltip: '刷新',
-              onPressed: _loading ? null : _loadStatus,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
+            PageRefreshButton(onPressed: _loadStatus),
           ],
         ),
         Expanded(

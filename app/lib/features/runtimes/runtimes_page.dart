@@ -3,6 +3,9 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/api_client.dart';
 import '../../core/models/runtime_env.dart';
 import '../../core/session.dart';
+import '../../ui/code_editor.dart';
+import '../../ui/layout.dart';
+import '../../ui/log_viewer.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../store/deploy_dialog.dart';
@@ -20,6 +23,7 @@ class _RuntimesPageState extends State<RuntimesPage> {
   bool _loading = true;
   String? _error;
   bool _busy = false;
+  String _category = '全部';
 
   ApiClient get _api => PanelScope.of(context).api;
 
@@ -61,10 +65,17 @@ class _RuntimesPageState extends State<RuntimesPage> {
   Future<void> _create() async {
     final catalog = _catalog;
     if (catalog == null) return;
-    final request = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (_) => _CreateRuntimeDialog(api: _api, catalog: catalog),
-    );
+    final compact = MediaQuery.sizeOf(context).width < 720;
+    final request = compact
+        ? await Navigator.of(context).push<Map<String, dynamic>>(
+            MaterialPageRoute(
+              builder: (_) => CreateRuntimePage(api: _api, catalog: catalog),
+            ),
+          )
+        : await showDialog<Map<String, dynamic>>(
+            context: context,
+            builder: (_) => _CreateRuntimeDialog(api: _api, catalog: catalog),
+          );
     if (request == null) return;
     setState(() => _busy = true);
     try {
@@ -161,10 +172,10 @@ class _RuntimesPageState extends State<RuntimesPage> {
       );
       final map = json as Map<String, dynamic>;
       if (!mounted) return;
-      await showOutputDialog(
+      await showLogViewerDialog(
         context,
-        '${env.name} 日志',
-        map['output'] as String? ?? '',
+        title: '${env.name} 日志',
+        content: map['output'] as String? ?? '',
       );
     } catch (error) {
       _toast(describeError(error));
@@ -217,14 +228,42 @@ class _RuntimesPageState extends State<RuntimesPage> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
+  List<RuntimePreset> get _presets => _catalog?.runtimes ?? const [];
+
+  List<String> get _categoryLabels => [
+    '全部',
+    for (final preset in _presets) preset.name,
+  ];
+
+  int get _categoryIndex {
+    final index = _categoryLabels.indexOf(_category);
+    return index < 0 ? 0 : index;
+  }
+
+  String _categoryId(String label) {
+    if (label == '全部') return '全部';
+    for (final preset in _presets) {
+      if (preset.name == label) return preset.id;
+    }
+    return '全部';
+  }
+
+  List<RuntimeEnvironment> get _visibleEnvironments {
+    if (_category == '全部') return _environments;
+    return _environments.where((env) => env.runtime == _category).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final visible = _visibleEnvironments;
+    final content = Column(
       children: [
         PageHeader(
           title: '运行环境',
           subtitle: '借宿主机 Docker 运行的隔离运行时 · 配置、扩展与进程统一管理',
           actions: [
+            PageRefreshButton(onPressed: _load, refreshing: _loading),
+            const SizedBox(width: 6),
             FilledButton.icon(
               onPressed: _busy ? null : _create,
               icon: const Icon(Icons.add, size: 17),
@@ -232,27 +271,27 @@ class _RuntimesPageState extends State<RuntimesPage> {
             ),
           ],
         ),
+        if (_error != null)
+          ErrorBanner(message: _error!, onRetry: _load),
         Expanded(
           child: _loading
-              ? LoadingView()
-              : _error != null
-              ? SingleChildScrollView(
-                  child: ErrorBanner(message: _error!, onRetry: _load),
-                )
-              : _environments.isEmpty
+              ? const LoadingView()
+              : visible.isEmpty
               ? EmptyState(
                   icon: Icons.hub_outlined,
-                  title: '还没有运行环境',
-                  message: '创建一个 Node、Python、PHP 或自定义镜像环境，由面板管理其生命周期。',
+                  title: _environments.isEmpty ? '还没有运行环境' : '该分类下没有运行环境',
+                  message: _environments.isEmpty
+                      ? '创建一个 Node、Python、PHP 或自定义镜像环境，由面板管理其生命周期。'
+                      : '切换到其他分类或创建新的运行环境。',
                 )
               : RefreshIndicator(
                   onRefresh: _load,
                   child: ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
-                    itemCount: _environments.length,
+                    padding: pageContentPadding(context),
+                    itemCount: visible.length,
                     separatorBuilder: (_, _) => const SizedBox(height: 10),
                     itemBuilder: (context, index) {
-                      final env = _environments[index];
+                      final env = visible[index];
                       return _EnvironmentCard(
                         env: env,
                         busy: _busy,
@@ -281,6 +320,63 @@ class _RuntimesPageState extends State<RuntimesPage> {
                 ),
         ),
       ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 760;
+        if (narrow) {
+          return Column(
+            children: [
+              Expanded(child: content),
+              Container(
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: hampanelBorder)),
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+                child: SafeArea(
+                  top: false,
+                  child: Row(
+                    children: [
+                      SubNavMenu(
+                        items: _categoryLabels,
+                        index: _categoryIndex,
+                        onChanged: (index) => setState(
+                          () => _category = _categoryId(
+                            _categoryLabels[index],
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        '${visible.length} 个环境',
+                        style: TextStyle(fontSize: 11, color: hampanelMuted),
+                      ),
+                      IconButton(
+                        tooltip: '新建运行环境',
+                        onPressed: _busy ? null : _create,
+                        icon: const Icon(Icons.add, size: 20),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SubNav(
+              items: _categoryLabels,
+              index: _categoryIndex,
+              onChanged: (index) => setState(
+                () => _category = _categoryId(_categoryLabels[index]),
+              ),
+            ),
+            Expanded(child: content),
+          ],
+        );
+      },
     );
   }
 }
@@ -402,11 +498,36 @@ class _EnvironmentCard extends StatelessWidget {
   }
 }
 
-class _CreateRuntimeDialog extends StatefulWidget {
-  const _CreateRuntimeDialog({required this.api, required this.catalog});
+class CreateRuntimePage extends StatelessWidget {
+  const CreateRuntimePage({
+    super.key,
+    required this.api,
+    required this.catalog,
+  });
 
   final ApiClient api;
   final RuntimeCatalog catalog;
+
+  @override
+  Widget build(BuildContext context) {
+    return _CreateRuntimeDialog(
+      api: api,
+      catalog: catalog,
+      fullScreen: true,
+    );
+  }
+}
+
+class _CreateRuntimeDialog extends StatefulWidget {
+  const _CreateRuntimeDialog({
+    required this.api,
+    required this.catalog,
+    this.fullScreen = false,
+  });
+
+  final ApiClient api;
+  final RuntimeCatalog catalog;
+  final bool fullScreen;
 
   @override
   State<_CreateRuntimeDialog> createState() => _CreateRuntimeDialogState();
@@ -533,15 +654,13 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
     Navigator.of(context).pop(request);
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _form(BuildContext context) {
     final preset = _preset;
-    return AlertDialog(
-      title: const Text('新建运行环境'),
-      content: DialogBody(
-        maxWidth: 640,
-        child: SingleChildScrollView(
-          child: Column(
+    return SingleChildScrollView(
+      padding: widget.fullScreen
+          ? pageContentPadding(context, top: 16)
+          : null,
+      child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               DropdownButtonFormField<String>(
@@ -553,7 +672,7 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
                     DropdownMenuItem(
                       value: runtime.id,
                       child: Text(
-                        '${runtime.name}（${runtime.description}）',
+                        runtime.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -798,7 +917,44 @@ class _CreateRuntimeDialogState extends State<_CreateRuntimeDialog> {
               ),
             ],
           ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.fullScreen) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('新建运行环境')),
+        body: _form(context),
+        bottomNavigationBar: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('取消'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: _submit,
+                    child: const Text('创建并启动'),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
+      );
+    }
+    return AlertDialog(
+      title: const Text('新建运行环境'),
+      content: DialogBody(
+        maxWidth: 640,
+        child: _form(context),
       ),
       actions: [
         TextButton(
@@ -839,12 +995,6 @@ class _ConfigDialogState extends State<_ConfigDialog> {
       _file = widget.files.first.path;
       _content.text = widget.files.first.content;
     }
-  }
-
-  @override
-  void dispose() {
-    _content.dispose();
-    super.dispose();
   }
 
   Future<void> _save() async {
@@ -1315,7 +1465,7 @@ class _RuntimeConfigTab extends StatefulWidget {
 }
 
 class _RuntimeConfigTabState extends State<_RuntimeConfigTab> {
-  final _content = TextEditingController();
+  String _draft = '';
   List<RuntimeConfigFile> _files = const [];
   String? _selected;
   String? _error;
@@ -1326,12 +1476,6 @@ class _RuntimeConfigTabState extends State<_RuntimeConfigTab> {
   void initState() {
     super.initState();
     _load();
-  }
-
-  @override
-  void dispose() {
-    _content.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -1353,7 +1497,7 @@ class _RuntimeConfigTabState extends State<_RuntimeConfigTab> {
       setState(() {
         _files = files;
         _selected = files.isEmpty ? null : files.first.path;
-        _content.text = files.isEmpty ? '' : files.first.content;
+        _draft = files.isEmpty ? '' : files.first.content;
         _loading = false;
       });
     } catch (error) {
@@ -1372,7 +1516,7 @@ class _RuntimeConfigTabState extends State<_RuntimeConfigTab> {
     try {
       final json = await widget.api.putJson(
         '/api/v1/runtimes/${widget.env.id}/config',
-        {'file': file, 'content': _content.text},
+        {'file': file, 'content': _draft},
       );
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
@@ -1421,7 +1565,7 @@ class _RuntimeConfigTabState extends State<_RuntimeConfigTab> {
               final file = _files.firstWhere((item) => item.path == value);
               setState(() {
                 _selected = value;
-                _content.text = file.content;
+                _draft = file.content;
               });
             },
           ),
@@ -1434,21 +1578,33 @@ class _RuntimeConfigTabState extends State<_RuntimeConfigTab> {
         ),
         const SizedBox(height: 10),
         Expanded(
-          child: TextField(
-            controller: _content,
-            expands: true,
-            maxLines: null,
-            style: monospace.copyWith(fontSize: 12),
-            decoration: const InputDecoration(
-              border: OutlineInputBorder(),
-              alignLabelWithHint: true,
-            ),
+          child: CodeEditorPane(
+            key: ValueKey('${widget.env.id}:$_selected'),
+            initialText: _draft,
+            language: _codeLanguageForPath(_selected),
+            onChanged: (value) => _draft = value,
           ),
         ),
       ],
     );
   }
 }
+
+
+  CodeLanguage _codeLanguageForPath(String? path) {
+    final name = (path ?? '').toLowerCase();
+    if (name.endsWith('.toml')) return CodeLanguage.toml;
+    if (name.endsWith('.yaml') || name.endsWith('.yml')) {
+      return CodeLanguage.yaml;
+    }
+    if (name.endsWith('.json')) return CodeLanguage.json;
+    if (name.endsWith('.sh') || name.endsWith('.bash')) {
+      return CodeLanguage.bash;
+    }
+    if (name.endsWith('.properties')) return CodeLanguage.properties;
+    if (name.contains('nginx')) return CodeLanguage.nginx;
+    return CodeLanguage.ini;
+  }
 
 class _RuntimeExtensionsTab extends StatefulWidget {
   const _RuntimeExtensionsTab({

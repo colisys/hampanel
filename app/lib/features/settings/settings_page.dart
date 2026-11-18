@@ -13,6 +13,7 @@ import '../../core/format.dart';
 import '../../core/enrollment.dart';
 import '../../core/platform_support.dart';
 import '../../core/session.dart';
+import '../../ui/collapsible.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../ai/ai_tools.dart';
@@ -42,6 +43,12 @@ class _SettingsPageState extends State<SettingsPage> {
   final _sensitivePathController = TextEditingController();
   AiConfig? _aiConfig;
   Set<String> _enabledTools = {};
+  static const _aiToolGroupTitles = [
+    '只读工具',
+    '修改类工具（需审批）',
+    '高风险工具（默认关闭）',
+  ];
+  final Set<String> _expandedToolGroups = {'只读工具'};
   List<String> _sensitivePaths = [];
   bool _aiLoading = true;
   bool _aiSaving = false;
@@ -720,6 +727,24 @@ class _SettingsPageState extends State<SettingsPage> {
                                         ),
                                       ),
                                       const SizedBox(height: 10),
+                                      Row(
+                                        children: [
+                                          TextButton(
+                                            onPressed: () => setState(
+                                              () => _expandedToolGroups.addAll(
+                                                _aiToolGroupTitles,
+                                              ),
+                                            ),
+                                            child: const Text('展开全部'),
+                                          ),
+                                          TextButton(
+                                            onPressed: () => setState(
+                                              () => _expandedToolGroups.clear(),
+                                            ),
+                                            child: const Text('收起全部'),
+                                          ),
+                                        ],
+                                      ),
                                       _toolGroup(
                                         '只读工具',
                                         _aiTools
@@ -945,48 +970,53 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget _toolGroup(String title, List<AiTool> tools) {
     if (tools.isEmpty) return const SizedBox.shrink();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 6, bottom: 2),
-          child: Text(
-            title,
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              color: hampanelMuted,
-            ),
-          ),
-        ),
-        for (final tool in tools)
-          CheckboxListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            value: _enabledTools.contains(tool.name),
-            onChanged: (value) {
-              setState(() {
-                if (value == true) {
-                  _enabledTools.add(tool.name);
-                } else {
-                  _enabledTools.remove(tool.name);
-                }
-              });
-            },
-            title: Text(
-              tool.name,
-              style: TextStyle(
-                fontSize: 12.5,
-                color: tool.name == 'add_cron_job' ? hampanelDanger : null,
+    return CollapsibleSection(
+      title: title,
+      subtitle:
+          '${tools.where((tool) => _enabledTools.contains(tool.name)).length}/${tools.length}',
+      expanded: _expandedToolGroups.contains(title),
+      onChanged: (expanded) {
+        setState(() {
+          if (expanded) {
+            _expandedToolGroups.add(title);
+          } else {
+            _expandedToolGroups.remove(title);
+          }
+        });
+      },
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final tool in tools)
+            CheckboxListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              controlAffinity: ListTileControlAffinity.leading,
+              value: _enabledTools.contains(tool.name),
+              onChanged: (value) {
+                setState(() {
+                  if (value == true) {
+                    _enabledTools.add(tool.name);
+                  } else {
+                    _enabledTools.remove(tool.name);
+                  }
+                });
+              },
+              title: Text(
+                tool.name,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: tool.name == 'add_cron_job' ? hampanelDanger : null,
+                ),
+              ),
+              subtitle: Text(
+                tool.description,
+                style: TextStyle(fontSize: 11, color: hampanelMuted),
               ),
             ),
-            subtitle: Text(
-              tool.description,
-              style: TextStyle(fontSize: 11, color: hampanelMuted),
-            ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 

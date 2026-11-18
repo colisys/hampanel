@@ -4,6 +4,8 @@ import '../../core/api_client.dart';
 import '../../core/models/store_app.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
+import '../../ui/log_viewer.dart';
 import '../../ui/widgets.dart';
 import 'deploy_dialog.dart';
 
@@ -116,10 +118,10 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
         );
         final map = json as Map<String, dynamic>;
         if (!mounted) return;
-        await showOutputDialog(
+        await showLogViewerDialog(
           context,
-          '${app.name} 日志',
-          map['output'] as String? ?? '',
+          title: '${app.name} 日志',
+          content: map['output'] as String? ?? '',
         );
       } catch (error) {
         _toast(describeError(error));
@@ -200,7 +202,7 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
         builder: (context, constraints) {
           final columns = (constraints.maxWidth / 360).floor().clamp(1, 3);
           return GridView.builder(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+            padding: pageContentPadding(context, top: 8),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
               mainAxisExtent: 226,

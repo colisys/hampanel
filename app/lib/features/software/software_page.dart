@@ -4,9 +4,12 @@ import '../../core/api_client.dart';
 import '../../core/models/fail2ban.dart';
 import '../../core/models/software.dart';
 import '../../core/session.dart';
+import '../../ui/code_editor.dart';
+import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../store/deploy_dialog.dart';
+import 'software_card.dart';
 
 class SoftwarePage extends StatefulWidget {
   const SoftwarePage({super.key});
@@ -15,7 +18,8 @@ class SoftwarePage extends StatefulWidget {
   State<SoftwarePage> createState() => _SoftwarePageState();
 }
 
-class _SoftwarePageState extends State<SoftwarePage> {
+class _SoftwarePageState extends State<SoftwarePage>
+    with SingleTickerProviderStateMixin {
   final _maxretryController = TextEditingController(text: '5');
   final _bantimeController = TextEditingController(text: '3600');
   final _findtimeController = TextEditingController(text: '600');
@@ -27,6 +31,7 @@ class _SoftwarePageState extends State<SoftwarePage> {
   String? _error;
   String? _f2bError;
   String? _initializingId;
+  TabController? _tabs;
 
   ApiClient get _api => PanelScope.of(context).api;
 
@@ -38,6 +43,7 @@ class _SoftwarePageState extends State<SoftwarePage> {
 
   @override
   void dispose() {
+    _tabs?.dispose();
     _maxretryController.dispose();
     _bantimeController.dispose();
     _findtimeController.dispose();
@@ -57,10 +63,20 @@ class _SoftwarePageState extends State<SoftwarePage> {
           .map(SoftwareItem.fromJson)
           .toList();
       if (!mounted) return;
+      final previousTabs = _tabs;
+      final nextTabs = items.isEmpty
+          ? null
+          : TabController(length: items.length, vsync: this);
       setState(() {
+        _tabs = nextTabs;
         _items = items;
         _loading = false;
       });
+      if (previousTabs != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!identical(_tabs, previousTabs)) previousTabs.dispose();
+        });
+      }
       final fail2ban = items.where((item) => item.id == 'fail2ban').firstOrNull;
       if (fail2ban != null && fail2ban.initialized) {
         await _loadFail2ban();
@@ -327,6 +343,44 @@ class _SoftwarePageState extends State<SoftwarePage> {
     }
   }
 
+  Future<void> _showAllBanned(Fail2banJail jail) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('${jail.name} 封禁 IP'),
+        content: DialogBody(
+          maxWidth: 520,
+          maxHeight: 480,
+          child: ListView.separated(
+            itemCount: jail.bannedIps.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final ip = jail.bannedIps[index];
+              return ListTile(
+                dense: true,
+                title: Text(ip, style: monospace.copyWith(fontSize: 12)),
+                trailing: IconButton(
+                  tooltip: '解封',
+                  icon: const Icon(Icons.close, size: 16),
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    _unban(jail, ip);
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -335,123 +389,120 @@ class _SoftwarePageState extends State<SoftwarePage> {
 
   @override
   Widget build(BuildContext context) {
+    final tabs = _tabs;
     return Column(
       children: [
         PageHeader(
           title: '软件管理',
-          subtitle: '已安装软件的状态、初始化与托管管理',
+          subtitle: '已安装软件的状态、配置与托管管理',
           actions: [
-            IconButton(
-              tooltip: '刷新',
-              onPressed: _loading ? null : _load,
-              icon: const Icon(Icons.refresh, size: 20),
+            PageRefreshButton(onPressed: _loading ? null : _load),
+          ],
+        ),
+        if (_error != null)
+          ErrorBanner(message: _error!, onRetry: _load),
+        if (_loading)
+          const Expanded(child: LoadingView())
+        else if (_items.isEmpty)
+          const Expanded(
+            child: EmptyState(
+              icon: Icons.apps_outlined,
+              title: '没有可管理的软件',
+              message: '请先在应用商店安装软件。',
             ),
-          ],
-        ),
-        Expanded(
-          child: _loading
-              ? const LoadingView()
-              : _error != null
-              ? SingleChildScrollView(
-                  child: ErrorBanner(message: _error!, onRetry: _load),
-                )
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
-                  children: [
-                    for (final item in _items) ...[
-                      _softwareCard(
-                        item,
-                        extra: item.id == 'fail2ban' && item.initialized
-                            ? _fail2banSection()
-                            : null,
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                  ],
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _softwareCard(SoftwareItem item, {Widget? extra}) {
-    final initializing = _initializingId == item.id;
-    return PanelCard(
-      title: item.name,
-      trailing: StatusPill(
-        text: !item.installed
-            ? '未安装'
-            : item.needsInitialization
-            ? '待初始化'
-            : item.active
-            ? '运行中'
-            : '已托管',
-        good: item.installed && !item.needsInitialization,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            item.description,
-            style: TextStyle(fontSize: 12, color: hampanelMuted, height: 1.5),
+          )
+        else ...[
+          TabBar(
+            controller: tabs,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            tabs: [for (final item in _items) Tab(text: item.name)],
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 16,
-            runSpacing: 4,
-            children: [
-              _meta('版本', item.version.isEmpty ? '-' : item.version),
-              _meta('服务', item.service.isEmpty ? '-' : item.service),
-              _meta('托管', item.initialized ? '已初始化' : '未初始化'),
-            ],
+          Expanded(
+            child: TabBarView(
+              controller: tabs,
+              children: [for (final item in _items) _softwareTab(item)],
+            ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  item.manageHint,
-                  style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-                ),
-              ),
-              if (!item.installed)
-                Text(
-                  '请先在「应用商店 → 系统工具」安装',
-                  style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-                )
-              else if (item.needsInitialization)
-                FilledButton.icon(
-                  onPressed: initializing ? null : () => _initialize(item),
-                  icon: initializing
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.settings_suggest_outlined, size: 16),
-                  label: Text(item.initialized ? '重新初始化' : '初始化'),
-                ),
-            ],
-          ),
-          if (extra != null) ...[
-            const SizedBox(height: 14),
-            Container(height: 1, color: hampanelBorder),
-            const SizedBox(height: 14),
-            extra,
-          ],
         ],
-      ),
+      ],
     );
   }
 
-  Widget _meta(String label, String value) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+  Widget _softwareTab(SoftwareItem item) {
+    return ListView(
+      padding: pageContentPadding(context),
       children: [
-        Text('$label: ', style: TextStyle(fontSize: 11, color: hampanelMuted)),
-        SelectableText(value, style: monospace.copyWith(fontSize: 11)),
+        SoftwareCard(
+          item: item,
+          initializing: _initializingId == item.id,
+          onInitialize: () => _initialize(item),
+          configPaths: _configPaths(item.id),
+          onEditConfig: _editConfig,
+        ),
+        if (item.id == 'fail2ban' && item.initialized) ...[
+          const SizedBox(height: 12),
+          _fail2banSection(),
+        ],
       ],
     );
+  }
+
+  List<String> _configPaths(String id) {
+    switch (id) {
+      case 'fail2ban':
+        return const ['/etc/fail2ban/jail.d/99-hampanel.local'];
+      case 'clamav':
+        return const [
+          '/etc/clamav/clamd.conf',
+          '/etc/clamav/freshclam.conf',
+        ];
+      case 'supervisord':
+        return const ['/etc/supervisor/supervisord.conf'];
+      case 'pure-ftpd':
+        return const ['/etc/pure-ftpd/pure-ftpd.conf'];
+      default:
+        return const [];
+    }
+  }
+
+  Future<void> _editConfig(String path) async {
+    try {
+      Map<String, dynamic> map = const {};
+      try {
+        final json = await _api.getJson(
+          '/api/v1/files/content',
+          query: {'path': path},
+        );
+        map = json as Map<String, dynamic>;
+      } on ApiException catch (error) {
+        if (error.status != 404) rethrow;
+      }
+      if ((map['encoding'] as String? ?? 'utf8') != 'utf8') {
+        _toast('该文件不是 UTF-8 文本，暂不支持在线编辑');
+        return;
+      }
+      if (!mounted) return;
+      final edited = await showCodeEditorDialog(
+        context,
+        title: path.split('/').last,
+        initialText: map['content'] as String? ?? '',
+        language: path.endsWith('.toml')
+            ? CodeLanguage.toml
+            : path.endsWith('.conf')
+            ? CodeLanguage.properties
+            : CodeLanguage.plain,
+        description: '编辑 $path。保存前会生成文件历史版本。',
+      );
+      if (edited == null) return;
+      await _api.putJson('/api/v1/files/content', {
+        'path': path,
+        'content': edited,
+      });
+      _toast('已保存 $path');
+    } catch (error) {
+      _toast(describeError(error));
+    }
   }
 
   Widget _fail2banSection() {
@@ -470,16 +521,23 @@ class _SoftwarePageState extends State<SoftwarePage> {
       children: [
         Row(
           children: [
-            const Text(
-              '封禁管理',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            Expanded(
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text(
+                    '封禁管理',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                  StatusPill(
+                    text: status.active ? '运行中' : '未运行',
+                    good: status.active,
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(width: 8),
-            StatusPill(
-              text: status.active ? '运行中' : '未运行',
-              good: status.active,
-            ),
-            const Spacer(),
             OutlinedButton.icon(
               onPressed: _loadFail2ban,
               icon: const Icon(Icons.refresh, size: 16),
@@ -558,10 +616,12 @@ class _SoftwarePageState extends State<SoftwarePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Icon(Icons.gavel_outlined, size: 17, color: hampanelAccent),
-              const SizedBox(width: 8),
               Text(
                 jail.name,
                 style: const TextStyle(
@@ -569,12 +629,10 @@ class _SoftwarePageState extends State<SoftwarePage> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const Spacer(),
               Text(
                 '当前封禁 ${jail.currentlyBanned} / 累计 ${jail.totalBanned}',
                 style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               ),
-              const SizedBox(width: 10),
               OutlinedButton.icon(
                 onPressed: () => _ban(jail),
                 icon: const Icon(Icons.block, size: 15),
@@ -593,7 +651,7 @@ class _SoftwarePageState extends State<SoftwarePage> {
               spacing: 6,
               runSpacing: 6,
               children: [
-                for (final ip in jail.bannedIps)
+                for (final ip in jail.bannedIps.take(10))
                   InputChip(
                     label: Text(ip, style: monospace.copyWith(fontSize: 11)),
                     onDeleted: () => _unban(jail, ip),
@@ -601,6 +659,16 @@ class _SoftwarePageState extends State<SoftwarePage> {
                   ),
               ],
             ),
+            if (jail.bannedIps.length > 10) ...[
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: () => _showAllBanned(jail),
+                  child: Text('查看全部 ${jail.bannedIps.length} 个封禁 IP'),
+                ),
+              ),
+            ],
           ],
         ],
       ),

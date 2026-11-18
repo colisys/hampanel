@@ -8,6 +8,7 @@ import '../../core/host_store.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/enrollment_trust.dart';
+import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 import '../auth/install_page.dart';
 
@@ -186,7 +187,7 @@ class _HostsPageState extends State<HostsPage> {
                   message: '新增主机并粘贴 enrollment JSON，或通过 SSH 安装自动导入。',
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                  padding: pageContentPadding(context, top: 0),
                   itemCount: records.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 14),
                   itemBuilder: (context, index) {

@@ -90,6 +90,8 @@ pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/terminal/ws", .handler = terminal.ws },
 
     .{ .method = .GET, .pattern = "/api/v1/services", .handler = services.index },
+    .{ .method = .GET, .pattern = "/api/v1/services/:name/config", .handler = services.config },
+    .{ .method = .PUT, .pattern = "/api/v1/services/:name/config", .handler = services.saveConfig },
     .{ .method = .POST, .pattern = "/api/v1/services/:name/:action", .handler = services.action },
     .{ .method = .GET, .pattern = "/api/v1/services/:name/logs", .handler = services.logs },
 

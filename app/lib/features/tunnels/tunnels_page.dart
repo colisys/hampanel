@@ -8,6 +8,7 @@ import '../../core/models/tunnel_profile.dart';
 import '../../core/session.dart';
 import '../../core/tunnel_store.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 import 'tunnel_runner.dart';
 
@@ -497,11 +498,7 @@ class _TunnelsPageState extends State<TunnelsPage> {
               label: const Text('新建隧道'),
             ),
             const SizedBox(width: 8),
-            IconButton(
-              tooltip: '刷新',
-              onPressed: _loading ? null : _load,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
+            PageRefreshButton(onPressed: _load),
           ],
         ),
         Expanded(
@@ -512,7 +509,7 @@ class _TunnelsPageState extends State<TunnelsPage> {
                   child: ErrorBanner(message: _error!, onRetry: _load),
                 )
               : ListView(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                  padding: pageContentPadding(context, top: 4),
                   children: [
                     Wrap(
                       spacing: 8,

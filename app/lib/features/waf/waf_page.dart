@@ -4,6 +4,8 @@ import '../../core/api_client.dart';
 import '../../core/models/waf_status.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
+import '../../ui/log_viewer.dart';
 import '../../ui/widgets.dart';
 import '../store/deploy_dialog.dart';
 
@@ -18,6 +20,7 @@ class _WafPageState extends State<WafPage> {
   WafStatus? _status;
   bool _loading = true;
   bool _busy = false;
+  int _wafSection = 0;
   String? _error;
 
   final _listenHost = TextEditingController();
@@ -233,18 +236,20 @@ class _WafPageState extends State<WafPage> {
     try {
       final json = await _api.getJson(
         '/api/v1/waf/logs',
-        query: {'lines': '300', 'source': source},
+        query: {'lines': '500', 'source': source},
       );
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
-      await showOutputDialog(
+      await showLogViewerDialog(
         context,
-        source == 'risk'
+        title: source == 'risk'
             ? 'WAF 风险日志'
             : source == 'audit'
             ? 'Coraza 规则审计'
             : 'WAF 访问日志',
-        map['content'] as String? ?? '',
+        content: map['content'] as String? ?? '',
+        path: map['path'] as String?,
+        truncated: map['truncated'] == true,
       );
     } catch (error) {
       if (!mounted) return;
@@ -569,6 +574,15 @@ class _WafPageState extends State<WafPage> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
+  static const _sectionLabels = [
+    '边缘状态',
+    '边缘配置',
+    '站点策略',
+    '风险复检',
+    'Geo 规则',
+    '防护说明',
+  ];
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -577,18 +591,35 @@ class _WafPageState extends State<WafPage> {
           title: 'WAF',
           subtitle: 'Caddy + Coraza + OWASP CRS 独立边缘，对任意 Web 引擎统一防护',
           actions: [
-            IconButton(
-              tooltip: '刷新',
-              onPressed: _loading || _busy ? null : _load,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
+            PageRefreshButton(onPressed: _load),
           ],
         ),
+        if (!_loading)
+          SizedBox(
+            height: 44,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.symmetric(
+                horizontal: MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
+              ),
+              children: [
+                for (var i = 0; i < _sectionLabels.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(_sectionLabels[i]),
+                      selected: _wafSection == i,
+                      onSelected: (_) => setState(() => _wafSection = i),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         Expanded(
           child: _loading
               ? const LoadingView()
               : ListView(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                  padding: pageContentPadding(context, top: 4),
                   children: [
                     if (_error != null) ...[
                       ErrorBanner(message: _error!, onRetry: _load),
@@ -604,7 +635,7 @@ class _WafPageState extends State<WafPage> {
   }
 
   List<Widget> _content(WafStatus status) {
-    return [
+    final sections = <Widget>[
       PanelCard(
         title: 'WAF 边缘状态',
         trailing: Wrap(
@@ -1110,6 +1141,8 @@ class _WafPageState extends State<WafPage> {
         ),
       ),
     ];
+    final index = _wafSection.clamp(0, sections.length - 1);
+    return [sections[index]];
   }
 
   Widget _kv(String key, String value) {

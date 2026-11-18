@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/api_client.dart';
 import '../../core/models/docker.dart';
 import '../../core/session.dart';
+import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import 'compose_section.dart';
@@ -13,16 +14,6 @@ import 'registries_section.dart';
 import 'settings_section.dart';
 import 'volumes_section.dart';
 
-const _sections = <String>[
-  '概览',
-  '容器列表',
-  '编排管理',
-  '镜像管理',
-  '网络管理',
-  '存储卷',
-  '源管理',
-  'Docker 设置',
-];
 
 class DockerPage extends StatefulWidget {
   const DockerPage({super.key});
@@ -38,6 +29,17 @@ class _DockerPageState extends State<DockerPage> {
   bool _installing = false;
   String? _engine;
   String? _error;
+
+  List<String> get _sectionLabels => [
+    '概览',
+    '容器列表',
+    '编排管理',
+    '镜像管理',
+    '网络管理',
+    '存储卷',
+    '源管理',
+    _engine == 'podman' ? 'Podman 设置' : 'Docker 设置',
+  ];
 
   ApiClient get _api => PanelScope.of(context).api;
 
@@ -170,7 +172,7 @@ class _DockerPageState extends State<DockerPage> {
                   child: Row(
                     children: [
                       SubNavMenu(
-                        items: _sections,
+                        items: _sectionLabels,
                         index: _selected,
                         onChanged: (value) =>
                             setState(() => _selected = value),
@@ -191,7 +193,7 @@ class _DockerPageState extends State<DockerPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SubNav(
-              items: _sections,
+              items: _sectionLabels,
               index: _selected,
               onChanged: (value) => setState(() => _selected = value),
             ),
@@ -219,10 +221,10 @@ class _DockerPageState extends State<DockerPage> {
       case 6:
         return const RegistriesSection();
       case 7:
-        return const DockerSettingsSection();
+        return DockerSettingsSection(engine: _engine);
       default:
         return _PlaceholderSection(
-          title: _sections[_selected],
+          title: _sectionLabels[_selected],
           message: '该子菜单正在实现中，稍后开放。',
         );
     }
@@ -283,10 +285,7 @@ class _OverviewSectionState extends State<_OverviewSection> {
               ? '容器运行状态汇总'
               : '${overview.engine} · ${overview.running} 个运行中容器',
           actions: [
-            IconButton(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
+            PageRefreshButton(onPressed: _load),
           ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
@@ -294,120 +293,60 @@ class _OverviewSectionState extends State<_OverviewSection> {
           child: _loading
               ? const LoadingView()
               : ListView(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                  padding: pageContentPadding(context, top: 8),
                   children: [
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        _MetricCard(
+                    MetricGrid(
+                      metrics: [
+                        MetricCard(
                           label: '运行中',
-                          value: overview?.running ?? 0,
+                          value: '${overview?.running ?? 0}',
                           icon: Icons.play_circle_outline,
-                          color: hampanelAccent,
+                          accent: hampanelAccent,
                         ),
-                        _MetricCard(
+                        MetricCard(
                           label: '已停止',
-                          value: overview?.stopped ?? 0,
+                          value: '${overview?.stopped ?? 0}',
                           icon: Icons.stop_circle_outlined,
-                          color: hampanelMuted,
+                          accent: hampanelMuted,
                         ),
-                        _MetricCard(
+                        MetricCard(
                           label: '重启中',
-                          value: overview?.restarting ?? 0,
+                          value: '${overview?.restarting ?? 0}',
                           icon: Icons.restart_alt,
-                          color: hampanelWarning,
+                          accent: hampanelWarning,
                         ),
-                        _MetricCard(
+                        MetricCard(
                           label: '错误',
-                          value: overview?.failed ?? 0,
+                          value: '${overview?.failed ?? 0}',
                           icon: Icons.error_outline,
-                          color: hampanelDanger,
+                          accent: hampanelDanger,
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        _MetricCard(
+                        MetricCard(
                           label: '编排',
-                          value: overview?.compose ?? 0,
+                          value: '${overview?.compose ?? 0}',
                           icon: Icons.account_tree_outlined,
                         ),
-                        _MetricCard(
+                        MetricCard(
                           label: '镜像',
-                          value: overview?.images ?? 0,
+                          value: '${overview?.images ?? 0}',
                           icon: Icons.layers_outlined,
                         ),
-                        _MetricCard(
+                        MetricCard(
                           label: '网络',
-                          value: overview?.networks ?? 0,
+                          value: '${overview?.networks ?? 0}',
                           icon: Icons.hub_outlined,
                         ),
-                        _MetricCard(
+                        MetricCard(
                           label: '存储卷',
-                          value: overview?.volumes ?? 0,
+                          value: '${overview?.volumes ?? 0}',
                           icon: Icons.save_outlined,
                         ),
                       ],
                     ),
                   ],
-                ),
+                )
         ),
       ],
-    );
-  }
-}
-
-class _MetricCard extends StatelessWidget {
-  const _MetricCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    this.color,
-  });
-
-  final String label;
-  final int value;
-  final IconData icon;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final effectiveColor = color ?? hampanelInk;
-    return Container(
-      width: 168,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: hampanelSurface,
-        border: Border.all(color: hampanelBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 16, color: effectiveColor),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            '$value',
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w700,
-              color: effectiveColor,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

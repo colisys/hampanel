@@ -4,6 +4,8 @@ import '../../core/api_client.dart';
 import '../../core/models/site.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
+import '../../ui/log_viewer.dart';
 import '../../ui/widgets.dart';
 import 'site_detail_page.dart';
 
@@ -267,37 +269,22 @@ class _SitesPageState extends State<SitesPage> {
     try {
       final json = await api.getJson(
         '/api/v1/sites/${site.name}/logs',
-        query: const {'kind': 'access', 'lines': '200'},
+        query: const {'kind': 'access', 'lines': '500'},
       );
       if (!mounted) return;
       final map = json as Map<String, dynamic>? ?? const {};
       final lines = ((map['lines'] as List<dynamic>?) ?? const [])
           .whereType<String>()
           .join('\n');
-      await showDialog<void>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('访问日志 · ${site.name}'),
-          content: DialogBody(
-            maxWidth: 760,
-            maxHeight: 520,
-            child: SingleChildScrollView(
-              child: SelectableText(
-                lines.isEmpty ? '暂无日志' : lines,
-                style: monospace.copyWith(fontSize: 11.5),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('关闭'),
-            ),
-          ],
-        ),
+      await showLogViewerDialog(
+        context,
+        title: '访问日志 · ${site.name}',
+        content: lines,
+        path: map['path'] as String?,
+        emptyMessage: '暂无日志',
       );
     } catch (error) {
-      _toast(describeError(error));
+      if (mounted) _toast(describeError(error));
     }
   }
 
@@ -351,16 +338,10 @@ class _SitesPageState extends State<SitesPage> {
                     label: const Text('重载'),
                   ),
                   const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: _load,
-                    icon: const Icon(Icons.refresh, size: 20),
-                  ),
+                  PageRefreshButton(onPressed: _load, refreshing: _loading),
                 ]
               : [
-                  IconButton(
-                    onPressed: _load,
-                    icon: const Icon(Icons.refresh, size: 20),
-                  ),
+                  PageRefreshButton(onPressed: _load, refreshing: _loading),
                 ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
@@ -396,7 +377,7 @@ class _SitesPageState extends State<SitesPage> {
                   ),
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                  padding: pageContentPadding(context, top: 4),
                   itemCount: list.sites.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {

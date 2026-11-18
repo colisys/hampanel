@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../core/models/package_tool.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 import 'deploy_dialog.dart';
 
@@ -169,7 +170,7 @@ class _PackagesTabState extends State<PackagesTab> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 10),
+          padding: pageContentPadding(context, top: 8).copyWith(bottom: 10),
           child: MediaQuery.sizeOf(context).width < 720
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -214,7 +215,7 @@ class _PackagesTabState extends State<PackagesTab> {
         ),
         Expanded(
           child: ListView.separated(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            padding: pageContentPadding(context, top: 0),
             itemCount: status.tools.length,
             separatorBuilder: (_, _) => const SizedBox(height: 8),
             itemBuilder: (context, index) {

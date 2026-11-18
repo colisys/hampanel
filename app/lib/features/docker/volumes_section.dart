@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../core/models/docker.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 
 class VolumesSection extends StatefulWidget {
@@ -123,10 +124,7 @@ class _VolumesSectionState extends State<VolumesSection> {
               icon: const Icon(Icons.cleaning_services_outlined, size: 16),
               label: const Text('清理'),
             ),
-            IconButton(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
+            PageRefreshButton(onPressed: _load),
           ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
@@ -140,7 +138,7 @@ class _VolumesSectionState extends State<VolumesSection> {
                   message: '还没有创建或使用存储卷。',
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                  padding: pageContentPadding(context, top: 8),
                   itemCount: _volumes.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {

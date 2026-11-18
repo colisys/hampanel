@@ -3,11 +3,15 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/api_client.dart';
 import '../../core/models/docker.dart';
 import '../../core/session.dart';
+import '../../ui/code_editor.dart';
+import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 
 class DockerSettingsSection extends StatefulWidget {
-  const DockerSettingsSection({super.key});
+  const DockerSettingsSection({super.key, this.engine});
+
+  final String? engine;
 
   @override
   State<DockerSettingsSection> createState() => _DockerSettingsSectionState();
@@ -29,6 +33,7 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
   String _cgroup = 'systemd';
   String _path = '';
   bool _podman = false;
+  bool get _isPodman => _podman || widget.engine == 'podman';
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -88,8 +93,53 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
     }
   }
 
+  Future<void> _editPodmanFile(String path, String title) async {
+    try {
+      Map<String, dynamic> map = const {};
+      try {
+        final json = await _api.getJson(
+          '/api/v1/files/content',
+          query: {'path': path},
+        );
+        map = json as Map<String, dynamic>;
+      } on ApiException catch (error) {
+        if (error.status != 404) rethrow;
+      }
+      final encoding = map['encoding'] as String? ?? 'utf8';
+      if (encoding != 'utf8') {
+        _toast('该文件不是 UTF-8 文本，暂不支持在线编辑');
+        return;
+      }
+      if (!mounted) return;
+      final edited = await showCodeEditorDialog(
+        context,
+        title: title,
+        initialText: map['content'] as String? ?? '',
+        language: CodeLanguage.toml,
+        description:
+            '直接编辑 Podman 官方配置文件（$path）。保存前会生成文件历史版本；'
+            '写入前请确认字段与当前 Podman 版本兼容。',
+      );
+      if (edited == null) return;
+      await _api.putJson('/api/v1/files/content', {
+        'path': path,
+        'content': edited,
+      });
+      _toast('已保存 $path');
+    } catch (error) {
+      _toast(describeError(error));
+    }
+  }
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   Future<void> _save() async {
-    if (_podman) return;
+    if (_isPodman) return;
     final ok = await confirmDialog(
       context,
       title: '应用 Docker 设置?',
@@ -147,12 +197,12 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
     return Column(
       children: [
         PageHeader(
-          title: 'Docker 设置',
-          subtitle: _podman
-              ? '当前容器引擎为 Podman，Docker 专属设置不可用'
+          title: _isPodman ? 'Podman 设置' : 'Docker 设置',
+          subtitle: _isPodman
+              ? 'Podman 引擎连接与配置'
               : (_path.isEmpty ? 'daemon.json 与连接参数' : _path),
           actions: [
-            if (!_podman) ...[
+            if (!_isPodman) ...[
               FilledButton.icon(
                 onPressed: _saving ? null : _save,
                 icon: _saving
@@ -166,31 +216,87 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
               ),
               const SizedBox(width: 8),
             ],
-            IconButton(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
+            PageRefreshButton(onPressed: _load),
           ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
         Expanded(
           child: _loading
               ? const LoadingView()
-              : _podman
+              : _isPodman
               ? ListView(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                  padding: pageContentPadding(context, top: 8),
                   children: [
-                    EmptyState(
-                      icon: Icons.info_outline,
-                      title: '当前引擎为 Podman',
-                      message:
-                          'Docker 的 daemon.json、NVIDIA Runtime、CgroupDriver 等设置不适用于 Podman。'
-                          '请切换到 Docker 引擎后再修改这些选项。',
+                    PanelCard(
+                      title: 'Podman',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '当前容器引擎为 Podman。Docker daemon.json 专属项不可用；'
+                            '下面直接编辑 Podman 官方配置文件。',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: hampanelMuted,
+                              height: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: _socket,
+                            readOnly: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Podman socket 路径',
+                              hintText:
+                                  '/run/podman/podman.sock 或 /run/user/1000/podman/podman.sock',
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            '官方配置项参考：containers.conf、registries.conf、storage.conf。',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: hampanelMuted,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: () => _editPodmanFile(
+                                  '/etc/containers/containers.conf',
+                                  'Podman containers.conf',
+                                ),
+                                icon: const Icon(Icons.edit_document, size: 16),
+                                label: const Text('containers.conf'),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: () => _editPodmanFile(
+                                  '/etc/containers/registries.conf',
+                                  'Podman registries.conf',
+                                ),
+                                icon: const Icon(Icons.edit_document, size: 16),
+                                label: const Text('registries.conf'),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: () => _editPodmanFile(
+                                  '/etc/containers/storage.conf',
+                                  'Podman storage.conf',
+                                ),
+                                icon: const Icon(Icons.edit_document, size: 16),
+                                label: const Text('storage.conf'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 )
               : ListView(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                  padding: pageContentPadding(context, top: 8),
                   children: [
                     _Section(
                       title: '容器加速',

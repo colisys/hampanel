@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../core/models/docker.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 
 class RegistriesSection extends StatefulWidget {
@@ -118,10 +119,7 @@ class _RegistriesSectionState extends State<RegistriesSection> {
               label: const Text('添加镜像源'),
             ),
             const SizedBox(width: 8),
-            IconButton(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
+            PageRefreshButton(onPressed: _load),
           ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
@@ -140,7 +138,7 @@ class _RegistriesSectionState extends State<RegistriesSection> {
                   ),
                 )
               : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                  padding: pageContentPadding(context, top: 8),
                   itemCount: _registries.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {

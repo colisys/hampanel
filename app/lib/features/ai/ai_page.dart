@@ -9,6 +9,7 @@ import '../../core/keychain.dart';
 import '../../core/session.dart';
 import '../../ui/markdown.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 import 'ai_client.dart';
 import '../../core/ai_context.dart';
@@ -693,7 +694,7 @@ class _AiPageState extends State<AiPage> {
         else ...[
           if (_keychainError != null || !_keyPresent)
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+              padding: pageContentPadding(context, top: 0).copyWith(bottom: 8),
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
@@ -751,7 +752,7 @@ class _AiPageState extends State<AiPage> {
                                       ),
                               )
                             : ListView.builder(
-                                padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
+                                padding: pageContentPadding(context, top: 0).copyWith(bottom: 12),
                                 itemCount: _messages.length,
                                 itemBuilder: (context, index) =>
                                     _bubble(_messages[index]),
@@ -769,7 +770,7 @@ class _AiPageState extends State<AiPage> {
                           ),
                         ),
                       Container(
-                        padding: const EdgeInsets.fromLTRB(24, 10, 24, 18),
+                        padding: pageContentPadding(context, top: 10).copyWith(bottom: 18),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [

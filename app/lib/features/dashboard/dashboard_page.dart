@@ -9,6 +9,7 @@ import '../../core/models/metrics.dart';
 import '../../core/models/system_info.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
+import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 
 const _historyLimit = 60;
@@ -155,10 +156,7 @@ class _DashboardPageState extends State<DashboardPage> {
         PageHeader(
           title: '概览',
           actions: [
-            IconButton(
-              onPressed: _refresh,
-              icon: const Icon(Icons.refresh, size: 20),
-            ),
+            PageRefreshButton(onPressed: _refresh),
           ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _refresh),
@@ -166,7 +164,7 @@ class _DashboardPageState extends State<DashboardPage> {
           child: _loading
               ? const LoadingView()
               : SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                  padding: pageContentPadding(context, top: 4),
                   child: _cards(),
                 ),
         ),
