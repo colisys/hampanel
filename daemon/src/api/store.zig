@@ -273,17 +273,28 @@ pub fn nixStatus(ctx: *context.Context) anyerror!void {
 }
 
 pub fn nixBuild(ctx: *context.Context) anyerror!void {
-    const Body = struct { target: []const u8 };
+    const Body = struct {
+        target: []const u8,
+        substituters: []const u8 = "",
+    };
     const body = ctx.requireJson(Body) catch {
         ctx.fail(400, "bad_request", "expected target");
         return;
     };
-    const outcome = platform.nix.build(ctx.arena, body.target) catch |err| {
+    if (!validSubstituters(body.substituters)) {
+        ctx.fail(400, "bad_substituters", "substituters must be http(s) URLs");
+        return;
+    }
+    const outcome = platform.nix.build(ctx.arena, body.target, body.substituters) catch |err| {
         failNix(ctx, err);
         return;
     };
     if (!outcome.ok) ctx.response.status = 502;
-    log.info("nix: build target={s} ok={}", .{ body.target, outcome.ok });
+    log.info("nix: build target={s} custom_mirror={} ok={}", .{
+        body.target,
+        body.substituters.len > 0,
+        outcome.ok,
+    });
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
@@ -291,18 +302,49 @@ pub fn nixRun(ctx: *context.Context) anyerror!void {
     const Body = struct {
         target: []const u8,
         args: []const []const u8 = &.{},
+        substituters: []const u8 = "",
     };
     const body = ctx.requireJson(Body) catch {
         ctx.fail(400, "bad_request", "expected target");
         return;
     };
-    const outcome = platform.nix.run(ctx.arena, body.target, body.args) catch |err| {
+    if (!validSubstituters(body.substituters)) {
+        ctx.fail(400, "bad_substituters", "substituters must be http(s) URLs");
+        return;
+    }
+    const outcome = platform.nix.run(
+        ctx.arena,
+        body.target,
+        body.args,
+        body.substituters,
+    ) catch |err| {
         failNix(ctx, err);
         return;
     };
     if (!outcome.ok) ctx.response.status = 502;
-    log.info("nix: run target={s} args={d} ok={}", .{ body.target, body.args.len, outcome.ok });
+    log.info("nix: run target={s} args={d} custom_mirror={} ok={}", .{
+        body.target,
+        body.args.len,
+        body.substituters.len > 0,
+        outcome.ok,
+    });
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+}
+
+fn validSubstituters(value: []const u8) bool {
+    if (value.len > 2048) return false;
+    var count: usize = 0;
+    var tokens = std.mem.tokenizeAny(u8, value, " \t\r\n");
+    while (tokens.next()) |token| {
+        count += 1;
+        if (count > 16) return false;
+        if (!(std.mem.startsWith(u8, token, "https://") or
+            std.mem.startsWith(u8, token, "http://"))) return false;
+        for (token) |ch| {
+            if (ch < 0x21 or ch == 0x7f) return false;
+        }
+    }
+    return true;
 }
 
 const EngineContext = struct {

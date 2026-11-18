@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
+import '../../core/client_settings.dart';
 import '../../core/models/nix_status.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
@@ -21,10 +22,12 @@ class _NixTabState extends State<NixTab> {
   String? _error;
   String? _busy;
   final _custom = TextEditingController();
+  final _mirror = TextEditingController();
 
   @override
   void dispose() {
     _custom.dispose();
+    _mirror.dispose();
     super.dispose();
   }
 
@@ -33,7 +36,21 @@ class _NixTabState extends State<NixTab> {
   @override
   void initState() {
     super.initState();
+    _loadMirror();
     _load();
+  }
+
+  Future<void> _loadMirror() async {
+    await ClientSettings.instance.load();
+    if (!mounted) return;
+    setState(() => _mirror.text = ClientSettings.instance.nixMirror);
+  }
+
+  Future<void> _saveMirror() async {
+    ClientSettings.instance.nixMirror = _mirror.text.trim();
+    await ClientSettings.instance.save();
+    if (!mounted) return;
+    showAppSnackBar(context, const SnackBar(content: Text('Nix 镜像源已保存')));
   }
 
   Future<void> _load() async {
@@ -63,6 +80,7 @@ class _NixTabState extends State<NixTab> {
       final json = await _api.postJson(
         '/api/v1/store/packages/nix/install',
         const {},
+        timeout: const Duration(minutes: 10),
       );
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
@@ -82,11 +100,16 @@ class _NixTabState extends State<NixTab> {
   }
 
   Future<void> _run(String target, bool build) async {
+    final mirror = _mirror.text.trim();
+    ClientSettings.instance.nixMirror = mirror;
+    await ClientSettings.instance.save();
+    if (!mounted) return;
     setState(() => _busy = '$target-${build ? 'build' : 'run'}');
     try {
       final json = await _api.postJson(
         build ? '/api/v1/store/nix/build' : '/api/v1/store/nix/run',
-        {'target': target},
+        {'target': target, if (mirror.isNotEmpty) 'substituters': mirror},
+        timeout: const Duration(minutes: 30),
       );
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
@@ -180,6 +203,43 @@ class _NixTabState extends State<NixTab> {
                     onPressed: _busy == null ? _load : null,
                     icon: const Icon(Icons.refresh, size: 16),
                     label: const Text('重新检测'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        PanelCard(
+          title: '镜像源',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '构建时优先使用这里的 substituter，并保留 cache.nixos.org 作为回退。'
+                '多个地址用空格分隔；留空则使用系统默认配置。',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: hampanelMuted,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 10),
+              FieldWithActions(
+                field: TextField(
+                  controller: _mirror,
+                  style: monospace,
+                  decoration: const InputDecoration(
+                    labelText: 'substituters',
+                    hintText: 'https://mirrors.ustc.edu.cn/nix-channels/store',
+                    isDense: true,
+                  ),
+                ),
+                actions: [
+                  OutlinedButton.icon(
+                    onPressed: _saveMirror,
+                    icon: const Icon(Icons.save_outlined, size: 16),
+                    label: const Text('保存镜像'),
                   ),
                 ],
               ),

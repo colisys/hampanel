@@ -55,20 +55,31 @@ pub fn status(allocator: std.mem.Allocator) !Status {
     };
 }
 
-pub fn build(allocator: std.mem.Allocator, target: []const u8) !Outcome {
+pub fn build(
+    allocator: std.mem.Allocator,
+    target: []const u8,
+    substituters: []const u8,
+) !Outcome {
     const attribute = try resolveAttribute(target);
     const flake = try std.fmt.allocPrint(allocator, "nixpkgs#{s}", .{attribute});
 
-    var result = exec.run(allocator, &.{
-        "nix",   experimental, "nix-command flakes",
-        "build", "--no-link",  "--print-out-paths",
-        flake,
-    }, 8 * 1024 * 1024) catch return error.NixUnavailable;
+    var argv = std.array_list.Managed([]const u8).init(allocator);
+    try argv.appendSlice(&.{ "nix", experimental, "nix-command flakes" });
+    try appendSubstituters(allocator, &argv, substituters);
+    try argv.appendSlice(&.{
+        "build", "--no-link", "--print-out-paths", flake,
+    });
 
+    var result = exec.run(allocator, argv.items, 8 * 1024 * 1024) catch return error.NixUnavailable;
     return .{ .ok = result.ok(), .output = textOf(result) };
 }
 
-pub fn run(allocator: std.mem.Allocator, target: []const u8, args: []const []const u8) !Outcome {
+pub fn run(
+    allocator: std.mem.Allocator,
+    target: []const u8,
+    args: []const []const u8,
+    substituters: []const u8,
+) !Outcome {
     const attribute = try resolveAttribute(target);
     if (args.len > 32) return error.InvalidTarget;
     for (args) |arg| {
@@ -80,10 +91,9 @@ pub fn run(allocator: std.mem.Allocator, target: []const u8, args: []const []con
 
     const flake = try std.fmt.allocPrint(allocator, "nixpkgs#{s}", .{attribute});
     var argv = std.array_list.Managed([]const u8).init(allocator);
-    try argv.appendSlice(&.{
-        "nix", experimental, "nix-command flakes",
-        "run", flake,        "--",
-    });
+    try argv.appendSlice(&.{ "nix", experimental, "nix-command flakes" });
+    try appendSubstituters(allocator, &argv, substituters);
+    try argv.appendSlice(&.{ "run", flake, "--" });
     try argv.appendSlice(args);
 
     var result = exec.run(allocator, argv.items, 8 * 1024 * 1024) catch return error.NixUnavailable;
@@ -108,6 +118,23 @@ fn findTarget(id: []const u8) ?Target {
         if (std.mem.eql(u8, target.id, id)) return target;
     }
     return null;
+}
+
+/// Prepends the configured substituters and keeps the official cache as a
+/// fallback. Values are passed as an argv entry, never through a shell.
+fn appendSubstituters(
+    allocator: std.mem.Allocator,
+    argv: *std.array_list.Managed([]const u8),
+    substituters: []const u8,
+) !void {
+    const trimmed = std.mem.trim(u8, substituters, " \t\r\n");
+    if (trimmed.len == 0) return;
+    const list = try std.fmt.allocPrint(
+        allocator,
+        "{s} https://cache.nixos.org",
+        .{trimmed},
+    );
+    try argv.appendSlice(&.{ "--option", "substituters", list });
 }
 
 fn textOf(result: exec.Result) []const u8 {

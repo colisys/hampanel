@@ -23,15 +23,26 @@ pub fn status(allocator: std.mem.Allocator) !Status {
     return .{ .available = false, .version = "", .flakes = false, .targets = &.{} };
 }
 
-pub fn build(allocator: std.mem.Allocator, target: []const u8) !Outcome {
+pub fn build(
+    allocator: std.mem.Allocator,
+    target: []const u8,
+    substituters: []const u8,
+) !Outcome {
     _ = allocator;
     _ = target;
+    _ = substituters;
     return error.Unsupported;
 }
 
-pub fn run(allocator: std.mem.Allocator, target: []const u8, args: []const []const u8) !Outcome {
+pub fn run(
+    allocator: std.mem.Allocator,
+    target: []const u8,
+    args: []const []const u8,
+    substituters: []const u8,
+) !Outcome {
     _ = allocator;
     _ = target;
     _ = args;
+    _ = substituters;
     return error.Unsupported;
 }

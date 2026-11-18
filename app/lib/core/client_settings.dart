@@ -17,6 +17,7 @@ class ClientSettings extends ChangeNotifier {
   int overviewRefreshSeconds = 3;
   String? updateChannel;
   String githubMirror = '';
+  String nixMirror = '';
   bool _loaded = false;
 
   Future<void> load() async {
@@ -36,6 +37,7 @@ class ClientSettings extends ChangeNotifier {
         updateChannel = channel as String;
       }
       githubMirror = (decoded['github_mirror'] as String?)?.trim() ?? '';
+      nixMirror = (decoded['nix_mirror'] as String?)?.trim() ?? '';
       notifyListeners();
     } catch (_) {
       // 本地偏好损坏时退回默认值。
@@ -51,6 +53,7 @@ class ClientSettings extends ChangeNotifier {
           'overview_refresh_seconds': overviewRefreshSeconds,
           'update_channel': updateChannel,
           'github_mirror': githubMirror,
+          'nix_mirror': nixMirror,
         }),
       );
       await restrictToOwner(file);
