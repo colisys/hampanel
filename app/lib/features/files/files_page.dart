@@ -7,6 +7,7 @@ import '../../core/models/recycle_entry.dart';
 import '../../core/native_files.dart';
 import '../../core/session.dart';
 import '../../ui/code_editor.dart';
+import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../recycle/recycle_page.dart';
@@ -93,13 +94,16 @@ class _FilesPageState extends State<FilesPage> {
         return;
       }
       if (!mounted) return;
-      final edited = await showCodeEditorDialog(
-        context,
-        title: entry.name,
-        initialText: content.content,
-        language: _codeLanguageForPath(entry.path),
-        description:
-            '保存前会把当前内容保存为历史版本（存储在面板数据目录，不会写入文件所在目录）。',
+      final edited = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (_) => CodeEditorPage(
+            title: entry.name,
+            initialText: content.content,
+            language: _codeLanguageForPath(entry.path),
+            api: _api,
+            filePath: entry.path,
+          ),
+        ),
       );
       if (edited == null || edited == content.content) return;
       await _api.putJson('/api/v1/files/content', {
@@ -443,61 +447,42 @@ class _FilesPageState extends State<FilesPage> {
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 720;
     final horizontal = compact ? 12.0 : 24.0;
-    final actions = compact
-        ? <Widget>[
-            IconButton(
-              tooltip: '新建目录',
-              onPressed: _createFolder,
-              icon: const Icon(Icons.create_new_folder_outlined, size: 20),
-            ),
-            IconButton(
-              tooltip: '新建文件',
-              onPressed: _createFile,
-              icon: const Icon(Icons.note_add_outlined, size: 20),
-            ),
-            IconButton(
-              tooltip: '上传',
-              onPressed: _upload,
-              icon: const Icon(Icons.upload_file_outlined, size: 20),
-            ),
-            IconButton(
-              tooltip: '回收站',
-              onPressed: _openRecycle,
-              icon: const Icon(Icons.delete_outline, size: 20),
-            ),
-          ]
-        : <Widget>[
-            OutlinedButton.icon(
-              onPressed: _createFolder,
-              icon: const Icon(Icons.create_new_folder_outlined, size: 16),
-              label: const Text('新建目录'),
-            ),
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              onPressed: _createFile,
-              icon: const Icon(Icons.note_add_outlined, size: 16),
-              label: const Text('新建文件'),
-            ),
-            const SizedBox(width: 8),
-            OutlinedButton.icon(
-              onPressed: _upload,
-              icon: const Icon(Icons.upload_file_outlined, size: 16),
-              label: const Text('上传'),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              tooltip: '回收站',
-              onPressed: _openRecycle,
-              icon: const Icon(Icons.delete_outline, size: 18),
-            ),
-          ];
     return Column(
       children: [
         PageHeader(
           title: '文件',
-          subtitle: compact ? null : '双击目录进入，点击文件在线编辑',
-          actions: actions,
+          actions: [PageRefreshButton(onPressed: () => _load(_path))],
         ),
+        if (!compact)
+          Padding(
+            padding: EdgeInsets.fromLTRB(horizontal, 0, horizontal, 8),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _createFolder,
+                  icon: const Icon(Icons.create_new_folder_outlined, size: 16),
+                  label: const Text('新建目录'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _createFile,
+                  icon: const Icon(Icons.note_add_outlined, size: 16),
+                  label: const Text('新建文件'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _upload,
+                  icon: const Icon(Icons.upload_file_outlined, size: 16),
+                  label: const Text('上传'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _openRecycle,
+                  icon: const Icon(Icons.delete_outline, size: 16),
+                  label: const Text('回收站'),
+                ),
+              ],
+            ),
+          ),
         Padding(
           padding: EdgeInsets.fromLTRB(horizontal, 0, horizontal, 10),
           child: Row(
@@ -521,6 +506,7 @@ class _FilesPageState extends State<FilesPage> {
               ),
               const SizedBox(width: 4),
               IconButton(
+                tooltip: '刷新',
                 onPressed: () => _load(_path),
                 icon: const Icon(Icons.refresh, size: 19),
               ),
@@ -539,7 +525,7 @@ class _FilesPageState extends State<FilesPage> {
                         ? EmptyState(
                             icon: Icons.folder_off_outlined,
                             title: '目录为空',
-                            message: '使用上方按钮创建文件或上传内容。',
+                            message: '使用底部操作创建文件或上传内容。',
                           )
                         : compact
                         ? _compactFileList()
@@ -561,6 +547,31 @@ class _FilesPageState extends State<FilesPage> {
                   ),
                 ),
         ),
+        if (compact)
+          ActionDock(
+            actions: [
+              ActionDockItem(
+                icon: Icons.create_new_folder_outlined,
+                label: '新建目录',
+                onPressed: _createFolder,
+              ),
+              ActionDockItem(
+                icon: Icons.note_add_outlined,
+                label: '新建文件',
+                onPressed: _createFile,
+              ),
+              ActionDockItem(
+                icon: Icons.upload_file_outlined,
+                label: '上传',
+                onPressed: _upload,
+              ),
+              ActionDockItem(
+                icon: Icons.delete_outline,
+                label: '回收站',
+                onPressed: _openRecycle,
+              ),
+            ],
+          ),
       ],
     );
   }

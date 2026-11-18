@@ -111,14 +111,16 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
         return;
       }
       if (!mounted) return;
-      final edited = await showCodeEditorDialog(
-        context,
-        title: title,
-        initialText: map['content'] as String? ?? '',
-        language: CodeLanguage.toml,
-        description:
-            '直接编辑 Podman 官方配置文件（$path）。保存前会生成文件历史版本；'
-            '写入前请确认字段与当前 Podman 版本兼容。',
+      final edited = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (_) => CodeEditorPage(
+            title: title,
+            initialText: map['content'] as String? ?? '',
+            language: CodeLanguage.toml,
+            api: _api,
+            filePath: path,
+          ),
+        ),
       );
       if (edited == null) return;
       await _api.putJson('/api/v1/files/content', {

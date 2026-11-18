@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/services.dart';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/ai_config.dart';
@@ -651,6 +653,29 @@ class _AiPageState extends State<AiPage> {
     'parameters': tool.parameters,
   };
 
+  Future<void> _copyConversation() async {
+    final conversation = _active;
+    if (conversation == null || conversation.entries.isEmpty) return;
+    final buffer = StringBuffer()
+      ..writeln(conversation.title)
+      ..writeln();
+    for (final entry in conversation.entries) {
+      final role = switch (entry.role) {
+        'user' => '用户',
+        'tool' => '工具',
+        _ => '助手',
+      };
+      buffer
+        ..writeln('[$role]')
+        ..writeln(entry.text)
+        ..writeln();
+    }
+    await Clipboard.setData(
+      ClipboardData(text: buffer.toString().trimRight()),
+    );
+    _toast('已复制整个对话');
+  }
+
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -666,6 +691,11 @@ class _AiPageState extends State<AiPage> {
           title: 'AI 助手',
           subtitle: '一句话管理服务器 · 白名单工具 · 关键操作人工审核',
           actions: [
+            IconButton(
+              tooltip: '复制整个对话',
+              onPressed: _messages.isEmpty ? null : _copyConversation,
+              icon: const Icon(Icons.copy_all_outlined, size: 20),
+            ),
             IconButton(
               tooltip: '配置',
               onPressed: _openConfig,

@@ -260,15 +260,8 @@ class _RuntimesPageState extends State<RuntimesPage> {
       children: [
         PageHeader(
           title: '运行环境',
-          subtitle: '借宿主机 Docker 运行的隔离运行时 · 配置、扩展与进程统一管理',
           actions: [
             PageRefreshButton(onPressed: _load, refreshing: _loading),
-            const SizedBox(width: 6),
-            FilledButton.icon(
-              onPressed: _busy ? null : _create,
-              icon: const Icon(Icons.add, size: 17),
-              label: const Text('新环境'),
-            ),
           ],
         ),
         if (_error != null)

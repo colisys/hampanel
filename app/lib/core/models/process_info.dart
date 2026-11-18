@@ -1,6 +1,7 @@
 class ProcessInfo {
   const ProcessInfo({
     required this.pid,
+    required this.ppid,
     required this.name,
     required this.state,
     required this.rssBytes,
@@ -9,6 +10,7 @@ class ProcessInfo {
   });
 
   final int pid;
+  final int ppid;
   final String name;
   final String state;
   final int rssBytes;
@@ -17,6 +19,7 @@ class ProcessInfo {
 
   factory ProcessInfo.fromJson(Map<String, dynamic> json) => ProcessInfo(
     pid: (json['pid'] as num?)?.toInt() ?? 0,
+    ppid: (json['ppid'] as num?)?.toInt() ?? 0,
     name: json['name'] as String? ?? '-',
     state: json['state'] as String? ?? '-',
     rssBytes: (json['rss_bytes'] as num?)?.toInt() ?? 0,

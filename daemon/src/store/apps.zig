@@ -32,6 +32,14 @@ pub fn installed(allocator: std.mem.Allocator, data_dir: []const u8, app: *const
     return true;
 }
 
+fn cleanupComposeFiles(allocator: std.mem.Allocator, data_dir: []const u8, app: *const catalog.App) void {
+    const path = composePath(allocator, data_dir, app) catch return;
+    compat.deleteFileAbsolute(path) catch {};
+    if (compat.path.dirname(path)) |dir| {
+        compat.deleteTreeAbsolute(dir) catch {};
+    }
+}
+
 fn composeArgs(
     allocator: std.mem.Allocator,
     engine: engine_mod.Engine,
@@ -80,6 +88,11 @@ pub fn deploy(
         try applied.append(.{ .key = param.key, .value = value, .secret = param.secret });
     }
 
+    // Resolve the compose provider before creating files. A failed deploy used
+    // to leave compose.yml behind, making the app look installed forever.
+    _ = engine_mod.composeCommand(allocator, engine, socket) catch return error.ComposeUnavailable;
+
+    const wasInstalled = installed(allocator, data_dir, app);
     const rendered = try render(allocator, app.compose, app.params, &values);
     const path = try composePath(allocator, data_dir, app);
     if (compat.path.dirname(path)) |dir| {
@@ -91,11 +104,35 @@ pub fn deploy(
     try file.writeAll(rendered);
 
     const argv = try composeArgs(allocator, engine, socket, data_dir, app, &.{ "up", "-d" });
-    var result = engine_mod.run(allocator, engine, socket, argv, .{ .max_output = 4 * 1024 * 1024 }) catch return error.ComposeUnavailable;
+    var result = engine_mod.run(allocator, engine, socket, argv, .{ .max_output = 4 * 1024 * 1024 }) catch {
+        if (!wasInstalled) cleanupComposeFiles(allocator, data_dir, app);
+        return error.ComposeUnavailable;
+    };
+
+    // podman-compose can exit 0 even when image resolution or container
+    // startup failed. Only report success when compose actually has a
+    // running container; otherwise the app would look installed forever.
+    var ok = result.ok();
+    var output = textOf(result);
+    if (ok) {
+        if (status(allocator, engine, socket, data_dir, app) catch null) |probe| {
+            if (!probe.ok or std.mem.indexOf(u8, probe.output, "Up ") == null) {
+                ok = false;
+                if (probe.output.len > 0) {
+                    output = try std.mem.concat(allocator, u8, &.{ output, "\n", probe.output });
+                }
+            }
+        } else {
+            ok = false;
+        }
+    }
+    if (!ok and !wasInstalled) {
+        cleanupComposeFiles(allocator, data_dir, app);
+    }
 
     return .{
-        .ok = result.ok(),
-        .output = textOf(result),
+        .ok = ok,
+        .output = output,
         .path = path,
         .params = applied.items,
     };
@@ -125,18 +162,31 @@ pub fn logs(allocator: std.mem.Allocator, engine: engine_mod.Engine, socket: []c
 
 pub fn remove(allocator: std.mem.Allocator, engine: engine_mod.Engine, socket: []const u8, data_dir: []const u8, app: *const catalog.App, volumes: bool) !Outcome {
     const extra: []const []const u8 = if (volumes) &.{ "down", "-v" } else &.{"down"};
-    const argv = try composeArgs(allocator, engine, socket, data_dir, app, extra);
-    var result = engine_mod.run(allocator, engine, socket, argv, .{ .max_output = 2 * 1024 * 1024 }) catch return error.ComposeUnavailable;
+    const argv = composeArgs(allocator, engine, socket, data_dir, app, extra) catch |err| {
+        if (err == error.ComposeUnavailable or err == error.NotInstalled) {
+            cleanupComposeFiles(allocator, data_dir, app);
+            return .{
+                .ok = true,
+                .output = "compose provider unavailable; removed the managed compose file",
+            };
+        }
+        return err;
+    };
+    var result = engine_mod.run(allocator, engine, socket, argv, .{ .max_output = 2 * 1024 * 1024 }) catch |err| {
+        if (err == error.ComposeUnavailable) {
+            // A provider may disappear between install checks. The managed
+            // file is the only durable state for the app, so clean it up.
+            cleanupComposeFiles(allocator, data_dir, app);
+            return .{
+                .ok = true,
+                .output = "compose provider unavailable; removed the managed compose file",
+            };
+        }
+        return err;
+    };
     const ok = result.ok();
 
-    if (ok) {
-        const path = try composePath(allocator, data_dir, app);
-        compat.deleteFileAbsolute(path) catch {};
-        if (compat.path.dirname(path)) |dir| {
-            compat.deleteTreeAbsolute(dir) catch {};
-        }
-    }
-
+    if (ok) cleanupComposeFiles(allocator, data_dir, app);
     return .{ .ok = ok, .output = textOf(result) };
 }
 

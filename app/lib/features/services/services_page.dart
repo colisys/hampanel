@@ -136,21 +136,31 @@ class _ServicesPageState extends State<ServicesPage> {
       children: [
         PageHeader(
           title: '服务',
-          subtitle: '共 ${_services.length} 个单元',
           actions: [
-            SizedBox(
-              width: 240,
-              child: TextField(
-                decoration: const InputDecoration(
-                  hintText: '搜索服务',
-                  prefixIcon: Icon(Icons.search, size: 17),
-                ),
-                onChanged: (value) => setState(() => _filter = value),
-              ),
-            ),
-            const SizedBox(width: 8),
             PageRefreshButton(onPressed: _load, refreshing: _loading),
           ],
+        ),
+        Padding(
+          padding: pageContentPadding(context, top: 0).copyWith(bottom: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  decoration: const InputDecoration(
+                    hintText: '搜索服务',
+                    prefixIcon: Icon(Icons.search, size: 17),
+                    isDense: true,
+                  ),
+                  onChanged: (value) => setState(() => _filter = value),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '${_filtered.length} 个单元',
+                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+              ),
+            ],
+          ),
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
         Expanded(

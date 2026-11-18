@@ -92,6 +92,7 @@ class _LogViewerState extends State<LogViewer> {
       initialDateRange: _range,
       helpText: '选择日志时间范围',
       saveText: '应用',
+      locale: const Locale('zh', 'CN'),
     );
     if (picked == null || !mounted) return;
     setState(() => _range = picked);
@@ -118,6 +119,39 @@ class _LogViewerState extends State<LogViewer> {
     }
   }
 
+  Widget _severityChip(LogSeverity severity) {
+    final selected = _severities.contains(severity);
+    final color = _severityColor(severity);
+    return FilterChip(
+      label: Text(severity.label),
+      selected: selected,
+      showCheckmark: false,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: const VisualDensity(horizontal: -1, vertical: -1),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      labelStyle: TextStyle(
+        fontSize: 11.5,
+        color: selected ? hampanelInk : hampanelMuted,
+        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+      ),
+      backgroundColor: hampanelSurface,
+      selectedColor: color.withValues(alpha: 0.14),
+      side: BorderSide(
+        color: selected ? color : hampanelBorder,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3)),
+      onSelected: (value) {
+        setState(() {
+          if (value) {
+            _severities.add(severity);
+          } else {
+            _severities.remove(severity);
+          }
+        });
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final visible = _visible;
@@ -137,12 +171,17 @@ class _LogViewerState extends State<LogViewer> {
             children: [
               SizedBox(
                 width: 240,
+                height: 34,
                 child: TextField(
                   controller: _queryController,
                   onChanged: (value) => setState(() => _query = value),
                   style: const TextStyle(fontSize: 12),
                   decoration: const InputDecoration(
                     isDense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 10,
+                    ),
                     prefixIcon: Icon(Icons.search, size: 18),
                     labelText: '筛选内容',
                     border: OutlineInputBorder(),
@@ -150,21 +189,7 @@ class _LogViewerState extends State<LogViewer> {
                 ),
               ),
               for (final severity in LogSeverity.values)
-                FilterChip(
-                  label: Text(severity.label),
-                  selected: _severities.contains(severity),
-                  visualDensity: VisualDensity.compact,
-                  selectedColor: _severityColor(severity).withValues(alpha: 0.14),
-                  onSelected: (selected) {
-                    setState(() {
-                      if (selected) {
-                        _severities.add(severity);
-                      } else {
-                        _severities.remove(severity);
-                      }
-                    });
-                  },
-                ),
+                _severityChip(severity),
               OutlinedButton.icon(
                 onPressed: _pickRange,
                 icon: const Icon(Icons.date_range, size: 16),

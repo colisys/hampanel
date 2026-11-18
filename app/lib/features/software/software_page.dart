@@ -394,7 +394,6 @@ class _SoftwarePageState extends State<SoftwarePage>
       children: [
         PageHeader(
           title: '软件管理',
-          subtitle: '已安装软件的状态、配置与托管管理',
           actions: [
             PageRefreshButton(onPressed: _loading ? null : _load),
           ],
@@ -483,16 +482,20 @@ class _SoftwarePageState extends State<SoftwarePage>
         return;
       }
       if (!mounted) return;
-      final edited = await showCodeEditorDialog(
-        context,
-        title: path.split('/').last,
-        initialText: map['content'] as String? ?? '',
-        language: path.endsWith('.toml')
-            ? CodeLanguage.toml
-            : path.endsWith('.conf')
-            ? CodeLanguage.properties
-            : CodeLanguage.plain,
-        description: '编辑 $path。保存前会生成文件历史版本。',
+      final edited = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          builder: (_) => CodeEditorPage(
+            title: path.split('/').last,
+            initialText: map['content'] as String? ?? '',
+            language: path.endsWith('.toml')
+                ? CodeLanguage.toml
+                : path.endsWith('.conf')
+                ? CodeLanguage.properties
+                : CodeLanguage.plain,
+            api: _api,
+            filePath: path,
+          ),
+        ),
       );
       if (edited == null) return;
       await _api.putJson('/api/v1/files/content', {

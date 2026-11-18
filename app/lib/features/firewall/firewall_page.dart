@@ -149,6 +149,33 @@ class _FirewallPageState extends State<FirewallPage> {
     }
   }
 
+  String _direction(FirewallRule rule) {
+    final raw = rule.raw.toUpperCase();
+    if (raw.contains('OUT') || raw.contains('OUTGOING')) return '出站';
+    return '入站';
+  }
+
+  Widget _ruleField(String label, String value, {bool mono = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(fontSize: 10, color: hampanelMuted),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value.isEmpty ? '-' : value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: mono
+              ? monospace.copyWith(fontSize: 11.5)
+              : const TextStyle(fontSize: 11.5),
+        ),
+      ],
+    );
+  }
+
   void _toast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -232,69 +259,51 @@ class _FirewallPageState extends State<FirewallPage> {
                                 final allowed = rule.action
                                     .toUpperCase()
                                     .contains('ALLOW');
-                                final compact =
-                                    MediaQuery.sizeOf(context).width < 720;
-                                final deleteButton = IconButton(
-                                  tooltip: '删除',
-                                  onPressed: () => _deleteRule(rule),
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    size: 18,
-                                  ),
-                                );
                                 return Card(
                                   child: Padding(
-                                    padding: EdgeInsets.all(compact ? 12 : 14),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                    padding: const EdgeInsets.fromLTRB(
+                                      12,
+                                      8,
+                                      4,
+                                      8,
+                                    ),
+                                    child: Row(
                                       children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                rule.to,
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: monospace,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            StatusPill(
-                                              text: rule.action,
-                                              good: allowed,
-                                            ),
-                                            deleteButton,
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Align(
-                                          alignment: Alignment.centerLeft,
-                                          child: Text(
-                                            '来源 ${rule.from}',
-                                            style: TextStyle(
-                                              fontSize: 11.5,
-                                              color: hampanelMuted,
-                                            ),
+                                        Expanded(
+                                          flex: 3,
+                                          child: _ruleField(
+                                            '端口',
+                                            rule.to,
+                                            mono: true,
                                           ),
                                         ),
-                                        if (rule.raw.trim().isNotEmpty) ...[
-                                          const SizedBox(height: 4),
-                                          Align(
-                                            alignment: Alignment.centerLeft,
-                                            child: Text(
-                                              rule.raw,
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 10.5,
-                                                color: hampanelMuted,
-                                              ),
-                                            ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          flex: 3,
+                                          child: _ruleField('来源', rule.from),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        _ruleField(
+                                          '方向',
+                                          _direction(rule),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        StatusPill(
+                                          text: rule.action,
+                                          good: allowed,
+                                        ),
+                                        IconButton(
+                                          tooltip: '删除',
+                                          visualDensity:
+                                              VisualDensity.compact,
+                                          onPressed: () => _deleteRule(rule),
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            size: 18,
                                           ),
-                                        ],
+                                        ),
                                       ],
-                                    )
+                                    ),
                                   ),
                                 );
                               },

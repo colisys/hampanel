@@ -14,6 +14,7 @@ import '../../core/enrollment.dart';
 import '../../core/platform_support.dart';
 import '../../core/session.dart';
 import '../../ui/collapsible.dart';
+import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../ai/ai_tools.dart';
@@ -346,16 +347,7 @@ class _SettingsPageState extends State<SettingsPage> {
       children: [
         PageHeader(
           title: '设置',
-          subtitle: '常规、AI、主机与关于',
-          actions: [
-            if (compact)
-              SubNavMenu(
-                items: const ['常规', 'AI', '主机', '关于'],
-                index: _tab.index,
-                onChanged: (index) =>
-                    setState(() => _tab = _SettingsTab.values[index]),
-              ),
-          ],
+          actions: [PageRefreshButton(onPressed: _refreshAll)],
         ),
         Expanded(
           child: Row(
@@ -655,48 +647,49 @@ class _SettingsPageState extends State<SettingsPage> {
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 720),
                           child: PanelCard(
-                            title: '管理端更新',
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            title: '客户端',
+                            child: Wrap(
+                              spacing: 12,
+                              runSpacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
-                                const ClientUpdatePanel(),
-                                          Container(height: 1, color: hampanelBorder),
-                                          Wrap(
-                                  spacing: 12,
-                                  runSpacing: 8,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    SizedBox(
-                                      width: 190,
-                                      child: DropdownButtonFormField<int>(
-                                        initialValue: ClientSettings
-                                            .instance
-                                            .overviewRefreshSeconds,
-                                        decoration: const InputDecoration(
-                                          labelText: '概览刷新间隔',
+                                SizedBox(
+                                  width: 190,
+                                  child: DropdownButtonFormField<int>(
+                                    initialValue: ClientSettings
+                                        .instance
+                                        .overviewRefreshSeconds,
+                                    decoration: const InputDecoration(
+                                      labelText: '概览刷新间隔',
+                                    ),
+                                    items: [
+                                      for (final seconds
+                                          in ClientSettings.refreshChoices)
+                                        DropdownMenuItem(
+                                          value: seconds,
+                                          child: Text('$seconds 秒'),
                                         ),
-                                        items: [
-                                          for (final seconds
-                                              in ClientSettings.refreshChoices)
-                                            DropdownMenuItem(
-                                              value: seconds,
-                                              child: Text('$seconds 秒'),
-                                            ),
-                                        ],
-                                        onChanged: _setRefreshSeconds,
-                                      ),
-                                    ),
-                                    Text(
-                                      '影响概览指标采样频率。',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: hampanelMuted,
-                                      ),
-                                    ),
-                                  ],
+                                    ],
+                                    onChanged: _setRefreshSeconds,
+                                  ),
+                                ),
+                                Text(
+                                  '影响概览指标采样频率。',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: hampanelMuted,
+                                  ),
                                 ),
                               ],
                             ),
+                          ),
+                        ),
+                      if (_tab == _SettingsTab.general)
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 720),
+                          child: const PanelCard(
+                            title: '管理端更新',
+                            child: ClientUpdatePanel(),
                           ),
                         ),
                       if (_tab == _SettingsTab.ai)
@@ -957,8 +950,32 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
         ),
+        if (compact)
+          Container(
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: hampanelBorder)),
+            ),
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+            child: SafeArea(
+              top: false,
+              child: SubNavMenu(
+                items: const ['常规', 'AI', '主机', '关于'],
+                index: _tab.index,
+                onChanged: (index) =>
+                    setState(() => _tab = _SettingsTab.values[index]),
+              ),
+            ),
+          ),
       ],
     );
+  }
+
+  Future<void> _refreshAll() async {
+    await Future.wait([
+      _check(),
+      _loadUpdate(),
+      _loadAiSettings(),
+    ]);
   }
 
   Future<void> _setRefreshSeconds(int? value) async {

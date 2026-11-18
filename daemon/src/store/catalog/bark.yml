@@ -1,6 +1,6 @@
 services:
   bark:
-    image: finab/bark-server:latest
+    image: docker.io/finab/bark-server:latest
     restart: unless-stopped
     ports:
       - "127.0.0.1:{{port}}:8080"

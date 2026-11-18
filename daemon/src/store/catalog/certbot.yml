@@ -1,6 +1,6 @@
 services:
   certbot:
-    image: certbot/certbot:latest
+    image: docker.io/certbot/certbot:latest
     ports:
       - "{{http_port}}:80"
     volumes:

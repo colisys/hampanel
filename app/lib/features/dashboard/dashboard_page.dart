@@ -181,6 +181,7 @@ class _DashboardPageState extends State<DashboardPage> {
     ];
     return LayoutBuilder(
       builder: (context, constraints) {
+        const spacing = 14.0;
         if (constraints.maxWidth >= 1080) {
           return Column(
             children: [
@@ -190,21 +191,35 @@ class _DashboardPageState extends State<DashboardPage> {
                   children: [
                     for (var i = 0; i < cards.length; i++) ...[
                       Expanded(child: cards[i]),
-                      if (i != cards.length - 1) const SizedBox(width: 14),
+                      if (i != cards.length - 1)
+                        const SizedBox(width: spacing),
                     ],
                   ],
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: spacing),
               _diskCard(),
             ],
           );
         }
+        if (constraints.maxWidth < 700) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final card in cards) ...[
+                card,
+                const SizedBox(height: spacing),
+              ],
+              _diskCard(),
+            ],
+          );
+        }
+        final width = (constraints.maxWidth - spacing) / 2;
         return Wrap(
-          spacing: 14,
-          runSpacing: 14,
+          spacing: spacing,
+          runSpacing: spacing,
           children: [
-            for (final card in cards) SizedBox(width: 330, child: card),
+            for (final card in cards) SizedBox(width: width, child: card),
             SizedBox(width: double.infinity, child: _diskCard()),
           ],
         );

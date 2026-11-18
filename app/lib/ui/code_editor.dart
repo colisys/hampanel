@@ -11,6 +11,9 @@ import 'package:re_highlight/languages/yaml.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
 
+import '../core/api_client.dart';
+import '../core/format.dart';
+import '../core/models/recycle_entry.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -156,7 +159,7 @@ class CodeEditorPaneState extends State<CodeEditorPane> {
               chunkIndicatorColor: hampanelMuted,
               codeTheme: theme,
             ),
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
             indicatorBuilder: (context, editingController, chunkController, notifier) {
               return re.DefaultCodeLineNumber(
                 controller: editingController,
@@ -218,55 +221,210 @@ class CodeEditorPaneState extends State<CodeEditorPane> {
   }
 }
 
-/// Dialog helper for one-off edits. The caller gets the edited text back.
-Future<String?> showCodeEditorDialog(
-  BuildContext context, {
-  required String title,
-  required String initialText,
-  CodeLanguage language = CodeLanguage.plain,
-  String? description,
-  String saveLabel = '保存',
-}) async {
-  final key = GlobalKey<CodeEditorPaneState>();
-  return showDialog<String>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: Text(title),
-      content: DialogBody(
-        maxWidth: 900,
-        maxHeight: 620,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (description != null) ...[
-              Text(
-                description,
-                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-              ),
-              const SizedBox(height: 8),
-            ],
-            Expanded(
-              child: CodeEditorPane(
-                key: key,
-                initialText: initialText,
-                language: language,
+class CodeEditorPage extends StatefulWidget {
+  const CodeEditorPage({
+    super.key,
+    required this.title,
+    required this.initialText,
+    this.language = CodeLanguage.plain,
+    this.api,
+    this.filePath,
+  });
+
+  final String title;
+  final String initialText;
+  final CodeLanguage language;
+  final ApiClient? api;
+  final String? filePath;
+
+  @override
+  State<CodeEditorPage> createState() => _CodeEditorPageState();
+}
+
+class _CodeEditorPageState extends State<CodeEditorPage> {
+  final _editorKey = GlobalKey<CodeEditorPaneState>();
+  List<FileVersion> _versions = const [];
+  bool _historyLoading = false;
+  bool _historyOpen = false;
+  String? _historyError;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.api != null && widget.filePath != null) {
+      _loadHistory();
+    }
+  }
+
+  Future<void> _loadHistory() async {
+    final api = widget.api;
+    final path = widget.filePath;
+    if (api == null || path == null) return;
+    setState(() {
+      _historyLoading = true;
+      _historyError = null;
+    });
+    try {
+      final json = await api.getJson(
+        '/api/v1/files/versions',
+        query: {'path': path},
+      );
+      final map = json as Map<String, dynamic>;
+      final versions = ((map['versions'] as List<dynamic>?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(FileVersion.fromJson)
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _versions = versions;
+        _historyLoading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _historyError = describeError(error);
+        _historyLoading = false;
+      });
+    }
+  }
+
+  void _save() {
+    Navigator.of(context).pop(_editorKey.currentState?.text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final hasHistory = widget.api != null && widget.filePath != null;
+    final editor = CodeEditorPane(
+      key: _editorKey,
+      initialText: widget.initialText,
+      language: widget.language,
+    );
+    final history = hasHistory ? _historyPanel() : null;
+    return Scaffold(
+      backgroundColor: hampanelBackground,
+      appBar: AppBar(
+        backgroundColor: hampanelBackground,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        title: Text(
+          widget.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        actions: [
+          if (hasHistory && !wide)
+            IconButton(
+              tooltip: '文件历史',
+              onPressed: () =>
+                  setState(() => _historyOpen = !_historyOpen),
+              icon: Icon(
+                _historyOpen ? Icons.history_toggle_off : Icons.history,
+                size: 20,
               ),
             ),
-          ],
-        ),
+          IconButton(
+            tooltip: '保存',
+            onPressed: _save,
+            icon: const Icon(Icons.save_outlined, size: 20),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('取消'),
+      body: wide
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
+                    child: editor,
+                  ),
+                ),
+                if (history != null) ...[
+                  const VerticalDivider(width: 1),
+                  SizedBox(width: 300, child: history),
+                ],
+              ],
+            )
+          : Column(
+              children: [
+                Expanded(child: editor),
+                if (history != null && _historyOpen)
+                  SizedBox(height: 210, child: history),
+              ],
+            ),
+    );
+  }
+
+  Widget _historyPanel() {
+    if (_historyLoading) return const LoadingView();
+    if (_historyError != null) {
+      return Padding(
+        padding: const EdgeInsets.all(12),
+        child: ErrorBanner(
+          message: _historyError!,
+          onRetry: _loadHistory,
         ),
-        FilledButton(
-          onPressed: () => Navigator.pop(dialogContext, key.currentState?.text),
-          child: Text(saveLabel),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 6),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  '文件历史',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: '刷新',
+                visualDensity: VisualDensity.compact,
+                onPressed: _loadHistory,
+                icon: const Icon(Icons.refresh, size: 18),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: _versions.isEmpty
+              ? Center(
+                  child: Text(
+                    '暂无修改记录',
+                    style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+                  ),
+                )
+              : ListView.separated(
+                  itemCount: _versions.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final version = _versions[index];
+                    return ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.history, size: 17),
+                      title: Text(
+                        formatDateTime(version.createdAt),
+                        style: const TextStyle(fontSize: 11.5),
+                      ),
+                      subtitle: Text(
+                        formatBytes(version.size),
+                        style: const TextStyle(fontSize: 10.5),
+                      ),
+                    );
+                  },
+                ),
         ),
       ],
-    ),
-  );
+    );
+  }
 }
 
 class _FindPanel extends StatelessWidget implements PreferredSizeWidget {

@@ -3,6 +3,7 @@ const compat = @import("compat");
 
 pub const Process = struct {
     pid: u32,
+    ppid: u32,
     name: []const u8,
     state: []const u8,
     rss_bytes: u64,
@@ -135,6 +136,7 @@ fn readProcess(allocator: std.mem.Allocator, pid: u32) !Process {
     const rss_bytes: u64 = if (info.rss_pages > 0) @as(u64, @intCast(info.rss_pages)) * 4096 else 0;
     return .{
         .pid = pid,
+        .ppid = info.ppid,
         .name = info.name,
         .state = info.state,
         .rss_bytes = rss_bytes,

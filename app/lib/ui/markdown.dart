@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'theme.dart';
@@ -201,14 +202,14 @@ class MarkdownText extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (final block in blocks) ...[
-          _block(block, style),
+          _block(context, block, style),
           const SizedBox(height: 6),
         ],
       ],
     );
   }
 
-  Widget _block(MdBlock block, TextStyle style) {
+  Widget _block(BuildContext context, MdBlock block, TextStyle style) {
     switch (block.kind) {
       case MdBlockKind.heading:
         final size = switch (block.level) {
@@ -248,21 +249,56 @@ class MarkdownText extends StatelessWidget {
       case MdBlockKind.code:
         return Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: hampanelSurfaceAlt,
             border: Border.all(color: hampanelBorder),
           ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SelectableText(
-              block.text,
-              style: TextStyle(
-                fontFamily: 'DejaVu Sans Mono',
-                fontSize: 11.5,
-                height: 1.45,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 10),
+                    child: Text(
+                      '代码',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: hampanelMuted,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: '复制代码',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: block.text));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('代码已复制')),
+                      );
+                    },
+                    icon: const Icon(Icons.copy_all_outlined, size: 17),
+                  ),
+                ],
               ),
-            ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.all(10),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SelectableText(
+                    block.text,
+                    style: TextStyle(
+                      fontFamily: 'DejaVu Sans Mono',
+                      fontSize: 11.5,
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       case MdBlockKind.quote:

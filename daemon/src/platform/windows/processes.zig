@@ -5,6 +5,7 @@ const c2 = @import("windows_c");
 
 pub const Process = struct {
     pid: u32,
+    ppid: u32,
     name: []const u8,
     state: []const u8,
     rss_bytes: u64,
@@ -32,7 +33,12 @@ pub fn list(allocator: std.mem.Allocator, limit: usize) !ProcessList {
     while (true) {
         total += 1;
         if (items.items.len < limit * 2) {
-            const process = readProcess(allocator, entry.th32ProcessID, std.mem.sliceTo(&entry.szExeFile, 0)) catch null;
+            const process = readProcess(
+                allocator,
+                entry.th32ProcessID,
+                entry.th32ParentProcessID,
+                std.mem.sliceTo(&entry.szExeFile, 0),
+            ) catch null;
             if (process) |value| try items.append(value);
         }
         if (c2.Process32NextW(snapshot, &entry) == 0) break;
@@ -48,7 +54,12 @@ pub fn list(allocator: std.mem.Allocator, limit: usize) !ProcessList {
     return .{ .total = total, .processes = trimmed };
 }
 
-fn readProcess(allocator: std.mem.Allocator, pid: u32, name_wide: []const u16) !Process {
+fn readProcess(
+    allocator: std.mem.Allocator,
+    pid: u32,
+    ppid: u32,
+    name_wide: []const u16,
+) !Process {
     const name = try common.fromW(allocator, name_wide);
     var rss: u64 = 0;
     var cpu_ticks: u64 = 0;
@@ -83,6 +94,7 @@ fn readProcess(allocator: std.mem.Allocator, pid: u32, name_wide: []const u16) !
 
     return .{
         .pid = pid,
+        .ppid = ppid,
         .name = name,
         .state = "running",
         .rss_bytes = rss,

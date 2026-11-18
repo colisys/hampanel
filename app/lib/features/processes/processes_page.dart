@@ -8,6 +8,16 @@ import '../../ui/theme.dart';
 import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 
+enum _ProcessSort {
+  memory('内存'),
+  cpu('CPU 时间'),
+  pid('PID'),
+  name('名称');
+
+  const _ProcessSort(this.label);
+  final String label;
+}
+
 class ProcessesPage extends StatefulWidget {
   const ProcessesPage({super.key});
 
@@ -20,6 +30,9 @@ class _ProcessesPageState extends State<ProcessesPage> {
   String? _error;
   bool _loading = true;
   String _filter = '';
+  String _state = '全部';
+  _ProcessSort _sort = _ProcessSort.memory;
+  int? _childrenOf;
   int? _busyPid;
 
   @override
@@ -49,17 +62,50 @@ class _ProcessesPageState extends State<ProcessesPage> {
   }
 
   List<ProcessInfo> get _filtered {
-    final items = _list?.processes ?? const <ProcessInfo>[];
-    if (_filter.trim().isEmpty) return items;
-    final needle = _filter.toLowerCase();
-    return items
-        .where(
-          (process) =>
-              process.name.toLowerCase().contains(needle) ||
-              process.command.toLowerCase().contains(needle) ||
-              process.pid.toString() == needle,
-        )
-        .toList();
+    final items = List<ProcessInfo>.from(
+      _list?.processes ?? const <ProcessInfo>[],
+    );
+    final needle = _filter.trim().toLowerCase();
+    final childrenOf = _childrenOf;
+    final filtered = items.where((process) {
+      if (_state != '全部' && process.state != _state) return false;
+      if (childrenOf != null && process.ppid != childrenOf) return false;
+      if (needle.isEmpty) return true;
+      return process.name.toLowerCase().contains(needle) ||
+          process.command.toLowerCase().contains(needle) ||
+          process.pid.toString() == needle ||
+          process.ppid.toString() == needle;
+    }).toList();
+    filtered.sort((left, right) {
+      switch (_sort) {
+        case _ProcessSort.memory:
+          return right.rssBytes.compareTo(left.rssBytes);
+        case _ProcessSort.cpu:
+          return right.cpuTicks.compareTo(left.cpuTicks);
+        case _ProcessSort.pid:
+          return left.pid.compareTo(right.pid);
+        case _ProcessSort.name:
+          return left.name.toLowerCase().compareTo(right.name.toLowerCase());
+      }
+    });
+    return filtered;
+  }
+
+  List<String> get _states {
+    final values = <String>{'全部', _state};
+    for (final process in _list?.processes ?? const <ProcessInfo>[]) {
+      values.add(process.state);
+    }
+    return values.toList();
+  }
+
+  void _showPid(int pid) {
+    final api = PanelScope.of(context).api;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProcessDetailPage(api: api, pid: pid, name: ''),
+      ),
+    );
   }
 
   Future<void> _showDetail(ProcessInfo process) async {
@@ -113,22 +159,9 @@ class _ProcessesPageState extends State<ProcessesPage> {
       children: [
         PageHeader(
           title: '进程',
-          subtitle: '共 ${_list?.total ?? 0} 个进程，按内存占用排序',
-          actions: [
-            SizedBox(
-              width: 240,
-              child: TextField(
-                decoration: const InputDecoration(
-                  hintText: '搜索名称 / PID / 命令',
-                  prefixIcon: Icon(Icons.search, size: 17),
-                ),
-                onChanged: (value) => setState(() => _filter = value),
-              ),
-            ),
-            const SizedBox(width: 8),
-            PageRefreshButton(onPressed: _load),
-          ],
+          actions: [PageRefreshButton(onPressed: _load)],
         ),
+        _filterBar(),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
         Expanded(
           child: _loading
@@ -149,6 +182,7 @@ class _ProcessesPageState extends State<ProcessesPage> {
                             dataRowMaxHeight: 44,
                             columns: const [
                               DataColumn(label: Text('PID')),
+                              DataColumn(label: Text('PPID')),
                               DataColumn(label: Text('名称')),
                               DataColumn(label: Text('状态')),
                               DataColumn(label: Text('内存')),
@@ -162,6 +196,9 @@ class _ProcessesPageState extends State<ProcessesPage> {
                                   cells: [
                                     DataCell(
                                       Text('${process.pid}', style: monospace),
+                                    ),
+                                    DataCell(
+                                      Text('${process.ppid}', style: monospace),
                                     ),
                                     DataCell(
                                       Text(
@@ -219,6 +256,89 @@ class _ProcessesPageState extends State<ProcessesPage> {
     );
   }
 
+  Widget _filterBar() {
+    final compact = MediaQuery.sizeOf(context).width < 700;
+    final search = TextField(
+      decoration: const InputDecoration(
+        hintText: '搜索名称 / PID / PPID / 命令',
+        prefixIcon: Icon(Icons.search, size: 17),
+        isDense: true,
+      ),
+      onChanged: (value) => setState(() => _filter = value),
+    );
+    final stateFilter = DropdownButtonFormField<String>(
+      key: ValueKey('state-$_state-${_states.length}'),
+      initialValue: _state,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: '状态', isDense: true),
+      items: [
+        for (final state in _states)
+          DropdownMenuItem(value: state, child: Text(state)),
+      ],
+      onChanged: (value) => setState(() => _state = value ?? '全部'),
+    );
+    final sortFilter = DropdownButtonFormField<_ProcessSort>(
+      key: ValueKey('sort-$_sort'),
+      initialValue: _sort,
+      isExpanded: true,
+      decoration: const InputDecoration(labelText: '排序', isDense: true),
+      items: [
+        for (final sort in _ProcessSort.values)
+          DropdownMenuItem(value: sort, child: Text(sort.label)),
+      ],
+      onChanged: (value) => setState(() => _sort = value ?? _ProcessSort.memory),
+    );
+    final childrenChip = _childrenOf == null
+        ? null
+        : InputChip(
+            label: Text('仅看 PID $_childrenOf 的子进程'),
+            onDeleted: () => setState(() => _childrenOf = null),
+          );
+    return Padding(
+      padding: pageContentPadding(context, top: 0).copyWith(bottom: 8),
+      child: compact
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                search,
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: stateFilter),
+                    const SizedBox(width: 8),
+                    Expanded(child: sortFilter),
+                  ],
+                ),
+                if (childrenChip != null) ...[
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: childrenChip,
+                  ),
+                ],
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(child: search),
+                const SizedBox(width: 10),
+                SizedBox(width: 160, child: stateFilter),
+                const SizedBox(width: 10),
+                SizedBox(width: 160, child: sortFilter),
+                if (childrenChip != null) ...[
+                  const SizedBox(width: 8),
+                  childrenChip,
+                ],
+                const SizedBox(width: 10),
+                Text(
+                  '${_filtered.length} 个',
+                  style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+                ),
+              ],
+            ),
+    );
+  }
+
   Widget _processMenu(ProcessInfo process) {
     if (_busyPid == process.pid) {
       return const SizedBox(
@@ -232,16 +352,26 @@ class _ProcessesPageState extends State<ProcessesPage> {
       onSelected: (value) {
         if (value == 'detail') {
           _showDetail(process);
+        } else if (value == 'parent') {
+          if (process.ppid > 0) _showPid(process.ppid);
+        } else if (value == 'children') {
+          setState(() => _childrenOf = process.pid);
         } else if (value == 'term') {
           _terminate(process, 'TERM');
         } else if (value == 'kill') {
           _terminate(process, 'KILL');
         }
       },
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'detail', child: Text('详情')),
-        PopupMenuItem(value: 'term', child: Text('结束进程 (TERM)')),
-        PopupMenuItem(value: 'kill', child: Text('强制结束 (KILL)')),
+      itemBuilder: (context) => [
+        const PopupMenuItem(value: 'detail', child: Text('详情')),
+        if (process.ppid > 0)
+          PopupMenuItem(
+            value: 'parent',
+            child: Text('查看父进程 (${process.ppid})'),
+          ),
+        const PopupMenuItem(value: 'children', child: Text('查找子进程')),
+        const PopupMenuItem(value: 'term', child: Text('结束进程 (TERM)')),
+        const PopupMenuItem(value: 'kill', child: Text('强制结束 (KILL)')),
       ],
     );
   }
@@ -254,6 +384,9 @@ class _ProcessesPageState extends State<ProcessesPage> {
       separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final process = processes[index];
+        final childCount = (_list?.processes ?? const <ProcessInfo>[])
+            .where((item) => item.ppid == process.pid)
+            .length;
         return Card(
           child: InkWell(
             onTap: () => _showDetail(process),
@@ -290,6 +423,15 @@ class _ProcessesPageState extends State<ProcessesPage> {
                         'PID ${process.pid}',
                         style: monospace.copyWith(fontSize: 11.5),
                       ),
+                      Text(
+                        'PPID ${process.ppid}',
+                        style: monospace.copyWith(fontSize: 11.5),
+                      ),
+                      if (childCount > 0)
+                        Text(
+                          '子进程 $childCount',
+                          style: monospace.copyWith(fontSize: 11.5),
+                        ),
                       Text(
                         formatBytes(process.rssBytes),
                         style: monospace.copyWith(fontSize: 11.5),
@@ -342,7 +484,9 @@ class ProcessDetailPage extends StatefulWidget {
   State<ProcessDetailPage> createState() => _ProcessDetailPageState();
 }
 
-class _ProcessDetailPageState extends State<ProcessDetailPage> {
+class _ProcessDetailPageState extends State<ProcessDetailPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs;
   ProcessDetail? _detail;
   String? _error;
   bool _loading = true;
@@ -350,7 +494,14 @@ class _ProcessDetailPageState extends State<ProcessDetailPage> {
   @override
   void initState() {
     super.initState();
+    _tabs = TabController(length: 4, vsync: this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -384,13 +535,22 @@ class _ProcessDetailPageState extends State<ProcessDetailPage> {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         title: Text(
-          widget.name.isEmpty ? '进程详情' : widget.name,
+          widget.name.isEmpty
+              ? (detail == null ? '进程详情' : '${detail.name} (${detail.pid})')
+              : widget.name,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        actions: [
-          PageRefreshButton(onPressed: _load),
-        ],
+        actions: [PageRefreshButton(onPressed: _load)],
+        bottom: TabBar(
+          controller: _tabs,
+          tabs: const [
+            Tab(text: '概览'),
+            Tab(text: '路径'),
+            Tab(text: '端口'),
+            Tab(text: '文件'),
+          ],
+        ),
       ),
       body: SafeArea(
         child: _loading
@@ -400,86 +560,114 @@ class _ProcessDetailPageState extends State<ProcessDetailPage> {
                 padding: const EdgeInsets.all(24),
                 child: ErrorBanner(message: _error!, onRetry: _load),
               )
-            : ListView(
-                padding: pageContentPadding(context, top: 4),
+            : detail == null
+            ? const SizedBox.shrink()
+            : TabBarView(
+                controller: _tabs,
                 children: [
-                  _DetailCard(
-                    title: '概览',
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _row('PID', '${detail!.pid}'),
-                        _row('名称', detail.name),
-                        _row('状态', detail.state),
-                        _row('父进程', '${detail.ppid}'),
-                        _row('用户 / 组', '${detail.uid} / ${detail.gid}'),
-                        _row('线程数', '${detail.threads}'),
-                        _row('内存占用', formatBytes(detail.rssBytes)),
-                        _row('CPU 时间', _formatTicks(detail.cpuTicks)),
-                      ],
-                    ),
-                  ),
-                  _DetailCard(
-                    title: '路径',
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _row('可执行文件', detail.exe.isEmpty ? '-' : detail.exe),
-                        _row('工作目录', detail.cwd.isEmpty ? '-' : detail.cwd),
-                        _row('命令行', detail.command),
-                      ],
-                    ),
-                  ),
-                  _DetailCard(
-                    title: '监听 / 打开的端口',
-                    child: detail.ports.isEmpty
-                        ? Text(
-                            '未发现关联端口',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: hampanelMuted,
-                            ),
-                          )
-                        : Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: [
-                              for (final port in detail.ports)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 7,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(color: hampanelBorder),
-                                  ),
-                                  child: Text(
-                                    '${port.protocol} ${port.localPort} · ${port.state}',
-                                    style: monospace.copyWith(fontSize: 11),
-                                  ),
-                                ),
-                            ],
-                          ),
-                  ),
-                  _DetailCard(
-                    title: '打开的文件（${detail.openFiles.length}）',
-                    child: Container(
-                      height: 180,
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: hampanelSurfaceAlt,
-                        border: Border.all(color: hampanelBorder),
-                      ),
-                      child: SingleChildScrollView(
-                        child: SelectableText(
-                          detail.openFiles.isEmpty
-                              ? '无法读取打开的文件'
-                              : detail.openFiles.take(120).join('\n'),
-                          style: monospace.copyWith(fontSize: 11),
+                  ListView(
+                    padding: pageContentPadding(context),
+                    children: [
+                      _DetailCard(
+                        title: '概览',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _row('PID', '${detail.pid}'),
+                            _row('名称', detail.name),
+                            _row('状态', detail.state),
+                            _row('父进程', '${detail.ppid}'),
+                            _row('用户 / 组', '${detail.uid} / ${detail.gid}'),
+                            _row('线程数', '${detail.threads}'),
+                            _row('内存占用', formatBytes(detail.rssBytes)),
+                            _row('CPU 时间', _formatTicks(detail.cpuTicks)),
+                          ],
                         ),
                       ),
-                    ),
+                    ],
+                  ),
+                  ListView(
+                    padding: pageContentPadding(context),
+                    children: [
+                      _DetailCard(
+                        title: '路径与命令',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _row(
+                              '可执行文件',
+                              detail.exe.isEmpty ? '-' : detail.exe,
+                            ),
+                            _row(
+                              '工作目录',
+                              detail.cwd.isEmpty ? '-' : detail.cwd,
+                            ),
+                            _row('命令行', detail.command),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  ListView(
+                    padding: pageContentPadding(context),
+                    children: [
+                      _DetailCard(
+                        title: '监听 / 打开的端口',
+                        child: detail.ports.isEmpty
+                            ? Text(
+                                '未发现关联端口',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: hampanelMuted,
+                                ),
+                              )
+                            : Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  for (final port in detail.ports)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 7,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          color: hampanelBorder,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        '${port.protocol} ${port.localPort} · ${port.state}',
+                                        style: monospace.copyWith(fontSize: 11),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                      ),
+                    ],
+                  ),
+                  ListView(
+                    padding: pageContentPadding(context),
+                    children: [
+                      _DetailCard(
+                        title: '打开的文件（${detail.openFiles.length}）',
+                        child: Container(
+                          constraints: const BoxConstraints(minHeight: 240),
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: hampanelSurfaceAlt,
+                            border: Border.all(color: hampanelBorder),
+                          ),
+                          child: SelectableText(
+                            detail.openFiles.isEmpty
+                                ? '无法读取打开的文件'
+                                : detail.openFiles.take(200).join('\n'),
+                            style: monospace.copyWith(fontSize: 11),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

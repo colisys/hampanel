@@ -16,7 +16,9 @@ class WafPage extends StatefulWidget {
   State<WafPage> createState() => _WafPageState();
 }
 
-class _WafPageState extends State<WafPage> {
+class _WafPageState extends State<WafPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _sectionTabs;
   WafStatus? _status;
   bool _loading = true;
   bool _busy = false;
@@ -55,11 +57,16 @@ class _WafPageState extends State<WafPage> {
   @override
   void initState() {
     super.initState();
+    _sectionTabs = TabController(
+      length: _sectionLabels.length,
+      vsync: this,
+    );
     _load();
   }
 
   @override
   void dispose() {
+    _sectionTabs.dispose();
     _listenHost.dispose();
     _listenPort.dispose();
     _upstreamHost.dispose();
@@ -589,31 +596,15 @@ class _WafPageState extends State<WafPage> {
       children: [
         PageHeader(
           title: 'WAF',
-          subtitle: 'Caddy + Coraza + OWASP CRS 独立边缘，对任意 Web 引擎统一防护',
-          actions: [
-            PageRefreshButton(onPressed: _load),
-          ],
+          actions: [PageRefreshButton(onPressed: _load)],
         ),
         if (!_loading)
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: EdgeInsets.symmetric(
-                horizontal: MediaQuery.sizeOf(context).width < 720 ? 12 : 24,
-              ),
-              children: [
-                for (var i = 0; i < _sectionLabels.length; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
-                      label: Text(_sectionLabels[i]),
-                      selected: _wafSection == i,
-                      onSelected: (_) => setState(() => _wafSection = i),
-                    ),
-                  ),
-              ],
-            ),
+          TabBar(
+            controller: _sectionTabs,
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            onTap: (index) => setState(() => _wafSection = index),
+            tabs: [for (final label in _sectionLabels) Tab(text: label)],
           ),
         Expanded(
           child: _loading
@@ -742,7 +733,6 @@ class _WafPageState extends State<WafPage> {
           ],
         ),
       ),
-      const SizedBox(height: 14),
       PanelCard(
         title: '边缘配置',
         child: Column(
@@ -841,7 +831,6 @@ class _WafPageState extends State<WafPage> {
           ],
         ),
       ),
-      const SizedBox(height: 14),
       PanelCard(
         title: '站点策略与 TLS',
         trailing: StatusPill(
@@ -963,7 +952,6 @@ class _WafPageState extends State<WafPage> {
           ],
         ),
       ),
-      const SizedBox(height: 14),
       PanelCard(
         title: 'TypeSafe 风险复检',
         trailing: StatusPill(
@@ -1044,7 +1032,6 @@ class _WafPageState extends State<WafPage> {
           ],
         ),
       ),
-      const SizedBox(height: 14),
       PanelCard(
         title: 'Geo 选择器（拒绝）',
         trailing: _catalogLoading
@@ -1128,7 +1115,6 @@ class _WafPageState extends State<WafPage> {
           ],
         ),
       ),
-      const SizedBox(height: 14),
       PanelCard(
         title: '防护说明',
         child: Text(

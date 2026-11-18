@@ -536,16 +536,7 @@ class _SshPageState extends State<SshPage> {
       children: [
         PageHeader(
           title: 'SSH 管理',
-          subtitle: 'sshd 状态、安全配置与 authorized_keys',
-          actions: [
-            if (compact)
-              SubNavMenu(
-                items: const ['概览', '密钥', '日志'],
-                index: _section,
-                onChanged: (index) => setState(() => _section = index),
-              ),
-            PageRefreshButton(onPressed: _loadStatus),
-          ],
+          actions: [PageRefreshButton(onPressed: _loadStatus)],
         ),
         Expanded(
           child: _loading
@@ -568,6 +559,30 @@ class _SshPageState extends State<SshPage> {
                 )
               : _content(status),
         ),
+        if (compact)
+          Container(
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: hampanelBorder)),
+            ),
+            padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+            child: SafeArea(
+              top: false,
+              child: Row(
+                children: [
+                  SubNavMenu(
+                    items: const ['概览', '密钥', '日志'],
+                    index: _section,
+                    onChanged: (index) => setState(() => _section = index),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${_keys.length} 个公钥',
+                    style: TextStyle(fontSize: 11, color: hampanelMuted),
+                  ),
+                ],
+              ),
+            ),
+          ),
       ],
     );
   }

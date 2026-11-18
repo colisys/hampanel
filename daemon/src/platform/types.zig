@@ -53,6 +53,7 @@ pub const Metrics = struct {
 
 pub const ProcessInfo = struct {
     pid: u32,
+    ppid: u32,
     name: []const u8,
     state: []const u8,
     rss_bytes: u64,

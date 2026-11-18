@@ -93,68 +93,133 @@ class _LogsPageState extends State<LogsPage> {
     }
   }
 
+  Future<void> _pickSource() async {
+    final source = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final item in _sources)
+              ListTile(
+                leading: Icon(
+                  item.id == _selected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 18,
+                ),
+                title: Text(item.label),
+                onTap: () => Navigator.pop(context, item.id),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || source == _selected) return;
+    setState(() => _selected = source);
+    await _loadTail();
+  }
+
+  Future<void> _pickLines() async {
+    final lines = await showModalBottomSheet<int>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            for (final value in const [100, 200, 500, 1000, 2000])
+              ListTile(
+                leading: Icon(
+                  value == _lines
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 18,
+                ),
+                title: Text('$value 行'),
+                onTap: () => Navigator.pop(context, value),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (lines == null || lines == _lines) return;
+    setState(() => _lines = lines);
+    await _loadTail();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 720;
+    final selectedLabel = _sources
+        .where((source) => source.id == _selected)
+        .map((source) => source.label)
+        .firstOrNull;
     return Column(
       children: [
         PageHeader(
           title: '日志',
-          subtitle: '面板审计与系统日志 · 内容/级别/时间筛选',
           actions: [
-            SizedBox(
-              width: 180,
-              child: DropdownButtonFormField<String>(
-                initialValue: _selected,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: '日志源',
-                  isDense: true,
-                ),
-                items: [
-                  for (final source in _sources)
-                    DropdownMenuItem(
-                      value: source.id,
-                      child: Text(
-                        source.label,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-                onChanged: (value) {
-                  setState(() => _selected = value);
-                  _loadTail();
-                },
-              ),
-            ),
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 96,
-              child: DropdownButtonFormField<int>(
-                initialValue: _lines,
-                decoration: const InputDecoration(
-                  labelText: '行数',
-                  isDense: true,
-                ),
-                items: const [
-                  DropdownMenuItem(value: 100, child: Text('100')),
-                  DropdownMenuItem(value: 200, child: Text('200')),
-                  DropdownMenuItem(value: 500, child: Text('500')),
-                  DropdownMenuItem(value: 1000, child: Text('1000')),
-                  DropdownMenuItem(value: 2000, child: Text('2000')),
-                ],
-                onChanged: (value) {
-                  setState(() => _lines = value ?? 200);
-                  _loadTail();
-                },
-              ),
-            ),
-            const SizedBox(width: 4),
             PageRefreshButton(
               onPressed: _loadTail,
               refreshing: _loadingContent,
             ),
           ],
         ),
+        if (!compact)
+          Padding(
+            padding: pageContentPadding(context, top: 0).copyWith(bottom: 8),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 220,
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _selected,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: '日志源',
+                      isDense: true,
+                    ),
+                    items: [
+                      for (final source in _sources)
+                        DropdownMenuItem(
+                          value: source.id,
+                          child: Text(
+                            source.label,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      setState(() => _selected = value);
+                      _loadTail();
+                    },
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 120,
+                  child: DropdownButtonFormField<int>(
+                    initialValue: _lines,
+                    decoration: const InputDecoration(
+                      labelText: '行数',
+                      isDense: true,
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 100, child: Text('100')),
+                      DropdownMenuItem(value: 200, child: Text('200')),
+                      DropdownMenuItem(value: 500, child: Text('500')),
+                      DropdownMenuItem(value: 1000, child: Text('1000')),
+                      DropdownMenuItem(value: 2000, child: Text('2000')),
+                    ],
+                    onChanged: (value) {
+                      setState(() => _lines = value ?? 200);
+                      _loadTail();
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
         if (_error != null)
           ErrorBanner(message: _error!, onRetry: _loadSources),
         Expanded(
@@ -169,6 +234,21 @@ class _LogsPageState extends State<LogsPage> {
                   ),
                 ),
         ),
+        if (compact)
+          ActionDock(
+            actions: [
+              ActionDockItem(
+                icon: Icons.source_outlined,
+                label: selectedLabel ?? '日志源',
+                onPressed: _pickSource,
+              ),
+              ActionDockItem(
+                icon: Icons.format_list_numbered,
+                label: '$_lines 行',
+                onPressed: _pickLines,
+              ),
+            ],
+          ),
       ],
     );
   }

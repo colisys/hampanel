@@ -40,31 +40,20 @@ class StorePage extends StatelessWidget {
                           ),
                         ],
                       ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Docker Compose 应用 · 系统工具 · Nix 运行与构建',
-                        style: TextStyle(fontSize: 12.5, color: hampanelMuted),
-                      ),
                     ],
                   ),
                 ),
               ],
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: TabBar(
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
-                tabs: [
-                  Tab(text: 'Docker 应用'),
-                  Tab(text: '系统工具'),
-                  Tab(text: 'Nix'),
-                ],
-              ),
-            ),
+          const TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            tabs: [
+              Tab(text: 'Docker 应用'),
+              Tab(text: '系统工具'),
+              Tab(text: 'Nix'),
+            ],
           ),
           const Expanded(
             child: TabBarView(

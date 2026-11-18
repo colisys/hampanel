@@ -220,6 +220,9 @@ class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
       key: ValueKey(hampanelBrightness),
       title: 'Hampanel',
       debugShowCheckedModeBanner: false,
+      locale: const Locale('zh', 'CN'),
+      supportedLocales: const [Locale('zh', 'CN'), Locale('en')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       theme: buildHampanelTheme(),
       builder: (context, child) => MediaQuery.withClampedTextScaling(
         minScaleFactor: 0.85,

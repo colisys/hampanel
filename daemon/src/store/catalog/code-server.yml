@@ -1,6 +1,6 @@
 services:
   code-server:
-    image: codercom/code-server:4
+    image: docker.io/codercom/code-server:4
     restart: unless-stopped
     environment:
       PASSWORD: "{{password}}"
