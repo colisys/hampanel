@@ -66,22 +66,39 @@ pub const Detail = struct {
     owner_cn: []const u8,
 };
 
+/// Rolling spool. Once it reaches `max_output` the oldest half is dropped and
+/// `base` advances, so a long build always keeps its most recent output.
 pub const Output = struct {
     allocator: std.mem.Allocator,
     file: compat.File,
     bytes: u64 = 0,
+    base: u64 = 0,
     truncated: bool = false,
 
     pub fn append(self: *Output, data: []const u8) !void {
         if (data.len == 0) return;
-        if (self.bytes >= max_output) {
-            self.truncated = true;
-            return;
+        var rest = data;
+        while (rest.len > 0) {
+            if (self.bytes >= max_output) try self.roll();
+            const room: usize = @intCast(@min(max_output - self.bytes, rest.len));
+            try self.file.writePositionalAll(rest[0..room], self.bytes);
+            self.bytes += room;
+            rest = rest[room..];
         }
-        const room: usize = @intCast(@min(max_output - self.bytes, data.len));
-        try self.file.writeAll(data[0..room]);
-        self.bytes += room;
-        if (room < data.len) self.truncated = true;
+        if (self.base > 0) self.truncated = true;
+    }
+
+    fn roll(self: *Output) !void {
+        const keep = max_output / 2;
+        const dropped = self.bytes - keep;
+        const buffer = try self.allocator.alloc(u8, keep);
+        defer self.allocator.free(buffer);
+        const read = try self.file.readPositionalAll(buffer, dropped);
+        try self.file.setLength(0);
+        try self.file.writePositionalAll(buffer[0..read], 0);
+        self.bytes = read;
+        self.base += dropped;
+        self.truncated = true;
     }
 };
 
@@ -702,14 +719,15 @@ pub const Manager = struct {
         const now = compat.milliTimestamp();
         self.database.execute(
             "UPDATE tasks SET status = ?1, error = ?2, result = ?3, output_bytes = ?4, " ++
-                "output_truncated = ?5, finished_at = ?6, updated_at = ?6, phase = '' " ++
-                "WHERE id = ?7",
+                "output_truncated = ?5, output_base = ?6, finished_at = ?7, " ++
+                "updated_at = ?7, phase = '' WHERE id = ?8",
             &.{
                 .{ .text = status.name() },
                 .{ .text = error_text },
                 .{ .text = result },
                 .{ .int = @intCast(output.bytes) },
                 .{ .int = if (output.truncated) 1 else 0 },
+                .{ .int = @intCast(output.base) },
                 .{ .int = now },
                 .{ .text = task.id },
             },
@@ -976,4 +994,43 @@ test "task pruning keeps the newest finished tasks within the cap" {
     try std.testing.expect((try manager.get(std.heap.smp_allocator, "third")) != null);
     try std.testing.expect((try manager.get(std.heap.smp_allocator, "second")) == null);
     try std.testing.expect((try manager.get(std.heap.smp_allocator, "first")) == null);
+}
+
+test "output spool rolls and keeps the most recent bytes" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(dir);
+    const path = try std.fs.path.join(allocator, &.{ dir, "spool.log" });
+    defer allocator.free(path);
+
+    var output = Output{
+        .allocator = allocator,
+        .file = try compat.createFileAbsolute(path, .{ .truncate = true, .read = true }),
+    };
+    defer output.file.close();
+
+    const chunk = try allocator.alloc(u8, max_output / 3);
+    defer allocator.free(chunk);
+    @memset(chunk, 'a');
+    try output.append(chunk);
+    @memset(chunk, 'b');
+    try output.append(chunk);
+    try std.testing.expectEqual(@as(u64, 0), output.base);
+    try std.testing.expect(!output.truncated);
+
+    @memset(chunk, 'c');
+    try output.append(chunk);
+    try std.testing.expectEqual(@as(u64, 0), output.base);
+    try output.append("tail");
+    try std.testing.expect(output.base > 0);
+    try std.testing.expect(output.truncated);
+    try std.testing.expect(output.bytes <= max_output);
+
+    const tail = try allocator.alloc(u8, 8);
+    defer allocator.free(tail);
+    const read = try output.file.readPositionalAll(tail, output.bytes - 4);
+    try std.testing.expectEqual(@as(usize, 4), read);
+    try std.testing.expectEqualStrings("tail", tail[0..4]);
 }

@@ -190,6 +190,11 @@ class _TaskDetailDialogState extends State<_TaskDetailDialog> {
         _done = !(_status == 'queued' || _status == 'running' || _status == 'canceling');
       });
     }
+    if (event == 'reset') {
+      _output.clear();
+      setState(() {});
+      return;
+    }
     if (event == 'gone') setState(() => _done = true);
   }
 

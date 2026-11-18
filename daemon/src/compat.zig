@@ -131,6 +131,10 @@ pub const File = struct {
     pub fn readPositionalAll(self: File, buffer: []u8, offset: u64) !usize {
         return self.inner.readPositionalAll(io(), buffer, offset);
     }
+
+    pub fn setLength(self: File, size: u64) !void {
+        try self.inner.setLength(io(), size);
+    }
 };
 
 pub const Dir = struct {

@@ -301,10 +301,16 @@ pub fn outputEvents(ctx: *context.Context) anyerror!void {
             break;
         };
 
+        var seen_base = detail.output_base;
         if (detail.output_path.len > 0) {
             if (compat.openFileAbsolute(detail.output_path, .{})) |file| {
                 defer file.close();
                 if (file.stat()) |stat| {
+                    if (@as(i64, @intCast(offset)) < seen_base) {
+                        offset = 0;
+                        http_response.event(ctx.conn, "reset", "{}") catch return;
+                        seen_base = 0;
+                    }
                     while (offset < stat.size) {
                         const want: usize = @intCast(@min(stat.size - offset, 32 * 1024));
                         const buffer = arena.allocator().alloc(u8, want) catch break;
