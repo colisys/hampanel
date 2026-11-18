@@ -16,6 +16,7 @@ pub fn register(manager: *tasks.Manager) !void {
     try manager.register(.{ .kind = "runtime.extensions", .lock_key = "runtime", .handler = runtimeExtensions });
     try manager.register(.{ .kind = "runtime.action", .lock_key = "runtime", .handler = runtimeAction });
     try manager.register(.{ .kind = "software.initialize", .lock_key = "software", .handler = softwareInitialize });
+    try manager.register(.{ .kind = "store.deploy", .lock_key = "store", .handler = storeDeploy });
 }
 
 fn stringParam(ctx: *tasks.Context, key: []const u8) ![]const u8 {
@@ -269,4 +270,47 @@ fn softwareInitialize(ctx: *tasks.Context) !void {
     ) catch |err| return err;
     try ctx.write(outcome.output);
     if (!outcome.ok) return error.SoftwareInitializeFailed;
+}
+
+const store_catalog = @import("store/catalog.zig");
+const store_apps = @import("store/apps.zig");
+const engine_mod = @import("runtime/engine.zig");
+
+fn storeDeploy(ctx: *tasks.Context) !void {
+    const slug = try stringParam(ctx, "slug");
+    const app = store_catalog.find(slug) orelse return error.NotFound;
+    var provided = std.StringHashMap([]const u8).init(ctx.allocator);
+    switch (ctx.params) {
+        .object => |object| {
+            if (object.get("params")) |params| {
+                if (params == .object) {
+                    var iterator = params.object.iterator();
+                    while (iterator.next()) |entry| {
+                        if (entry.value_ptr.* == .string) {
+                            try provided.put(entry.key_ptr.*, entry.value_ptr.string);
+                        }
+                    }
+                }
+            }
+        },
+        else => {},
+    }
+    const socket = engine_mod.socketFromDb(ctx.allocator, ctx.manager.database);
+    const engine = engine_mod.detect(ctx.allocator, socket) catch return error.EngineUnavailable;
+    try ctx.setPhase("deploying");
+    const result = store_apps.deploy(
+        ctx.allocator,
+        engine,
+        socket,
+        ctx.manager.data_dir,
+        app,
+        &provided,
+    ) catch |err| return err;
+    try ctx.write(result.output);
+    ctx.result = try std.json.stringifyAlloc(
+        ctx.allocator,
+        .{ .params = result.params },
+        .{},
+    );
+    if (!result.ok) return error.DeployFailed;
 }

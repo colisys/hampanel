@@ -183,7 +183,6 @@ pub const routes = [_]router.Route{
 
     .{ .method = .GET, .pattern = "/api/v1/store/apps", .handler = store.apps },
     .{ .method = .GET, .pattern = "/api/v1/store/apps/:slug", .handler = store.appDetail },
-    .{ .method = .POST, .pattern = "/api/v1/store/apps/:slug/deploy", .handler = store.deploy },
     .{ .method = .POST, .pattern = "/api/v1/store/apps/:slug/start", .handler = store.start },
     .{ .method = .POST, .pattern = "/api/v1/store/apps/:slug/stop", .handler = store.stop },
     .{ .method = .GET, .pattern = "/api/v1/store/apps/:slug/logs", .handler = store.logs },

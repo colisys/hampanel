@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
@@ -58,28 +61,42 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
   Future<void> _deploy(StoreApp app) async {
     final values = await showDeployDialog(context, app);
     if (values == null) return;
+    if (!mounted) return;
     try {
-      final json = await _api.postJson(
-        '/api/v1/store/apps/${app.slug}/deploy',
-        {'params': values},
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'store.deploy',
+        title: '部署 ${app.name}',
+        params: {'slug': app.slug, 'params': values},
       );
-      final map = json as Map<String, dynamic>? ?? const {};
-      final output = map['output'] as String? ?? '';
       if (!mounted) return;
-      if (map['ok'] != true) {
-        await showOutputDialog(context, '部署失败', output);
-      } else {
-        await showDeployedDialog(
-          context,
-          app.name,
-          (map['params'] as List<dynamic>?) ?? const [],
-          output,
-        );
-      }
+      _toast('已提交任务：${task.title}');
+      unawaited(center.waitFor(task.id).then((summary) async {
+        if (!mounted) return;
+        try {
+          final detail = await _api.getJson('/api/v1/tasks/${task.id}');
+          final map = detail as Map<String, dynamic>? ?? const {};
+          final output = map['output'] as String? ?? '';
+          final raw = map['result'] as String? ?? '';
+          List<dynamic> params = const [];
+          if (raw.isNotEmpty) {
+            final parsed = jsonDecode(raw);
+            if (parsed is Map<String, dynamic>) {
+              params = (parsed['params'] as List<dynamic>?) ?? const [];
+            }
+          }
+          if (!mounted) return;
+          if (summary?.status == 'succeeded') {
+            await showDeployedDialog(context, app.name, params, output);
+          } else {
+            await showOutputDialog(context, '部署失败', output);
+          }
+        } catch (_) {}
+        if (mounted) await _load();
+      }));
     } catch (error) {
       _toast(describeError(error));
     }
-    await _load();
   }
 
   Future<void> _action(StoreApp app, String action) async {
