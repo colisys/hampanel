@@ -290,16 +290,10 @@ class _SitesPageState extends State<SitesPage> {
 
   Future<void> _reload() async {
     try {
-      final json = await _api.postJson(
-        '/api/v1/sites/reload',
-        const <String, dynamic>{},
-      );
-      final map = json as Map<String, dynamic>? ?? const {};
-      _toast(
-        (map['ok'] as bool? ?? false)
-            ? 'WebServer 已重载'
-            : (map['output'] as String? ?? '重载失败'),
-      );
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit('sites.reload', title: '重载 WebServer');
+      if (!mounted) return;
+      _toast('已提交任务：${task.title}');
     } catch (error) {
       _toast(describeError(error));
     }

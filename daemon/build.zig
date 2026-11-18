@@ -220,6 +220,12 @@ pub fn build(b: *std.Build) void {
         .root_module = tests_module,
     });
     const test_cmd = b.addRunArtifact(tests);
+    // `zig build test` only analyses functions the tests actually reach, so an
+    // unreferenced handler body can fail to compile. The check step builds the
+    // real executable, which forces every registered handler to be analysed.
+    const local_check_step = b.step("check", "Type-check the daemon through the real executable");
+    local_check_step.dependOn(&exe.step);
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&test_cmd.step);
 

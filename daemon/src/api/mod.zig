@@ -69,11 +69,7 @@ pub const routes = [_]router.Route{
     .{ .method = .POST, .pattern = "/api/v1/docker/restart", .handler = runtimes.engineRestart },
 
     .{ .method = .GET, .pattern = "/api/v1/host/settings", .handler = host.settings },
-    .{ .method = .POST, .pattern = "/api/v1/host/swap", .handler = host.swap },
-    .{ .method = .POST, .pattern = "/api/v1/host/swap-device", .handler = host.swapDevice },
-    .{ .method = .POST, .pattern = "/api/v1/host/ntp", .handler = host.ntp },
     .{ .method = .PUT, .pattern = "/api/v1/host/hosts", .handler = host.hosts },
-    .{ .method = .POST, .pattern = "/api/v1/host/grub", .handler = host.grub },
 
     .{ .method = .GET, .pattern = "/api/v1/system", .handler = system.index },
     .{ .method = .GET, .pattern = "/api/v1/metrics", .handler = metrics.index },
@@ -95,12 +91,10 @@ pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/services", .handler = services.index },
     .{ .method = .GET, .pattern = "/api/v1/services/:name/config", .handler = services.config },
     .{ .method = .PUT, .pattern = "/api/v1/services/:name/config", .handler = services.saveConfig },
-    .{ .method = .POST, .pattern = "/api/v1/services/:name/:action", .handler = services.action },
     .{ .method = .GET, .pattern = "/api/v1/services/:name/logs", .handler = services.logs },
 
     .{ .method = .GET, .pattern = "/api/v1/sites", .handler = sites.index },
     .{ .method = .POST, .pattern = "/api/v1/sites", .handler = sites.create },
-    .{ .method = .POST, .pattern = "/api/v1/sites/reload", .handler = sites.reload },
     .{ .method = .POST, .pattern = "/api/v1/sites/:name/toggle", .handler = sites.toggle },
     .{ .method = .GET, .pattern = "/api/v1/sites/:name", .handler = sites.show },
     .{ .method = .PUT, .pattern = "/api/v1/sites/:name", .handler = sites.update },
@@ -183,10 +177,7 @@ pub const routes = [_]router.Route{
 
     .{ .method = .GET, .pattern = "/api/v1/store/apps", .handler = store.apps },
     .{ .method = .GET, .pattern = "/api/v1/store/apps/:slug", .handler = store.appDetail },
-    .{ .method = .POST, .pattern = "/api/v1/store/apps/:slug/start", .handler = store.start },
-    .{ .method = .POST, .pattern = "/api/v1/store/apps/:slug/stop", .handler = store.stop },
     .{ .method = .GET, .pattern = "/api/v1/store/apps/:slug/logs", .handler = store.logs },
-    .{ .method = .DELETE, .pattern = "/api/v1/store/apps/:slug", .handler = store.remove },
 
     .{ .method = .GET, .pattern = "/api/v1/store/packages", .handler = store.packages },
 

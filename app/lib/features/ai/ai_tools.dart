@@ -32,6 +32,57 @@ class AiTool {
 List<AiTool> buildAiTools() {
   return [
     AiTool(
+      name: 'submit_task',
+      description:
+          '提交异步任务并立即返回任务 ID。长操作（构建、安装、部署、重载）都走这里，不要等待完成。',
+      parameters: _object(
+        {
+          'kind': {
+            'type': 'string',
+            'description':
+                '任务种类，如 nix.build、package.install、store.deploy、sites.reload',
+          },
+          'title': _string('可读标题'),
+          'params': {
+            'type': 'object',
+            'description': '任务参数，随 kind 而定',
+          },
+        },
+        ['kind'],
+      ),
+      mutating: true,
+      summary: (args) => '提交任务 ${args['kind']}',
+      run: (api, args) async => _result(
+        await api.postJson('/api/v1/tasks', {
+          'kind': args['kind'],
+          'title': args['title'] ?? args['kind'],
+          'params': args['params'] ?? const <String, dynamic>{},
+        }),
+      ),
+    ),
+    AiTool(
+      name: 'get_task',
+      description: '读取任务状态与最新输出片段。',
+      parameters: _object({'id': _string('任务 ID')}, ['id']),
+      mutating: false,
+      summary: (args) => '读取任务 ${args['id']}',
+      run: (api, args) async =>
+          _result(await api.getJson('/api/v1/tasks/${_segment(args, 'id')}')),
+    ),
+    AiTool(
+      name: 'cancel_task',
+      description: '取消仍在运行的任务。',
+      parameters: _object({'id': _string('任务 ID')}, ['id']),
+      mutating: true,
+      summary: (args) => '取消任务 ${args['id']}',
+      run: (api, args) async => _result(
+        await api.postJson(
+          '/api/v1/tasks/${_segment(args, 'id')}/cancel',
+          const {},
+        ),
+      ),
+    ),
+    AiTool(
       name: 'get_system_info',
       description: '读取主机名、系统版本、内核、CPU 与运行时长。',
       parameters: _object({}),
@@ -305,8 +356,13 @@ List<AiTool> buildAiTools() {
       parameters: _object({}),
       mutating: true,
       summary: (_) => '重载 Nginx',
-      run: (api, _) async =>
-          _result(await api.postJson('/api/v1/sites/reload', const {})),
+      run: (api, _) async => _result(
+        await api.postJson('/api/v1/tasks', {
+          'kind': 'sites.reload',
+          'title': '重载 WebServer',
+          'params': const <String, dynamic>{},
+        }),
+      ),
     ),
     AiTool(
       name: 'fail2ban_ban',

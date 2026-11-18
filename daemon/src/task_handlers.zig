@@ -17,6 +17,10 @@ pub fn register(manager: *tasks.Manager) !void {
     try manager.register(.{ .kind = "runtime.action", .lock_key = "runtime", .handler = runtimeAction });
     try manager.register(.{ .kind = "software.initialize", .lock_key = "software", .handler = softwareInitialize });
     try manager.register(.{ .kind = "store.deploy", .lock_key = "store", .handler = storeDeploy });
+    try manager.register(.{ .kind = "store.app", .lock_key = "store", .handler = storeApp });
+    try manager.register(.{ .kind = "service.action", .lock_key = "services", .handler = serviceAction });
+    try manager.register(.{ .kind = "sites.reload", .lock_key = "sites", .handler = sitesReload });
+    try manager.register(.{ .kind = "host.change", .lock_key = "host", .handler = hostChange });
 }
 
 fn stringParam(ctx: *tasks.Context, key: []const u8) ![]const u8 {
@@ -313,4 +317,91 @@ fn storeDeploy(ctx: *tasks.Context) !void {
         .{},
     );
     if (!result.ok) return error.DeployFailed;
+}
+
+const platform_mod = @import("platform/mod.zig");
+const site_nginx = @import("runtime/site_nginx.zig");
+const site_caddy = @import("runtime/site_caddy.zig");
+
+fn storeApp(ctx: *tasks.Context) !void {
+    const slug = try stringParam(ctx, "slug");
+    const action = try stringParam(ctx, "action");
+    const app = store_catalog.find(slug) orelse return error.NotFound;
+    if (action.len == 0) return error.InvalidParams;
+    const socket = engine_mod.socketFromDb(ctx.allocator, ctx.manager.database);
+    const engine = engine_mod.detect(ctx.allocator, socket) catch return error.EngineUnavailable;
+    try ctx.setPhase(action);
+    const outcome = if (std.mem.eql(u8, action, "start"))
+        store_apps.start(ctx.allocator, engine, socket, ctx.manager.data_dir, app) catch |err| return err
+    else if (std.mem.eql(u8, action, "stop"))
+        store_apps.stop(ctx.allocator, engine, socket, ctx.manager.data_dir, app) catch |err| return err
+    else if (std.mem.eql(u8, action, "remove"))
+        store_apps.remove(
+            ctx.allocator,
+            engine,
+            socket,
+            ctx.manager.data_dir,
+            app,
+            boolParam(ctx, "volumes"),
+        ) catch |err| return err
+    else
+        return error.InvalidParams;
+    try ctx.write(outcome.output);
+    if (!outcome.ok) return error.StoreActionFailed;
+}
+
+fn serviceAction(ctx: *tasks.Context) !void {
+    const unit = try stringParam(ctx, "unit");
+    const action = try stringParam(ctx, "action");
+    if (unit.len == 0 or action.len == 0) return error.InvalidParams;
+    try ctx.setPhase(action);
+    const outcome = platform_mod.services.action(ctx.allocator, unit, action) catch |err| return err;
+    try ctx.write(outcome.output);
+    if (!outcome.ok) return error.ServiceActionFailed;
+}
+
+fn sitesReload(ctx: *tasks.Context) !void {
+    try ctx.setPhase("reloading");
+    const Reloaded = struct { ok: bool, output: []const u8 };
+    const reloaded: Reloaded = if (site_nginx.available(ctx.allocator)) blk: {
+        const result = site_nginx.reload(ctx.allocator) catch |err| return err;
+        break :blk .{ .ok = result.ok, .output = result.output };
+    } else if (site_caddy.available(ctx.allocator)) blk: {
+        const result = site_caddy.reload(ctx.allocator) catch |err| return err;
+        break :blk .{ .ok = result.ok, .output = result.output };
+    } else return error.WebServerUnavailable;
+    try ctx.write(reloaded.output);
+    if (!reloaded.ok) return error.SitesReloadFailed;
+}
+
+fn hostChange(ctx: *tasks.Context) !void {
+    const op = try stringParam(ctx, "op");
+    try ctx.setPhase(op);
+    const outcome = if (std.mem.eql(u8, op, "swap")) blk: {
+        const size: u32 = switch (ctx.params) {
+            .object => |object| if (object.get("size_mb")) |value|
+                if (value == .integer) @as(u32, @intCast(@max(value.integer, 0))) else 0
+            else
+                0,
+            else => 0,
+        };
+        break :blk platform_mod.host_settings.setSwap(ctx.allocator, size) catch |err| return err;
+    } else if (std.mem.eql(u8, op, "swap-device")) blk: {
+        const device = try stringParam(ctx, "device");
+        if (device.len == 0) return error.InvalidParams;
+        break :blk platform_mod.host_settings.enableSwapDevice(ctx.allocator, device) catch |err| return err;
+    } else if (std.mem.eql(u8, op, "ntp")) blk: {
+        break :blk platform_mod.host_settings.setNtp(ctx.allocator, boolParam(ctx, "enabled")) catch |err| return err;
+    } else if (std.mem.eql(u8, op, "grub")) blk: {
+        const index: usize = switch (ctx.params) {
+            .object => |object| if (object.get("index")) |value|
+                if (value == .integer) @as(usize, @intCast(@max(value.integer, 0))) else 0
+            else
+                0,
+            else => 0,
+        };
+        break :blk platform_mod.host_settings.setGrubDefault(ctx.allocator, index) catch |err| return err;
+    } else return error.InvalidParams;
+    try ctx.write(outcome.output);
+    if (!outcome.ok) return error.HostChangeFailed;
 }

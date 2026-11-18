@@ -68,29 +68,21 @@ class _HostSettingsSectionState extends State<HostSettingsSection> {
     }
   }
 
-  Future<void> _post(
-    String path,
-    Map<String, dynamic> body, {
+  Future<void> _submit(
+    String op, {
+    Map<String, dynamic> params = const {},
     String? success,
   }) async {
     setState(() => _busy = true);
     try {
-      final json = await _api.postJson(
-        path,
-        body,
-        timeout: const Duration(minutes: 3),
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'host.change',
+        title: '主机设置: $op',
+        params: {'op': op, ...params},
       );
-      final map = json as Map<String, dynamic>? ?? const {};
-      if (map['ok'] == false) {
-        _toast(
-          ((map['output'] as String?) ?? '操作失败').trim().isEmpty
-              ? '操作失败'
-              : (map['output'] as String).trim(),
-        );
-      } else {
-        _toast(success ?? '已保存');
-      }
-      await _load();
+      if (!mounted) return;
+      _toast(success ?? '已提交任务：${task.title}');
     } catch (error) {
       _toast(describeError(error));
     } finally {
@@ -237,9 +229,11 @@ class _HostSettingsSectionState extends State<HostSettingsSection> {
                   value: ntpEnabled,
                   onChanged: _busy
                       ? null
-                      : (value) => _post('/api/v1/host/ntp', {
-                          'enabled': value,
-                        }, success: value ? '已启用 NTP 同步' : '已关闭 NTP 同步'),
+                      : (value) => _submit(
+                          'ntp',
+                          params: {'enabled': value},
+                          success: value ? '已启用 NTP 同步' : '已关闭 NTP 同步',
+                        ),
                   title: const Text(
                     '启用 systemd-timesyncd / NTP 自动校时',
                     style: TextStyle(fontSize: 12.5),
@@ -287,9 +281,11 @@ class _HostSettingsSectionState extends State<HostSettingsSection> {
                   FilledButton(
                     onPressed: _busy
                         ? null
-                        : () => _post('/api/v1/host/grub', {
-                            'index': _grubIndex,
-                          }, success: '已更新默认启动项'),
+                        : () => _submit(
+                            'grub',
+                            params: {'index': _grubIndex},
+                            success: '已更新默认启动项',
+                          ),
                     child: const Text('设为默认并更新 GRUB'),
                   ),
                 ],
@@ -330,13 +326,15 @@ class _HostSettingsSectionState extends State<HostSettingsSection> {
       _toast('交换文件大小需在 64 到 65536 MiB 之间');
       return;
     }
-    await _post('/api/v1/host/swap', {
-      'size_mb': size,
-    }, success: '交换文件已启用（$size MiB）');
+    await _submit(
+      'swap',
+      params: {'size_mb': size},
+      success: '交换文件已启用（$size MiB）',
+    );
   }
 
   Future<void> _disableSwap() =>
-      _post('/api/v1/host/swap', {'size_mb': 0}, success: '交换文件已关闭');
+      _submit('swap', params: {'size_mb': 0}, success: '交换文件已关闭');
 
   Future<void> _enableSwapDevice() async {
     final device = _swapDevice.text.trim();
@@ -344,9 +342,11 @@ class _HostSettingsSectionState extends State<HostSettingsSection> {
       _toast('请输入 /dev/ 下的块设备路径');
       return;
     }
-    await _post('/api/v1/host/swap-device', {
-      'device': device,
-    }, success: '$device 已启用为交换空间');
+    await _submit(
+      'swap-device',
+      params: {'device': device},
+      success: '$device 已启用为交换空间',
+    );
   }
 
   Widget _row(String label, String value) {

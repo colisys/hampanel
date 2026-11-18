@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
@@ -59,14 +61,17 @@ class _ServicesPageState extends State<ServicesPage> {
 
   Future<void> _run(ServiceInfo service, String action) async {
     try {
-      final json = await _api.postJson(
-        '/api/v1/services/${service.unit}/$action',
-        const <String, dynamic>{},
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'service.action',
+        title: '${service.unit}: $action',
+        params: {'unit': service.unit, 'action': action},
       );
-      final map = json as Map<String, dynamic>? ?? const {};
-      final output = (map['output'] as String? ?? '').trim();
-      _toast(output.isEmpty ? '${service.unit}: $action 完成' : output);
-      await _load();
+      if (!mounted) return;
+      _toast('已提交任务：${task.title}');
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
     } catch (error) {
       _toast(describeError(error));
     }

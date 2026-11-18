@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
 import '../../core/models/service.dart';
 import '../../core/models/service_config.dart';
+import '../../core/session.dart';
 import '../../ui/code_editor.dart';
 import '../../ui/layout.dart';
 import '../../ui/theme.dart';
@@ -117,19 +120,22 @@ class _ServiceEditPageState extends State<ServiceEditPage> {
   Future<void> _run(String action) async {
     setState(() => _busy = true);
     try {
-      final json = await widget.api.postJson(
-        '/api/v1/services/${widget.service.unit}/$action',
-        const <String, dynamic>{},
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'service.action',
+        title: '${widget.service.unit}: $action',
+        params: {'unit': widget.service.unit, 'action': action},
       );
-      final map = json as Map<String, dynamic>? ?? const {};
-      final output = (map['output'] as String? ?? '').trim();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(output.isEmpty ? '$action 完成' : output)),
+        showAppSnackBar(
+          context,
+          SnackBar(content: Text('已提交任务：${task.title}')),
         );
       }
       if (action == 'start' || action == 'stop' || action == 'restart') {
-        await _load();
+        unawaited(center.waitFor(task.id).then((_) {
+          if (mounted) _load();
+        }));
       }
     } catch (error) {
       if (mounted) {

@@ -116,14 +116,22 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
         danger: true,
       );
       if (!ok) return;
-      await _runAction(
-        () => _api.deleteJson(
-          '/api/v1/store/apps/${app.slug}',
-          query: removeVolumes ? {'volumes': 'true'} : null,
-        ),
-        successMessage: '${app.name} 已卸载',
+      if (!mounted) return;
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'store.app',
+        title: '卸载 ${app.name}',
+        params: {
+          'slug': app.slug,
+          'action': 'remove',
+          'volumes': removeVolumes,
+        },
       );
-      await _load();
+      if (!mounted) return;
+      _toast('已提交任务：${task.title}');
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
       return;
     }
 
@@ -146,34 +154,17 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
       return;
     }
 
-    await _runAction(
-      () => _api.postJson('/api/v1/store/apps/${app.slug}/$action', const {}),
-      successMessage: '${app.name}: $action 完成',
+    final center = PanelScope.of(context).tasks;
+    final task = await center.submit(
+      'store.app',
+      title: '${app.name}: $action',
+      params: {'slug': app.slug, 'action': action},
     );
-    await _load();
-  }
-
-  Future<void> _runAction(
-    Future<dynamic> Function() operation, {
-    required String successMessage,
-  }) async {
-    try {
-      final json = await operation();
-      final map = json as Map<String, dynamic>? ?? const {};
-      final output = (map['output'] as String? ?? '').trim();
-      if (map['ok'] == false) {
-        if (!mounted) return;
-        await showOutputDialog(
-          context,
-          '操作失败',
-          output.isEmpty ? '未知错误' : output,
-        );
-        return;
-      }
-      _toast(successMessage);
-    } catch (error) {
-      _toast(describeError(error));
-    }
+    if (!mounted) return;
+    _toast('已提交任务：${task.title}');
+    unawaited(center.waitFor(task.id).then((_) {
+      if (mounted) _load();
+    }));
   }
 
   void _toast(String message) {
