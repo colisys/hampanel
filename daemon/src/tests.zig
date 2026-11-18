@@ -413,6 +413,7 @@ fn writeTestFile(path: []const u8, data: []const u8) !void {
 }
 
 test "generated nginx config is accepted by nginx -t" {
+    if (compat.getEnv("HAMPANEL_TEST_ENGINE") == null) return error.SkipZigTest;
     const exec = @import("shared").exec;
     const site_store = @import("runtime/site_store.zig");
     const site_nginx = @import("runtime/site_nginx.zig");
@@ -481,6 +482,7 @@ test "generated nginx config is accepted by nginx -t" {
 }
 
 test "generated caddy config is accepted by caddy validate" {
+    if (compat.getEnv("HAMPANEL_TEST_ENGINE") == null) return error.SkipZigTest;
     const exec = @import("shared").exec;
     const site_store = @import("runtime/site_store.zig");
     const site_caddy = @import("runtime/site_caddy.zig");
