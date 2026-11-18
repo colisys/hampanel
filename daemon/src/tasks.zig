@@ -1,6 +1,7 @@
 const std = @import("std");
 const compat = @import("compat");
 const db = @import("db.zig");
+const config = @import("config.zig");
 const log = @import("log.zig");
 
 pub const max_output: u64 = 16 * 1024 * 1024;
@@ -160,6 +161,10 @@ pub const Manager = struct {
     stopping: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     scheduler: ?std.Thread = null,
     last_prune: i64 = 0,
+    /// Shared with the synchronous update routes so a task cannot replace the
+    /// binary while the channel or schedule is being rewritten.
+    update_mutex: ?*std.Io.Mutex = null,
+    config: config.Config = .{},
 
     pub fn init(
         allocator: std.mem.Allocator,

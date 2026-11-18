@@ -48,7 +48,6 @@ pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/update", .handler = update.index },
     .{ .method = .POST, .pattern = "/api/v1/update/check", .handler = update.check },
     .{ .method = .PUT, .pattern = "/api/v1/update/config", .handler = update.configure },
-    .{ .method = .POST, .pattern = "/api/v1/update/apply", .handler = update.apply },
     .{ .method = .POST, .pattern = "/api/v1/update/schedule", .handler = update.schedule },
     .{ .method = .DELETE, .pattern = "/api/v1/update/schedule", .handler = update.unschedule },
     .{ .method = .GET, .pattern = "/api/v1/notifications", .handler = notifications.index },

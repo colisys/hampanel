@@ -529,6 +529,8 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
         .tasks = task_manager,
     };
 
+    task_manager.update_mutex = &app.update_mutex;
+    task_manager.config = cfg;
     defer app.deinitUpdateConfig();
     defer app.stream_clients.deinit(allocator);
     defer app.task_limits.deinit(allocator);

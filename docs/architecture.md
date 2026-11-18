@@ -141,12 +141,10 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 | POST | `/recycle/restore` / `delete` / `empty` | 恢复 / 永久删除 / 清空 |
 | GET | `/terminal/ws` | 交互终端（WebSocket） |
 | GET | `/services` | systemd 单元 |
-| POST | `/services/:name/:action` | 启停 / 重启 / 自启 |
 | GET | `/services/:name/logs` | journal |
 | GET | `/sites` | 站点列表 |
 | POST | `/sites` | 创建 / 更新站点 |
 | POST | `/sites/:name/toggle` | 启用 / 停用 |
-| POST | `/sites/reload` | 校验并重载 Nginx |
 | GET | `/docker/overview`、`/docker/info`、`/docker/test-connection` | 概览与引擎信息 |
 | GET | `/docker/containers`、`/docker/containers/:id` | 容器列表（含 inspect/统计/备注）与详情 |
 | POST | `/docker/containers`、`/docker/containers/:id/recreate` | 从镜像创建、按配置重建 |
@@ -179,9 +177,7 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 | GET / POST | `/tasks`、`/tasks/:id`、`/tasks/events` | 异步任务：提交、查询、取消、SSE 推送 |
 | GET | `/store/apps` | Docker 应用目录与部署状态 |
 | GET | `/store/apps/:slug` | 应用详情与 Compose 状态 |
-| POST | `/store/apps/:slug/start` / `stop` | 启动 / 停止 |
 | GET | `/store/apps/:slug/logs` | Compose 日志 |
-| DELETE | `/store/apps/:slug?volumes=` | 卸载（可选删除数据卷） |
 | GET | `/store/packages` | 包管理器与精选工具状态 |
 | GET | `/store/nix` | Nix 状态与白名单目标 |
 | GET | `/ssh` | sshd 状态与生效配置 |
@@ -199,13 +195,11 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 | GET / PUT | `/docker/settings` | Docker 守护进程配置（加速、私有仓库、IPv6、日志、iptables、Live Restore、Cgroup、NVIDIA、Socket） |
 | GET | `/runtimes`、`/runtimes/catalog`、`/runtimes/:id/*` | 运行环境与扩展、配置、进程管理（写操作见任务接口） |
 | GET | `/host/settings` | 主机设置状态（swap / NTP / GRUB / hosts） |
-| POST | `/host/swap`、`/host/swap-device` | 启用交换文件或已有块设备 |
-| POST | `/host/ntp`、`/host/grub` | NTP 同步开关、GRUB2 默认启动项 |
 | PUT | `/host/hosts` | 写入 /etc/hosts |
 | GET / PUT | `/notifications` | Bark / ntfy 推送配置 |
 | POST | `/notifications/test` | 发送测试推送 |
 | GET | `/update` | 更新状态、通道与 GitHub 镜像 |
-| POST | `/update/check`、`/update/apply` | 检查与执行更新 |
+| POST | `/update/check` | 检查更新（执行更新见任务接口） |
 | PUT | `/update/config` | 修改更新通道与 GitHub 镜像 |
 | POST / DELETE | `/update/schedule` | 每日更新检查开关 |
 

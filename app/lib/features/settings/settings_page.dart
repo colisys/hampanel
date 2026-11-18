@@ -203,6 +203,7 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
     if (confirmed != true) return;
+    if (!mounted) return;
     setState(() => _updateBusy = true);
     var before = _serverVersion;
     if (before == null || before == '?') {
@@ -217,17 +218,16 @@ class _SettingsPageState extends State<SettingsPage> {
         }
       } catch (_) {}
     }
+    if (!mounted) return;
     try {
-      final result = await _api.postJson(
-        '/api/v1/update/apply',
-        null,
-        timeout: const Duration(minutes: 5),
-      );
-      final message = result is Map
-          ? result['message'] as String? ?? '更新完成'
-          : '更新完成';
-      _toast(message);
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit('update.apply', title: '应用客户端更新');
+      if (!mounted) return;
+      _toast('已提交任务：${task.title}');
+      // The daemon schedules its own restart once the binary is replaced, so
+      // wait for the version to change rather than for the stream to finish.
       await _waitForRestart(before);
+      if (!mounted) return;
       await _loadUpdate();
     } catch (error) {
       final restarted = await _waitForRestart(before);

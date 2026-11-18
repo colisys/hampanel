@@ -1,4 +1,5 @@
 const std = @import("std");
+const compat = @import("compat");
 const tasks = @import("tasks.zig");
 const platform = @import("platform/mod.zig");
 
@@ -21,6 +22,7 @@ pub fn register(manager: *tasks.Manager) !void {
     try manager.register(.{ .kind = "service.action", .lock_key = "services", .handler = serviceAction });
     try manager.register(.{ .kind = "sites.reload", .lock_key = "sites", .handler = sitesReload });
     try manager.register(.{ .kind = "host.change", .lock_key = "host", .handler = hostChange });
+    try manager.register(.{ .kind = "update.apply", .lock_key = "update", .handler = updateApply });
 }
 
 fn stringParam(ctx: *tasks.Context, key: []const u8) ![]const u8 {
@@ -404,4 +406,25 @@ fn hostChange(ctx: *tasks.Context) !void {
     } else return error.InvalidParams;
     try ctx.write(outcome.output);
     if (!outcome.ok) return error.HostChangeFailed;
+}
+
+const update_mod = @import("update.zig");
+
+fn updateApply(ctx: *tasks.Context) !void {
+    const mutex = ctx.manager.update_mutex orelse return error.UpdateDisabled;
+    mutex.lockUncancelable(compat.io());
+    defer mutex.unlock(compat.io());
+    try ctx.setPhase("applying");
+    const outcome = update_mod.apply(
+        ctx.allocator,
+        ctx.manager.database,
+        ctx.manager.config,
+    ) catch |err| return err;
+    try ctx.write(outcome.message);
+    ctx.result = try std.fmt.allocPrint(
+        ctx.allocator,
+        "{{\"updated\":{},\"message\":{f}}}",
+        .{ outcome.updated, std.json.fmt(outcome.message, .{}) },
+    );
+    if (!outcome.updated) return error.UpdateFailed;
 }
