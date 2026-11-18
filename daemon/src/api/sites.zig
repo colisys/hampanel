@@ -7,28 +7,30 @@ const log = @import("../log.zig");
 const redact = @import("../util/redact.zig");
 const store = @import("../runtime/site_store.zig");
 const nginx = @import("../runtime/site_nginx.zig");
+const caddy = @import("../runtime/site_caddy.zig");
 const environments = @import("../runtime/environments.zig");
 
 const webserver_nginx = "nginx";
 const webserver_caddy = "caddy";
 
+const Outcome = struct { ok: bool, output: []const u8 };
+
 pub fn index(ctx: *context.Context) anyerror!void {
     const server = webServer(ctx);
-    if (std.mem.eql(u8, server, webserver_caddy)) {
-        try ctx.json(.{
-            .available = exec.commandExists(ctx.arena, "caddy"),
-            .supported = false,
-            .webserver = server,
-            .dir = "/etc/caddy",
-            .sites = &.{},
-            .message = "当前 WebServer 为 Caddy；站点配置暂未启用",
-        });
-        return;
-    }
     const sites = store.list(ctx.arena, ctx.app.config.data_dir) catch |err| {
         ctx.fail(500, "sites_failed", @errorName(err));
         return;
     };
+    if (std.mem.eql(u8, server, webserver_caddy)) {
+        try ctx.json(.{
+            .available = caddy.available(ctx.arena),
+            .supported = true,
+            .webserver = server,
+            .dir = caddy.conf_dir,
+            .sites = sites,
+        });
+        return;
+    }
     try ctx.json(.{
         .available = nginx.available(ctx.arena),
         .supported = true,
@@ -49,6 +51,11 @@ pub fn show(ctx: *context.Context) anyerror!void {
     var config_error: []const u8 = "";
     if (std.mem.eql(u8, webServer(ctx), webserver_nginx)) {
         config = nginx.render(ctx.arena, site, site_dir) catch |err| blk: {
+            config_error = @errorName(err);
+            break :blk "";
+        };
+    } else if (std.mem.eql(u8, webServer(ctx), webserver_caddy)) {
+        config = caddy.render(ctx.arena, site, site_dir) catch |err| blk: {
             config_error = @errorName(err);
             break :blk "";
         };
@@ -107,6 +114,10 @@ pub fn create(ctx: *context.Context) anyerror!void {
         failForValidation(ctx, err);
         return;
     };
+    validateServerFeatures(ctx, site) catch |err| {
+        failForValidation(ctx, err);
+        return;
+    };
 
     const saved = store.save(ctx.arena, ctx.app.config.data_dir, site) catch |err| {
         ctx.fail(500, "save_failed", @errorName(err));
@@ -119,13 +130,10 @@ pub fn create(ctx: *context.Context) anyerror!void {
     };
     if (!outcome.ok) {
         store.delete(ctx.arena, ctx.app.config.data_dir, saved.name) catch {};
-        ctx.response.status = 400;
-        try ctx.json(.{ .ok = false, .output = outcome.output, .site = saved });
+        try ctx.jsonStatus(400, .{ .ok = false, .output = outcome.output, .site = saved });
         return;
     }
 
-    var name_buf: [96]u8 = undefined;
-    log.info("sites: created name={s} kind={s}", .{ redact.text(&name_buf, saved.name), saved.kind });
     try ctx.json(.{ .ok = true, .output = outcome.output, .site = saved });
 }
 
@@ -153,6 +161,10 @@ pub fn update(ctx: *context.Context) anyerror!void {
         failForValidation(ctx, err);
         return;
     };
+    validateServerFeatures(ctx, site) catch |err| {
+        failForValidation(ctx, err);
+        return;
+    };
 
     const saved = store.save(ctx.arena, ctx.app.config.data_dir, site) catch |err| {
         ctx.fail(500, "save_failed", @errorName(err));
@@ -166,8 +178,7 @@ pub fn update(ctx: *context.Context) anyerror!void {
     if (!outcome.ok) {
         _ = store.save(ctx.arena, ctx.app.config.data_dir, old) catch {};
         _ = applySite(ctx, old) catch null;
-        ctx.response.status = 400;
-        try ctx.json(.{ .ok = false, .output = outcome.output, .site = old });
+        try ctx.jsonStatus(400, .{ .ok = false, .output = outcome.output, .site = old });
         return;
     }
 
@@ -197,6 +208,10 @@ pub fn toggle(ctx: *context.Context) anyerror!void {
         failForValidation(ctx, err);
         return;
     };
+    validateServerFeatures(ctx, site) catch |err| {
+        failForValidation(ctx, err);
+        return;
+    };
     const saved = store.save(ctx.arena, ctx.app.config.data_dir, site) catch |err| {
         ctx.fail(500, "save_failed", @errorName(err));
         return;
@@ -209,8 +224,7 @@ pub fn toggle(ctx: *context.Context) anyerror!void {
     if (!outcome.ok) {
         _ = store.save(ctx.arena, ctx.app.config.data_dir, old) catch {};
         _ = applySite(ctx, old) catch null;
-        ctx.response.status = 400;
-        try ctx.json(.{ .ok = false, .output = outcome.output, .site = old });
+        try ctx.jsonStatus(400, .{ .ok = false, .output = outcome.output, .site = old });
         return;
     }
     try ctx.json(.{ .ok = true, .output = outcome.output, .site = saved });
@@ -226,13 +240,21 @@ pub fn destroy(ctx: *context.Context) anyerror!void {
         return;
     }
     const site = loadSite(ctx, name) orelse return;
-    const outcome = nginx.remove(ctx.arena, site.name) catch |err| {
-        ctx.fail(500, "sites_failed", @errorName(err));
-        return;
+    const outcome: Outcome = if (std.mem.eql(u8, webServer(ctx), webserver_caddy)) blk: {
+        const result = caddy.remove(ctx.arena, site.name) catch |err| {
+            ctx.fail(500, "sites_failed", @errorName(err));
+            return;
+        };
+        break :blk .{ .ok = result.ok, .output = result.output };
+    } else blk: {
+        const result = nginx.remove(ctx.arena, site.name) catch |err| {
+            ctx.fail(500, "sites_failed", @errorName(err));
+            return;
+        };
+        break :blk .{ .ok = result.ok, .output = result.output };
     };
     if (!outcome.ok) {
-        ctx.response.status = 400;
-        try ctx.json(.{ .ok = false, .output = outcome.output });
+        try ctx.jsonStatus(400, .{ .ok = false, .output = outcome.output });
         return;
     }
     store.delete(ctx.arena, ctx.app.config.data_dir, name) catch {};
@@ -240,16 +262,20 @@ pub fn destroy(ctx: *context.Context) anyerror!void {
 }
 
 pub fn reload(ctx: *context.Context) anyerror!void {
-    if (!std.mem.eql(u8, webServer(ctx), webserver_nginx)) {
-        ctx.fail(501, "unsupported", "当前 WebServer 不支持站点管理");
-        return;
-    }
-    const outcome = nginx.reload(ctx.arena) catch |err| {
-        ctx.fail(500, "sites_failed", @errorName(err));
-        return;
+    const outcome: Outcome = if (std.mem.eql(u8, webServer(ctx), webserver_caddy)) blk: {
+        const result = caddy.reload(ctx.arena) catch |err| {
+            ctx.fail(500, "sites_failed", @errorName(err));
+            return;
+        };
+        break :blk .{ .ok = result.ok, .output = result.output };
+    } else blk: {
+        const result = nginx.reload(ctx.arena) catch |err| {
+            ctx.fail(500, "sites_failed", @errorName(err));
+            return;
+        };
+        break :blk .{ .ok = result.ok, .output = result.output };
     };
-    if (!outcome.ok) ctx.response.status = 502;
-    try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+    if (!outcome.ok) try ctx.jsonStatus(502, .{ .ok = outcome.ok, .output = outcome.output });
 }
 
 pub fn uploadCertificate(ctx: *context.Context) anyerror!void {
@@ -276,7 +302,12 @@ pub fn uploadCertificate(ctx: *context.Context) anyerror!void {
         ctx.fail(500, "sites_failed", "unable to resolve certificate path");
         return;
     };
-    var file = compat.createFileAbsolute(path, .{ .truncate = true, .mode = if (std.mem.eql(u8, kind, "key")) 0o600 else 0o644 }) catch |err| {
+    const caddy_server = std.mem.eql(u8, webServer(ctx), webserver_caddy);
+    const mode: u32 = if (std.mem.eql(u8, kind, "key"))
+        (if (caddy_server) 0o640 else 0o600)
+    else
+        0o644;
+    var file = compat.createFileAbsolute(path, .{ .truncate = true, .mode = mode }) catch |err| {
         ctx.fail(500, "sites_failed", @errorName(err));
         return;
     };
@@ -285,6 +316,14 @@ pub fn uploadCertificate(ctx: *context.Context) anyerror!void {
         ctx.fail(500, "sites_failed", @errorName(err));
         return;
     };
+    if (caddy_server and std.mem.eql(u8, kind, "key")) {
+        const group = exec.run(ctx.arena, &.{ "chgrp", "caddy", path }, 64 * 1024) catch null;
+        if (group == null or !group.?.ok()) {
+            // Caddy must be able to read the private key; fall back to world-read
+            // only when the host does not expose a caddy group.
+            _ = exec.run(ctx.arena, &.{ "chmod", "0644", path }, 64 * 1024) catch {};
+        }
+    }
 
     var site = old;
     site.tls.enabled = true;
@@ -302,8 +341,7 @@ pub fn uploadCertificate(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) {
-        ctx.response.status = 400;
-        try ctx.json(.{ .ok = false, .output = outcome.output, .site = saved });
+        try ctx.jsonStatus(400, .{ .ok = false, .output = outcome.output, .site = saved });
         return;
     }
     try ctx.json(.{ .ok = true, .output = outcome.output, .site = saved });
@@ -325,8 +363,11 @@ pub fn updateBasicAuth(ctx: *context.Context) anyerror!void {
         ctx.fail(400, "bad_users", "too many users");
         return;
     }
-    if (!exec.commandExists(ctx.arena, "openssl")) {
-        ctx.fail(501, "openssl_missing", "openssl is required to hash passwords");
+    const server = webServer(ctx);
+    const use_caddy = std.mem.eql(u8, server, webserver_caddy);
+    const hash_tool = if (use_caddy) "caddy" else "openssl";
+    if (!exec.commandExists(ctx.arena, hash_tool)) {
+        ctx.fail(501, "hash_tool_missing", "password hashing tool is not installed");
         return;
     }
     var users = std.array_list.Managed(store.BasicUser).init(ctx.arena);
@@ -339,15 +380,23 @@ pub fn updateBasicAuth(ctx: *context.Context) anyerror!void {
             ctx.fail(400, "bad_users", "password must be 1-256 bytes");
             return;
         }
-        const hash = exec.runWith(ctx.arena, &.{ "openssl", "passwd", "-apr1", "-stdin" }, .{
-            .stdin = user.password,
-            .max_output = 64 * 1024,
-        }) catch {
-            ctx.fail(500, "hash_failed", "unable to hash password");
-            return;
-        };
+        const hash = if (use_caddy)
+            exec.runWith(ctx.arena, &.{ "caddy", "hash-password", "--plaintext", user.password }, .{
+                .max_output = 64 * 1024,
+            }) catch {
+                ctx.fail(500, "hash_failed", "unable to hash password");
+                return;
+            }
+        else
+            exec.runWith(ctx.arena, &.{ "openssl", "passwd", "-apr1", "-stdin" }, .{
+                .stdin = user.password,
+                .max_output = 64 * 1024,
+            }) catch {
+                ctx.fail(500, "hash_failed", "unable to hash password");
+                return;
+            };
         if (!hash.ok()) {
-            ctx.fail(500, "hash_failed", "openssl rejected the password");
+            ctx.fail(500, "hash_failed", "password hashing failed");
             return;
         }
         try users.append(.{
@@ -367,8 +416,7 @@ pub fn updateBasicAuth(ctx: *context.Context) anyerror!void {
         return;
     };
     if (!outcome.ok) {
-        ctx.response.status = 400;
-        try ctx.json(.{ .ok = false, .output = outcome.output, .site = saved });
+        try ctx.jsonStatus(400, .{ .ok = false, .output = outcome.output, .site = saved });
         return;
     }
     try ctx.json(.{ .ok = true, .output = outcome.output, .site = saved });
@@ -420,13 +468,19 @@ fn loadSite(ctx: *context.Context, name: []const u8) ?store.Site {
     };
 }
 
-fn applySite(ctx: *context.Context, site: store.Site) !nginx.Outcome {
-    if (!std.mem.eql(u8, webServer(ctx), webserver_nginx)) {
-        return .{ .ok = false, .output = "当前 WebServer 不是 Nginx" };
-    }
+fn applySite(ctx: *context.Context, site: store.Site) !Outcome {
+    const server = webServer(ctx);
     const dir = try store.siteDir(ctx.arena, ctx.app.config.data_dir, site.name);
+    if (std.mem.eql(u8, server, webserver_caddy)) {
+        const result = try caddy.apply(ctx.arena, site, dir);
+        return .{ .ok = result.ok, .output = result.output };
+    }
+    if (!std.mem.eql(u8, server, webserver_nginx)) {
+        return .{ .ok = false, .output = "当前 WebServer 不是 Nginx 或 Caddy" };
+    }
     try writeHtpasswd(ctx.arena, dir, site);
-    return nginx.apply(ctx.arena, site, dir);
+    const result = try nginx.apply(ctx.arena, site, dir);
+    return .{ .ok = result.ok, .output = result.output };
 }
 
 fn writeHtpasswd(allocator: std.mem.Allocator, dir: []const u8, site: store.Site) !void {
@@ -472,8 +526,13 @@ fn validateSite(site: store.Site) !void {
         if (std.mem.indexOfScalar(u8, site.custom.content, 0) != null) return error.InvalidCustom;
         return;
     }
-    if (std.mem.eql(u8, site.kind, "tcp_proxy") or std.mem.eql(u8, site.kind, "udp_proxy")) {
-        return error.UnsupportedKind;
+    const is_stream = std.mem.eql(u8, site.kind, "tcp_proxy") or std.mem.eql(u8, site.kind, "udp_proxy");
+    if (is_stream) {
+        if (site.proxy.upstreams.len == 0) return error.MissingUpstream;
+        for (site.proxy.upstreams) |upstream| {
+            if (!safeToken(upstream.address, 256)) return error.InvalidUpstream;
+        }
+        return;
     }
     if (site.domains.len == 0) return error.InvalidDomains;
     if (site.root.len > 0 and !safeAbsolute(site.root)) return error.InvalidRoot;
@@ -539,6 +598,15 @@ fn validateSite(site: store.Site) !void {
     }
 }
 
+fn validateServerFeatures(ctx: *context.Context, site: store.Site) !void {
+    if (!std.mem.eql(u8, webServer(ctx), webserver_caddy)) return;
+    if (std.mem.eql(u8, site.kind, "tcp_proxy") or std.mem.eql(u8, site.kind, "udp_proxy")) return error.UnsupportedKind;
+    if (site.rate_limit.enabled) return error.UnsupportedFeature;
+    if (site.hotlink.enabled) return error.UnsupportedFeature;
+    if (site.real_ip.enabled) return error.UnsupportedFeature;
+    if (site.error_log.len > 0) return error.UnsupportedFeature;
+}
+
 fn failForValidation(ctx: *context.Context, err: anyerror) void {
     const message = switch (err) {
         error.InvalidName => "站点标识无效",
@@ -561,7 +629,10 @@ fn failForValidation(ctx: *context.Context, err: anyerror) void {
         error.InvalidRealIp => "真实 IP 配置无效",
         error.InvalidCustom => "自定义配置无效",
         error.MissingRuntime => "运行环境无效或没有端口",
-        error.UnsupportedKind => "Nginx 站点的 TCP/UDP 代理暂未启用",
+        error.UnsupportedKind => "当前 WebServer 暂不支持该站点类型",
+        error.StreamIncludeRequired => "nginx.conf 已有 stream 块，请手动加入 include /etc/nginx/stream.d/hampanel/*.conf;",
+        error.StreamIncludeFailed => "无法启用 nginx stream include，请检查 nginx.conf",
+        error.UnsupportedFeature => "当前 WebServer 不支持该配置项（限流/防盗链/真实 IP/错误日志）",
         else => @errorName(err),
     };
     ctx.fail(400, @errorName(err), message);

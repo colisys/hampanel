@@ -4,6 +4,7 @@ const exec = @import("shared").exec;
 const store = @import("site_store.zig");
 
 const conf_dir = "/etc/nginx/conf.d";
+const stream_dir = "/etc/nginx/stream.d/hampanel";
 const max_output = 2 * 1024 * 1024;
 
 pub const Outcome = struct {
@@ -18,7 +19,7 @@ pub fn available(allocator: std.mem.Allocator) bool {
 pub fn render(allocator: std.mem.Allocator, site: store.Site, site_dir: []const u8) ![]const u8 {
     if (site.custom.enabled) return allocator.dupe(u8, site.custom.content);
     if (std.mem.eql(u8, site.kind, "tcp_proxy") or std.mem.eql(u8, site.kind, "udp_proxy")) {
-        return error.UnsupportedKind;
+        return renderStream(allocator, site);
     }
 
     var output = std.Io.Writer.Allocating.init(allocator);
@@ -187,6 +188,24 @@ pub fn render(allocator: std.mem.Allocator, site: store.Site, site_dir: []const 
     return allocator.dupe(u8, output.written());
 }
 
+fn renderStream(allocator: std.mem.Allocator, site: store.Site) ![]const u8 {
+    if (site.proxy.upstreams.len == 0) return error.MissingUpstream;
+    var out = std.Io.Writer.Allocating.init(allocator);
+    defer out.deinit();
+    const w = &out.writer;
+    try w.print("# Managed by Hampanel. Manual edits are overwritten unless custom config is enabled.\n", .{});
+    try w.print("server {{\n", .{});
+    if (std.mem.eql(u8, site.kind, "udp_proxy")) {
+        try w.print("    listen {d} udp;\n", .{site.listen});
+    } else {
+        try w.print("    listen {d};\n", .{site.listen});
+    }
+    try w.print("    proxy_pass {s};\n", .{site.proxy.upstreams[0].address});
+    try w.print("    proxy_timeout 30s;\n", .{});
+    try w.print("}}\n", .{});
+    return allocator.dupe(u8, out.written());
+}
+
 fn writeServerHead(w: *std.Io.Writer, site: store.Site, zone: []const u8, main: bool) !void {
     _ = zone;
     _ = main;
@@ -214,11 +233,19 @@ fn sanitize(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
 }
 
 pub fn apply(allocator: std.mem.Allocator, site: store.Site, site_dir: []const u8) !Outcome {
-    const active = try confPath(allocator, site.name, true);
-    const disabled = try confPath(allocator, site.name, false);
+    const is_stream = std.mem.eql(u8, site.kind, "tcp_proxy") or std.mem.eql(u8, site.kind, "udp_proxy");
+    if (is_stream) {
+        try compat.cwd().makePath(stream_dir);
+        ensureStreamInclude(allocator) catch |err| {
+            return .{ .ok = false, .output = @errorName(err) };
+        };
+    } else {
+        try compat.cwd().makePath(conf_dir);
+    }
+    const active = if (is_stream) try streamConfPath(allocator, site.name, true) else try confPath(allocator, site.name, true);
+    const disabled = if (is_stream) try streamConfPath(allocator, site.name, false) else try confPath(allocator, site.name, false);
     const target = if (site.enabled) active else disabled;
     const alternate = if (site.enabled) disabled else active;
-    try compat.cwd().makePath(conf_dir);
 
     const previous_target = readOptional(allocator, target);
     const previous_alternate = readOptional(allocator, alternate);
@@ -251,21 +278,31 @@ pub fn apply(allocator: std.mem.Allocator, site: store.Site, site_dir: []const u
 pub fn remove(allocator: std.mem.Allocator, name: []const u8) !Outcome {
     const active = try confPath(allocator, name, true);
     const disabled = try confPath(allocator, name, false);
+    const stream_active = try streamConfPath(allocator, name, true);
+    const stream_disabled = try streamConfPath(allocator, name, false);
     const previous_active = readOptional(allocator, active);
     const previous_disabled = readOptional(allocator, disabled);
+    const previous_stream_active = readOptional(allocator, stream_active);
+    const previous_stream_disabled = readOptional(allocator, stream_disabled);
     compat.deleteFileAbsolute(active) catch {};
     compat.deleteFileAbsolute(disabled) catch {};
+    compat.deleteFileAbsolute(stream_active) catch {};
+    compat.deleteFileAbsolute(stream_disabled) catch {};
 
     const test_result = nginxTest(allocator);
     if (!test_result.ok) {
         restoreFile(active, previous_active);
         restoreFile(disabled, previous_disabled);
+        restoreFile(stream_active, previous_stream_active);
+        restoreFile(stream_disabled, previous_stream_disabled);
         return test_result;
     }
     const reload_result = try reload(allocator);
     if (!reload_result.ok) {
         restoreFile(active, previous_active);
         restoreFile(disabled, previous_disabled);
+        restoreFile(stream_active, previous_stream_active);
+        restoreFile(stream_disabled, previous_stream_disabled);
         return reload_result;
     }
     return .{ .ok = true, .output = reload_result.output };
@@ -284,6 +321,51 @@ pub fn reload(allocator: std.mem.Allocator) !Outcome {
 
 pub fn configPath(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
     return confPath(allocator, name, true);
+}
+
+fn streamConfPath(allocator: std.mem.Allocator, name: []const u8, enabled: bool) ![]const u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        "{s}/{s}.conf{s}",
+        .{ stream_dir, name, if (enabled) "" else ".disabled" },
+    );
+}
+
+fn ensureStreamInclude(allocator: std.mem.Allocator) !void {
+    const main = "/etc/nginx/nginx.conf";
+    const include_line = "include " ++ stream_dir ++ "/*.conf;";
+    const module_path = "/usr/lib/nginx/modules/ngx_stream_module.so";
+    const raw = compat.cwd().readFileAlloc(allocator, main, 1024 * 1024) catch return error.NginxConfigUnreadable;
+    if (std.mem.indexOf(u8, raw, include_line) != null) return;
+    if (std.mem.indexOf(u8, raw, "stream {") != null) return error.StreamIncludeRequired;
+    const backup = main ++ ".hampanel.bak";
+    const existing_backup = compat.cwd().readFileAlloc(allocator, backup, 1024 * 1024) catch null;
+    if (existing_backup == null) writeRaw(backup, raw) catch {};
+
+    // Prefer the module already loaded via /etc/nginx/modules-enabled.
+    if (try appendAndTest(allocator, main, raw, include_line, false)) return;
+    if (fileExists(module_path)) {
+        if (try appendAndTest(allocator, main, raw, include_line, true)) return;
+    }
+    writeRaw(main, raw) catch {};
+    return error.StreamIncludeFailed;
+}
+
+fn appendAndTest(allocator: std.mem.Allocator, main: []const u8, raw: []const u8, include_line: []const u8, load_module: bool) !bool {
+    var buffer = std.Io.Writer.Allocating.init(allocator);
+    defer buffer.deinit();
+    if (load_module) try buffer.writer.writeAll("load_module /usr/lib/nginx/modules/ngx_stream_module.so;\n");
+    try buffer.writer.writeAll(raw);
+    if (raw.len > 0 and raw[raw.len - 1] != '\n') try buffer.writer.writeAll("\n");
+    try buffer.writer.print("stream {{\n    {s}\n}}\n", .{include_line});
+    writeRaw(main, buffer.written()) catch return false;
+    return nginxTest(allocator).ok;
+}
+
+fn fileExists(path: []const u8) bool {
+    var file = compat.openFileAbsolute(path, .{}) catch return false;
+    file.close();
+    return true;
 }
 
 fn confPath(allocator: std.mem.Allocator, name: []const u8, enabled: bool) ![]const u8 {

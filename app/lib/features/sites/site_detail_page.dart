@@ -603,7 +603,7 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
                   _gap(),
                   _field(_bodySize, '请求体大小限制', hint: '如 16m'),
                 ]),
-                if (_kind == 'reverse_proxy' || _kind == 'runtime')
+                if (_kind == 'reverse_proxy' || _kind == 'runtime' || _kind == 'tcp_proxy' || _kind == 'udp_proxy')
                   _section('反向代理', [
                     _field(
                       _upstreams,
@@ -915,6 +915,8 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
         DropdownMenuItem(value: 'reverse_proxy', child: Text('反向代理')),
         DropdownMenuItem(value: 'runtime', child: Text('运行环境')),
         DropdownMenuItem(value: 'subsite', child: Text('子网站')),
+        DropdownMenuItem(value: 'tcp_proxy', child: Text('TCP 代理')),
+        DropdownMenuItem(value: 'udp_proxy', child: Text('UDP 代理')),
       ],
       onChanged: (value) {
         if (value != null) setState(() => _kind = value);

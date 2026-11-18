@@ -90,6 +90,8 @@ class _SitesPageState extends State<SitesPage> {
                       value: 'reverse_proxy',
                       child: Text('反向代理'),
                     ),
+                    DropdownMenuItem(value: 'tcp_proxy', child: Text('TCP 代理')),
+                    DropdownMenuItem(value: 'udp_proxy', child: Text('UDP 代理')),
                     DropdownMenuItem(value: 'runtime', child: Text('运行环境')),
                     DropdownMenuItem(value: 'subsite', child: Text('子网站')),
                   ],

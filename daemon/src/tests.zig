@@ -193,3 +193,56 @@ test "site store and nginx renderer round trip" {
     try std.testing.expect(std.mem.indexOf(u8, proxy_rendered, "map $http_upgrade $hampanel_upgrade_proxy") != null);
 }
 
+
+test "site caddy and stream renderers" {
+    const site_store = @import("runtime/site_store.zig");
+    const site_nginx = @import("runtime/site_nginx.zig");
+    const site_caddy = @import("runtime/site_caddy.zig");
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    const caddy_site = site_store.Site{
+        .name = "caddy",
+        .kind = "reverse_proxy",
+        .domains = &.{"caddy.example.com"},
+        .listen = 8443,
+        .tls = .{ .enabled = true, .certificate = "/tmp/cert.pem", .key = "/tmp/key.pem" },
+        .basic_auth = .{ .enabled = true, .users = &.{.{ .username = "admin", .password_hash = "$2a$14$hash" }} },
+        .cors = .{ .enabled = true, .origins = &.{"https://app.example.com"}, .methods = &.{"GET"} },
+        .redirects = &.{.{ .from = "/old", .to = "/new", .code = 301 }},
+        .proxy = .{ .upstreams = &.{.{ .address = "127.0.0.1:3000" }}, .load_balance = "least_conn" },
+    };
+    const caddy_out = try site_caddy.render(allocator, caddy_site, "/tmp/caddy");
+    try std.testing.expect(std.mem.indexOf(u8, caddy_out, "https://caddy.example.com") != null);
+    try std.testing.expect(std.mem.indexOf(u8, caddy_out, "tls /tmp/cert.pem /tmp/key.pem") != null);
+    try std.testing.expect(std.mem.indexOf(u8, caddy_out, "reverse_proxy 127.0.0.1:3000") != null);
+    try std.testing.expect(std.mem.indexOf(u8, caddy_out, "lb_policy least_conn") != null);
+    try std.testing.expect(std.mem.indexOf(u8, caddy_out, "basicauth") != null);
+    try std.testing.expect(std.mem.indexOf(u8, caddy_out, "redir /old /new 301") != null);
+    try std.testing.expect(std.mem.indexOf(u8, caddy_out, "Access-Control-Allow-Origin") != null);
+
+    var caddy_bad = caddy_site;
+    caddy_bad.rate_limit.enabled = true;
+    try std.testing.expectError(error.UnsupportedFeature, site_caddy.render(allocator, caddy_bad, "/tmp/caddy"));
+
+    const tcp_site = site_store.Site{
+        .name = "tcp",
+        .kind = "tcp_proxy",
+        .listen = 9001,
+        .proxy = .{ .upstreams = &.{.{ .address = "127.0.0.1:9000" }} },
+    };
+    const tcp_out = try site_nginx.render(allocator, tcp_site, "/tmp/tcp");
+    try std.testing.expect(std.mem.indexOf(u8, tcp_out, "listen 9001;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, tcp_out, "proxy_pass 127.0.0.1:9000;") != null);
+
+    const udp_site = site_store.Site{
+        .name = "udp",
+        .kind = "udp_proxy",
+        .listen = 9003,
+        .proxy = .{ .upstreams = &.{.{ .address = "127.0.0.1:9002" }} },
+    };
+    const udp_out = try site_nginx.render(allocator, udp_site, "/tmp/udp");
+    try std.testing.expect(std.mem.indexOf(u8, udp_out, "listen 9003 udp;") != null);
+}
