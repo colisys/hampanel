@@ -39,6 +39,8 @@ pub const routes = [_]router.Route{
 
     .{ .method = .POST, .pattern = "/api/v1/tasks", .handler = tasks.create },
     .{ .method = .GET, .pattern = "/api/v1/tasks", .handler = tasks.index },
+    .{ .method = .GET, .pattern = "/api/v1/tasks/events", .handler = tasks.events },
+    .{ .method = .GET, .pattern = "/api/v1/tasks/:id/events", .handler = tasks.outputEvents },
     .{ .method = .GET, .pattern = "/api/v1/tasks/:id", .handler = tasks.get },
     .{ .method = .POST, .pattern = "/api/v1/tasks/:id/cancel", .handler = tasks.cancel },
     .{ .method = .DELETE, .pattern = "/api/v1/tasks/:id", .handler = tasks.dismiss },

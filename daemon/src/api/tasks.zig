@@ -195,3 +195,134 @@ pub fn dismiss(ctx: *context.Context) anyerror!void {
     }
     try ctx.json(.{ .ok = true });
 }
+
+const http_response = @import("../http/response.zig");
+const log = @import("../log.zig");
+
+const max_sse_connections = 32;
+const sse_lifetime_ms: i64 = 30 * 60 * 1000;
+
+pub fn events(ctx: *context.Context) anyerror!void {
+    const count = ctx.app.sse_connections.fetchAdd(1, .acq_rel) + 1;
+    if (count > max_sse_connections) {
+        _ = ctx.app.sse_connections.fetchSub(1, .acq_rel);
+        ctx.fail(503, "too_many_streams", "too many event streams");
+        return;
+    }
+    defer _ = ctx.app.sse_connections.fetchSub(1, .acq_rel);
+
+    ctx.hijacked = true;
+    http_response.beginEventStream(ctx.conn) catch return;
+    const started = compat.milliTimestamp();
+    var last_heartbeat = started;
+
+    while (true) {
+        {
+            var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            defer arena.deinit();
+            const items = ctx.app.tasks.list(arena.allocator(), 0, false, 200) catch
+                @as([]tasks.Summary, &.{});
+            const body = std.json.Stringify.valueAlloc(
+                arena.allocator(),
+                .{ .tasks = items },
+                .{},
+            ) catch "{\"tasks\":[]}";
+            http_response.event(ctx.conn, "snapshot", body) catch return;
+        }
+        const now = compat.milliTimestamp();
+        if (now - started >= sse_lifetime_ms) break;
+        if (now - last_heartbeat >= 15_000) {
+            http_response.comment(ctx.conn, "ping") catch return;
+            last_heartbeat = now;
+        }
+        compat.sleep(1000 * std.time.ns_per_ms);
+    }
+    http_response.endEventStream(ctx.conn) catch {};
+}
+
+pub fn outputEvents(ctx: *context.Context) anyerror!void {
+    const id = ctx.param("id") orelse {
+        ctx.fail(400, "bad_task", "missing task id");
+        return;
+    };
+    if ((try ctx.app.tasks.get(ctx.arena, id)) == null) {
+        ctx.fail(404, "not_found", "task not found");
+        return;
+    }
+    const offset_text = try ctx.query("output_offset");
+    var offset: u64 = if (offset_text) |text|
+        std.fmt.parseInt(u64, text, 10) catch 0
+    else
+        0;
+
+    const count = ctx.app.sse_connections.fetchAdd(1, .acq_rel) + 1;
+    if (count > max_sse_connections) {
+        _ = ctx.app.sse_connections.fetchSub(1, .acq_rel);
+        ctx.fail(503, "too_many_streams", "too many event streams");
+        return;
+    }
+    defer _ = ctx.app.sse_connections.fetchSub(1, .acq_rel);
+
+    ctx.hijacked = true;
+    http_response.beginEventStream(ctx.conn) catch return;
+    const started = compat.milliTimestamp();
+    var last_heartbeat = started;
+    const encoder = std.base64.standard.Encoder;
+
+    while (true) {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+        const detail = (ctx.app.tasks.get(arena.allocator(), id) catch null) orelse {
+            http_response.event(ctx.conn, "gone", "{\"code\":\"not_found\"}") catch {};
+            break;
+        };
+
+        if (detail.output_path.len > 0) {
+            if (compat.openFileAbsolute(detail.output_path, .{})) |file| {
+                defer file.close();
+                if (file.stat()) |stat| {
+                    while (offset < stat.size) {
+                        const want: usize = @intCast(@min(stat.size - offset, 32 * 1024));
+                        const buffer = arena.allocator().alloc(u8, want) catch break;
+                        const read = file.readPositionalAll(buffer, offset) catch break;
+                        if (read == 0) break;
+                        const encoded = arena.allocator().alloc(u8, encoder.calcSize(read)) catch break;
+                        _ = encoder.encode(encoded, buffer[0..read]);
+                        const payload = std.json.Stringify.valueAlloc(
+                            arena.allocator(),
+                            .{ .offset = offset, .data = encoded },
+                            .{},
+                        ) catch break;
+                        http_response.event(ctx.conn, "output", payload) catch return;
+                        offset += read;
+                    }
+                } else |_| {}
+            } else |_| {}
+        }
+
+        const status_body = std.json.Stringify.valueAlloc(
+            arena.allocator(),
+            .{
+                .id = detail.id,
+                .status = detail.status,
+                .phase = detail.phase,
+                .progress = detail.progress,
+                .output_bytes = detail.output_bytes,
+                .output_truncated = detail.output_truncated,
+                .@"error" = detail.error_text,
+            },
+            .{},
+        ) catch "{}";
+        http_response.event(ctx.conn, "status", status_body) catch return;
+
+        if (tasks.terminalStatus(detail.status)) break;
+        const now = compat.milliTimestamp();
+        if (now - started >= sse_lifetime_ms) break;
+        if (now - last_heartbeat >= 15_000) {
+            http_response.comment(ctx.conn, "ping") catch return;
+            last_heartbeat = now;
+        }
+        compat.sleep(400 * std.time.ns_per_ms);
+    }
+    http_response.endEventStream(ctx.conn) catch {};
+}

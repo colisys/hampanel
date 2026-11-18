@@ -118,3 +118,55 @@ test "response header rejects CRLF" {
     );
     try writeHeader(&head.writer, "X-Test", "ok");
 }
+
+fn writeChunk(conn: *Conn, payload: []const u8) !void {
+    if (payload.len == 0) return;
+    var head: [32]u8 = undefined;
+    const line = try std.fmt.bufPrint(&head, "{x}\r\n", .{payload.len});
+    try conn.writeAll(line);
+    try conn.writeAll(payload);
+    try conn.writeAll("\r\n");
+}
+
+pub fn beginEventStream(conn: *Conn) !void {
+    var head: std.Io.Writer.Allocating = .init(std.heap.page_allocator);
+    defer head.deinit();
+    const writer = &head.writer;
+    try writer.print("HTTP/1.1 200 OK\r\n", .{});
+    try writeHeader(writer, "Server", version.user_agent);
+    try writeHeader(writer, "Content-Type", "text/event-stream");
+    try writeHeader(writer, "Cache-Control", "no-cache");
+    try writeHeader(writer, "Connection", "keep-alive");
+    try writeHeader(writer, "Transfer-Encoding", "chunked");
+    try writeHeader(writer, "X-Accel-Buffering", "no");
+    try writeHeader(writer, "X-Content-Type-Options", "nosniff");
+    try writer.print("\r\n", .{});
+    try conn.writeAll(head.written());
+}
+
+pub fn event(conn: *Conn, name: []const u8, data: []const u8) !void {
+    if (!validate.validHeaderName(name)) return error.InvalidEvent;
+    if (std.mem.indexOfAny(u8, data, "\r\n") != null) return error.InvalidEvent;
+    const payload = try std.fmt.allocPrint(
+        std.heap.page_allocator,
+        "event: {s}\ndata: {s}\n\n",
+        .{ name, data },
+    );
+    defer std.heap.page_allocator.free(payload);
+    try writeChunk(conn, payload);
+}
+
+pub fn comment(conn: *Conn, text: []const u8) !void {
+    if (std.mem.indexOfAny(u8, text, "\r\n") != null) return error.InvalidEvent;
+    const payload = try std.fmt.allocPrint(
+        std.heap.page_allocator,
+        ": {s}\n\n",
+        .{text},
+    );
+    defer std.heap.page_allocator.free(payload);
+    try writeChunk(conn, payload);
+}
+
+pub fn endEventStream(conn: *Conn) !void {
+    try conn.writeAll("0\r\n\r\n");
+}

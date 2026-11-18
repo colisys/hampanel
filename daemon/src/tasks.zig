@@ -671,6 +671,10 @@ pub const Manager = struct {
     }
 };
 
+pub fn terminalStatus(value: []const u8) bool {
+    return parseStatus(value).terminal();
+}
+
 fn parseStatus(value: []const u8) Status {
     if (std.mem.eql(u8, value, "queued")) return .queued;
     if (std.mem.eql(u8, value, "running")) return .running;

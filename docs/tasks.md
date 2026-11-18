@@ -39,6 +39,12 @@
 
 `POST /api/v1/tasks/:id/cancel`、`DELETE /api/v1/tasks/:id`（仅终态）。
 
+## SSE
+
+- `GET /api/v1/tasks/events`：每秒推送 `snapshot`，15s 心跳，单连接最长 30 分钟；总并发流上限 32。
+- `GET /api/v1/tasks/:id/events?output_offset=N`：推送 `status` 与 base64 编码的 `output` 增量，终态后关闭；断线后用当前 offset 重连。
+- SSE 使用 chunked 响应；慢客户端写失败即断开，不阻塞任务执行。
+
 ## 恢复与限制
 
 - daemon 重启：`running` → `interrupted`，`canceling` → `canceled`；`queued` 继续执行。

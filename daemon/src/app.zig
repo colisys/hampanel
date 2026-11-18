@@ -23,6 +23,7 @@ pub const App = struct {
     tasks: *tasks.Manager,
     metrics: platform.MetricsState = .{},
     active_connections: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
+    sse_connections: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
 
     pub fn saveUpdateConfig(self: *App, allocator: std.mem.Allocator, candidate: config.Config) !void {
         const channel = try self.allocator.dupe(u8, candidate.update_channel);
