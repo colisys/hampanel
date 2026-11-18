@@ -436,7 +436,7 @@ class Site {
   };
 
   String get summaryTarget {
-    if (kind == 'reverse_proxy' || kind == 'runtime') {
+    if (kind == 'reverse_proxy' || kind == 'runtime' || kind == 'tcp_proxy' || kind == 'udp_proxy') {
       return proxy.upstreams.map((item) => item.address).join(', ');
     }
     return root;

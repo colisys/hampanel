@@ -599,12 +599,21 @@ fn validateSite(site: store.Site) !void {
 }
 
 fn validateServerFeatures(ctx: *context.Context, site: store.Site) !void {
-    if (!std.mem.eql(u8, webServer(ctx), webserver_caddy)) return;
+    return validateServerFeaturesValue(site, webServer(ctx));
+}
+
+fn validateServerFeaturesValue(site: store.Site, webserver: []const u8) !void {
+    if (!std.mem.eql(u8, webserver, webserver_caddy)) return;
     if (std.mem.eql(u8, site.kind, "tcp_proxy") or std.mem.eql(u8, site.kind, "udp_proxy")) return error.UnsupportedKind;
     if (site.rate_limit.enabled) return error.UnsupportedFeature;
     if (site.hotlink.enabled) return error.UnsupportedFeature;
     if (site.real_ip.enabled) return error.UnsupportedFeature;
     if (site.error_log.len > 0) return error.UnsupportedFeature;
+}
+
+pub fn validateForTest(site: store.Site, webserver: []const u8) !void {
+    try validateSite(site);
+    try validateServerFeaturesValue(site, webserver);
 }
 
 fn failForValidation(ctx: *context.Context, err: anyerror) void {
