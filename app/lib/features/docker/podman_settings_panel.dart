@@ -75,7 +75,7 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
 
       _fillSelect(containers, 'engine.cgroup_manager', 'systemd');
       _fillSelect(containers, 'engine.events_logger', 'journald');
-      _fillText(containers, 'engine.runtime', 'crun');
+      _fillText(containers, 'engine.runtime', '');
       _fillText(containers, 'engine.stop_timeout', '10');
       _fillText(containers, 'engine.service_timeout', '5');
       _fillList(
@@ -84,8 +84,11 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
         'podman-compose\ndocker-compose',
       );
       _fillText(containers, 'engine.image_copy_tmp_dir', '/var/tmp');
-      _flags['engine.compose_warning_logs'] =
-          _boolValue(containers, 'engine.compose_warning_logs', false);
+      _flags['engine.compose_warning_logs'] = _boolValue(
+        containers,
+        'engine.compose_warning_logs',
+        false,
+      );
 
       _fillText(containers, 'containers.pids_limit', '2048');
       _fillText(containers, 'containers.shm_size', '65536k');
@@ -156,9 +159,31 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
       _fillText(storage, 'storage.graphroot', '/var/lib/containers/storage');
       _fillText(storage, 'storage.runroot', '/run/containers/storage');
       _fillText(storage, 'storage.rootless_storage_path', '');
-      _fillText(storage, 'storage.volume_path', '');
-      _fillText(storage, 'storage.mount_program', '');
-      _fillText(storage, 'storage.mountopt', '');
+      _fillText(containers, 'engine.volume_path', '');
+      if (_c('engine.volume_path').text.isEmpty) {
+        _c('engine.volume_path').text = _stringValue(
+          storage,
+          'storage.volume_path',
+          '',
+        );
+      }
+      _fillText(storage, 'storage.options.mount_program', '');
+      _fillText(storage, 'storage.options.overlay.mountopt', '');
+      // Older panel builds wrote these under the storage table; migrate.
+      if (_c('storage.options.mount_program').text.isEmpty) {
+        _c('storage.options.mount_program').text = _stringValue(
+          storage,
+          'storage.mount_program',
+          '',
+        );
+      }
+      if (_c('storage.options.overlay.mountopt').text.isEmpty) {
+        _c('storage.options.overlay.mountopt').text = _stringValue(
+          storage,
+          'storage.mountopt',
+          '',
+        );
+      }
       _fillText(storage, 'storage.transient_store', '');
       _flags['storage.transient_store'] = _boolValue(
         storage,
@@ -217,27 +242,15 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
     });
   }
 
-  void _fillText(
-    Map<String, String> source,
-    String key,
-    String fallback,
-  ) {
+  void _fillText(Map<String, String> source, String key, String fallback) {
     _c(key).text = _stringValue(source, key, fallback);
   }
 
-  void _fillList(
-    Map<String, String> source,
-    String key,
-    String fallback,
-  ) {
+  void _fillList(Map<String, String> source, String key, String fallback) {
     _c(key).text = _listValue(source, key, fallback).join('\n');
   }
 
-  void _fillSelect(
-    Map<String, String> source,
-    String key,
-    String fallback,
-  ) {
+  void _fillSelect(Map<String, String> source, String key, String fallback) {
     _select[key] = _stringValue(source, key, fallback);
   }
 
@@ -298,13 +311,21 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
     final out = StringBuffer()
       ..writeln('# Managed by Hampanel')
       ..writeln('[containers]');
-    _tomlList(out, 'default_capabilities', _c('containers.default_capabilities').text);
+    _tomlList(
+      out,
+      'default_capabilities',
+      _c('containers.default_capabilities').text,
+    );
     _tomlList(out, 'default_sysctls', _c('containers.default_sysctls').text);
     _tomlList(out, 'dns_servers', _c('containers.dns_servers').text);
     _tomlList(out, 'env', _c('containers.env').text);
     _tomlNumber(out, 'pids_limit', _c('containers.pids_limit').text.trim());
     _tomlString(out, 'shm_size', _c('containers.shm_size').text.trim());
-    _tomlString(out, 'log_driver', _select['containers.log_driver'] ?? 'k8s-file');
+    _tomlString(
+      out,
+      'log_driver',
+      _select['containers.log_driver'] ?? 'k8s-file',
+    );
     _tomlString(out, 'log_size', _c('containers.log_size').text.trim());
     _tomlString(out, 'tz', _c('containers.tz').text.trim());
     _tomlString(out, 'userns', _select['containers.userns'] ?? 'host');
@@ -313,31 +334,75 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
 
     out.writeln();
     out.writeln('[engine]');
-    _tomlString(out, 'cgroup_manager', _select['engine.cgroup_manager'] ?? 'systemd');
-    _tomlString(out, 'events_logger', _select['engine.events_logger'] ?? 'journald');
+    _tomlString(
+      out,
+      'cgroup_manager',
+      _select['engine.cgroup_manager'] ?? 'systemd',
+    );
+    _tomlString(
+      out,
+      'events_logger',
+      _select['engine.events_logger'] ?? 'journald',
+    );
     _tomlString(out, 'runtime', _c('engine.runtime').text.trim());
     _tomlNumber(out, 'stop_timeout', _c('engine.stop_timeout').text.trim());
-    _tomlNumber(out, 'service_timeout', _c('engine.service_timeout').text.trim());
+    _tomlNumber(
+      out,
+      'service_timeout',
+      _c('engine.service_timeout').text.trim(),
+    );
     _tomlList(out, 'compose_providers', _c('engine.compose_providers').text);
-    _tomlString(out, 'image_copy_tmp_dir', _c('engine.image_copy_tmp_dir').text.trim());
-    _tomlBool(out, 'compose_warning_logs', _flags['engine.compose_warning_logs'] ?? false);
+    _tomlString(
+      out,
+      'image_copy_tmp_dir',
+      _c('engine.image_copy_tmp_dir').text.trim(),
+    );
+    _tomlString(out, 'volume_path', _c('engine.volume_path').text.trim());
+    _tomlBool(
+      out,
+      'compose_warning_logs',
+      _flags['engine.compose_warning_logs'] ?? false,
+    );
 
     out.writeln();
     out.writeln('[network]');
-    _tomlString(out, 'default_network', _c('network.default_network').text.trim());
-    _tomlString(out, 'network_backend', _select['network.network_backend'] ?? 'netavark');
-    _tomlString(out, 'firewall_driver', _select['network.firewall_driver'] ?? 'iptables');
+    _tomlString(
+      out,
+      'default_network',
+      _c('network.default_network').text.trim(),
+    );
+    _tomlString(
+      out,
+      'network_backend',
+      _select['network.network_backend'] ?? 'netavark',
+    );
+    _tomlString(
+      out,
+      'firewall_driver',
+      _select['network.firewall_driver'] ?? 'iptables',
+    );
     _tomlNumber(out, 'dns_bind_port', _c('network.dns_bind_port').text.trim());
-    _tomlString(out, 'default_rootless_network_cmd', _select['network.default_rootless_network_cmd'] ?? 'slirp4netns');
-    _tomlString(out, 'network_config_dir', _c('network.network_config_dir').text.trim());
+    _tomlString(
+      out,
+      'default_rootless_network_cmd',
+      _select['network.default_rootless_network_cmd'] ?? 'slirp4netns',
+    );
+    _tomlString(
+      out,
+      'network_config_dir',
+      _c('network.network_config_dir').text.trim(),
+    );
     _tomlList(out, 'pasta_options', _c('network.pasta_options').text);
-    _tomlBool(out, 'rootless_port_forward', _flags['network.rootless_port_forward'] ?? false);
+    _tomlBool(
+      out,
+      'rootless_port_forward',
+      _flags['network.rootless_port_forward'] ?? false,
+    );
     return out.toString();
   }
 
   String _renderRegistries() {
-    final out = StringBuffer()
-      ..writeln('# Managed by Hampanel');
+    final out = StringBuffer()..writeln('# Managed by Hampanel');
     _tomlList(
       out,
       'unqualified-search-registries',
@@ -373,35 +438,27 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
     return out.toString();
   }
 
-  String _patchStorage(String source) {
-    var output = source;
-    output = _setToml(output, 'storage', 'driver', _quote(_select['storage.driver'] ?? 'overlay'));
-    output = _setToml(output, 'storage', 'graphroot', _quote(_c('storage.graphroot').text.trim()));
-    output = _setToml(output, 'storage', 'runroot', _quote(_c('storage.runroot').text.trim()));
-    output = _setToml(output, 'storage', 'rootless_storage_path', _quote(_c('storage.rootless_storage_path').text.trim()));
-    output = _setToml(output, 'storage', 'volume_path', _quote(_c('storage.volume_path').text.trim()));
-    output = _setToml(output, 'storage', 'mount_program', _quote(_c('storage.mount_program').text.trim()));
-    output = _setToml(output, 'storage', 'mountopt', _quote(_c('storage.mountopt').text.trim()));
-    output = _setToml(output, 'storage', 'transient_store', _flags['storage.transient_store'] == true ? 'true' : 'false');
-    output = _setToml(output, 'storage.options.overlay', 'mount_program', _quote(_c('storage.options.overlay.mount_program').text.trim()));
-    output = _setToml(output, 'storage.options.overlay', 'size', _quote(_c('storage.options.overlay.size').text.trim()));
-    output = _setToml(output, 'storage.options.overlay', 'inodes', _c('storage.options.overlay.inodes').text.trim());
-    output = _setToml(
-      output,
-      'storage.options.overlay',
-      'ignore_chown_errors',
-      _flags['storage.options.overlay.ignore_chown_errors'] == true
-          ? 'true'
-          : 'false',
-    );
-    return output.trim().isEmpty ? '' : '$output\n';
-  }
+  String _patchStorage(String source) => patchPodmanStorageToml(
+    source,
+    driver: _select['storage.driver'] ?? 'overlay',
+    graphroot: _c('storage.graphroot').text.trim(),
+    runroot: _c('storage.runroot').text.trim(),
+    rootlessStoragePath: _c('storage.rootless_storage_path').text.trim(),
+    mountProgram: _c('storage.options.mount_program').text.trim(),
+    overlayMountProgram: _c('storage.options.overlay.mount_program').text
+        .trim(),
+    mountOpt: _c('storage.options.overlay.mountopt').text.trim(),
+    overlaySize: _c('storage.options.overlay.size').text.trim(),
+    overlayInodes: _c('storage.options.overlay.inodes').text.trim(),
+    transientStore: _flags['storage.transient_store'] == true,
+    ignoreChownErrors:
+        _flags['storage.options.overlay.ignore_chown_errors'] == true,
+  );
 
   void _toast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -464,12 +521,22 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
             initialValue: _select['short-name-mode'] ?? 'enforcing',
             decoration: const InputDecoration(labelText: '短名称解析策略'),
             items: const [
-              DropdownMenuItem(value: 'enforcing', child: Text('enforcing（强制确认）')),
-              DropdownMenuItem(value: 'permissive', child: Text('permissive（自动解析）')),
-              DropdownMenuItem(value: 'disabled', child: Text('disabled（禁用短名称）')),
+              DropdownMenuItem(
+                value: 'enforcing',
+                child: Text('enforcing（强制确认）'),
+              ),
+              DropdownMenuItem(
+                value: 'permissive',
+                child: Text('permissive（自动解析）'),
+              ),
+              DropdownMenuItem(
+                value: 'disabled',
+                child: Text('disabled（禁用短名称）'),
+              ),
             ],
-            onChanged: (value) =>
-                setState(() => _select['short-name-mode'] = value ?? 'enforcing'),
+            onChanged: (value) => setState(
+              () => _select['short-name-mode'] = value ?? 'enforcing',
+            ),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -531,22 +598,18 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
                 controller: _c('engine.runtime'),
                 decoration: const InputDecoration(
                   labelText: 'OCI Runtime',
-                  hintText: 'crun',
+                  hintText: '留空自动选择（crun / runc）',
                 ),
               ),
               TextField(
                 controller: _c('engine.stop_timeout'),
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: '停止超时（秒）',
-                ),
+                decoration: const InputDecoration(labelText: '停止超时（秒）'),
               ),
               TextField(
                 controller: _c('engine.service_timeout'),
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: '服务超时（秒）',
-                ),
+                decoration: const InputDecoration(labelText: '服务超时（秒）'),
               ),
             ],
           ),
@@ -569,9 +632,8 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
             contentPadding: EdgeInsets.zero,
             title: const Text('Compose 警告日志'),
             value: _flags['engine.compose_warning_logs'] ?? false,
-            onChanged: (value) => setState(
-              () => _flags['engine.compose_warning_logs'] = value,
-            ),
+            onChanged: (value) =>
+                setState(() => _flags['engine.compose_warning_logs'] = value),
           ),
         ]),
         _group('容器默认值', [
@@ -709,7 +771,8 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
                   DropdownMenuItem(value: 'cni', child: Text('cni')),
                 ],
                 onChanged: (value) => setState(
-                  () => _select['network.network_backend'] = value ?? 'netavark',
+                  () =>
+                      _select['network.network_backend'] = value ?? 'netavark',
                 ),
               ),
               DropdownButtonFormField<String>(
@@ -722,7 +785,8 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
                   DropdownMenuItem(value: 'none', child: Text('none')),
                 ],
                 onChanged: (value) => setState(
-                  () => _select['network.firewall_driver'] = value ?? 'iptables',
+                  () =>
+                      _select['network.firewall_driver'] = value ?? 'iptables',
                 ),
               ),
             ],
@@ -749,9 +813,8 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
                   DropdownMenuItem(value: 'pasta', child: Text('pasta')),
                 ],
                 onChanged: (value) => setState(
-                  () =>
-                      _select['network.default_rootless_network_cmd'] =
-                          value ?? 'slirp4netns',
+                  () => _select['network.default_rootless_network_cmd'] =
+                      value ?? 'slirp4netns',
                 ),
               ),
               TextField(
@@ -774,9 +837,8 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
             contentPadding: EdgeInsets.zero,
             title: const Text('Rootless 端口转发'),
             value: _flags['network.rootless_port_forward'] ?? false,
-            onChanged: (value) => setState(
-              () => _flags['network.rootless_port_forward'] = value,
-            ),
+            onChanged: (value) =>
+                setState(() => _flags['network.rootless_port_forward'] = value),
           ),
         ]),
         _group('存储', [
@@ -811,12 +873,10 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
               ),
               TextField(
                 controller: _c('storage.rootless_storage_path'),
-                decoration: const InputDecoration(
-                  labelText: 'Rootless 存储路径',
-                ),
+                decoration: const InputDecoration(labelText: 'Rootless 存储路径'),
               ),
               TextField(
-                controller: _c('storage.volume_path'),
+                controller: _c('engine.volume_path'),
                 decoration: const InputDecoration(labelText: 'Volume 路径'),
               ),
             ],
@@ -825,11 +885,11 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
           FormRow(
             children: [
               TextField(
-                controller: _c('storage.mount_program'),
+                controller: _c('storage.options.mount_program'),
                 decoration: const InputDecoration(labelText: 'Mount Program'),
               ),
               TextField(
-                controller: _c('storage.mountopt'),
+                controller: _c('storage.options.overlay.mountopt'),
                 decoration: const InputDecoration(labelText: 'Mount Options'),
               ),
               TextField(
@@ -843,7 +903,9 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
             children: [
               TextField(
                 controller: _c('storage.options.overlay.inodes'),
-                decoration: const InputDecoration(labelText: 'Overlay inode 上限'),
+                decoration: const InputDecoration(
+                  labelText: 'Overlay inode 上限',
+                ),
               ),
               TextField(
                 controller: _c('storage.options.overlay.mount_program'),
@@ -857,18 +919,18 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
             contentPadding: EdgeInsets.zero,
             title: const Text('临时存储'),
             value: _flags['storage.transient_store'] ?? false,
-            onChanged: (value) => setState(
-              () => _flags['storage.transient_store'] = value,
-            ),
+            onChanged: (value) =>
+                setState(() => _flags['storage.transient_store'] = value),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('忽略 chown 错误'),
             subtitle: const Text('overlay.ignore_chown_errors'),
-            value: _flags['storage.options.overlay.ignore_chown_errors'] ?? false,
+            value:
+                _flags['storage.options.overlay.ignore_chown_errors'] ?? false,
             onChanged: (value) => setState(
-              () => _flags['storage.options.overlay.ignore_chown_errors'] =
-                  value,
+              () =>
+                  _flags['storage.options.overlay.ignore_chown_errors'] = value,
             ),
           ),
         ]),
@@ -940,11 +1002,7 @@ Map<String, String> _parseToml(String source) {
   return result;
 }
 
-List<String> _listValue(
-  Map<String, String> map,
-  String key,
-  String fallback,
-) {
+List<String> _listValue(Map<String, String> map, String key, String fallback) {
   var raw = map[key] ?? fallback;
   raw = raw.trim();
   if (raw.startsWith('[')) raw = raw.substring(1);
@@ -952,9 +1010,12 @@ List<String> _listValue(
   return raw
       .split(RegExp(r'[,\n]'))
       .map((value) => value.trim())
-      .map((value) => value.length >= 2 && value.startsWith('"') && value.endsWith('"')
-          ? value.substring(1, value.length - 1)
-          : value)
+      .map(
+        (value) =>
+            value.length >= 2 && value.startsWith('"') && value.endsWith('"')
+            ? value.substring(1, value.length - 1)
+            : value,
+      )
       .where((value) => value.isNotEmpty)
       .toList();
 }
@@ -1015,9 +1076,7 @@ List<_RegistryEntries> _parseRegistryEntries(String source) {
     }
   }
   flush();
-  return [
-    _RegistryEntries(insecure: insecure, mirrors: mirrors),
-  ];
+  return [_RegistryEntries(insecure: insecure, mirrors: mirrors)];
 }
 
 String _stringValue(Map<String, String> map, String key, String fallback) {
@@ -1042,6 +1101,83 @@ List<String> _lines(String text) => text
     .map((line) => line.trim())
     .where((line) => line.isNotEmpty)
     .toList();
+
+/// Patches `/etc/containers/storage.conf` with types that containers/storage
+/// actually decodes. `ignore_chown_errors` and `inodes` are *string* values
+/// (`"true"`/`"false"`, quoted sizes), while `transient_store` is a native
+/// boolean. Top-level `mountopt`, `mount_program` and `volume_path` do not
+/// exist in the storage table and are removed.
+String patchPodmanStorageToml(
+  String source, {
+  required String driver,
+  required String graphroot,
+  required String runroot,
+  required String rootlessStoragePath,
+  required String mountProgram,
+  required String overlayMountProgram,
+  required String mountOpt,
+  required String overlaySize,
+  required String overlayInodes,
+  required bool transientStore,
+  required bool ignoreChownErrors,
+}) {
+  var output = source;
+  output = _setToml(output, 'storage', 'driver', _quote(driver));
+  output = _setToml(output, 'storage', 'graphroot', _quote(graphroot));
+  output = _setToml(output, 'storage', 'runroot', _quote(runroot));
+  output = _setToml(
+    output,
+    'storage',
+    'rootless_storage_path',
+    rootlessStoragePath.isEmpty ? null : _quote(rootlessStoragePath),
+  );
+  output = _setToml(
+    output,
+    'storage',
+    'transient_store',
+    transientStore ? 'true' : 'false',
+  );
+  output = _removeToml(output, 'storage', 'mount_program');
+  output = _removeToml(output, 'storage', 'mountopt');
+  output = _removeToml(output, 'storage', 'volume_path');
+  output = _setToml(
+    output,
+    'storage.options',
+    'mount_program',
+    mountProgram.isEmpty ? null : _quote(mountProgram),
+  );
+  output = _setToml(
+    output,
+    'storage.options.overlay',
+    'mount_program',
+    overlayMountProgram.isEmpty ? null : _quote(overlayMountProgram),
+  );
+  output = _setToml(
+    output,
+    'storage.options.overlay',
+    'mountopt',
+    mountOpt.isEmpty ? null : _quote(mountOpt),
+  );
+  output = _setToml(
+    output,
+    'storage.options.overlay',
+    'size',
+    overlaySize.isEmpty ? null : _quote(overlaySize),
+  );
+  output = _setToml(
+    output,
+    'storage.options.overlay',
+    'inodes',
+    overlayInodes.isEmpty ? null : _quote(overlayInodes),
+  );
+  output = _setToml(
+    output,
+    'storage.options.overlay',
+    'ignore_chown_errors',
+    _quote(ignoreChownErrors ? 'true' : 'false'),
+  );
+  return output.trim().isEmpty ? '' : '$output\n';
+}
 
 String _quote(String value) =>
     '"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"';
@@ -1071,12 +1207,7 @@ void _tomlList(StringBuffer out, String key, String text) {
   out.writeln(']');
 }
 
-String _setToml(
-  String source,
-  String section,
-  String key,
-  String? value,
-) {
+String _setToml(String source, String section, String key, String? value) {
   final lines = source.replaceAll('\r\n', '\n').split('\n');
   final header = '[$section]';
   var headerIndex = -1;
@@ -1115,4 +1246,34 @@ String _setToml(
     lines.insert(sectionEnd, '$key = $value');
   }
   return lines.join('\n');
+}
+
+String _removeToml(String source, String section, String key) {
+  final lines = source.replaceAll('\r\n', '\n').split('\n');
+  final header = '[$section]';
+  var headerIndex = -1;
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].trim() == header) {
+      headerIndex = i;
+      break;
+    }
+  }
+  if (headerIndex < 0) return source;
+  var sectionEnd = lines.length;
+  for (var i = headerIndex + 1; i < lines.length; i++) {
+    final line = lines[i].trim();
+    if (line.startsWith('[') && line.endsWith(']')) {
+      sectionEnd = i;
+      break;
+    }
+  }
+  final kept = <String>[];
+  for (var i = 0; i < lines.length; i++) {
+    if (i > headerIndex && i < sectionEnd) {
+      final line = lines[i].trim();
+      if (line.startsWith('$key =') || line.startsWith('$key=')) continue;
+    }
+    kept.add(lines[i]);
+  }
+  return kept.join('\n');
 }
