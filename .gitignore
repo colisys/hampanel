@@ -1,6 +1,7 @@
 # Zig
 daemon/.zig-cache/
 daemon/zig-out/
+daemon/src/.zig-cache/
 zig-cache/
 zig-out/
 
@@ -10,6 +11,7 @@ app/.flutter-plugins
 app/.flutter-plugins-dependencies
 app/build/
 app/test/failures/
+app/test/**/*.png
 app/linux/flutter/ephemeral/
 app/**/generated_plugin_registrant.*
 tool/hampanelctl/.dart_tool/

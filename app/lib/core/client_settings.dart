@@ -5,8 +5,9 @@ import 'package:flutter/foundation.dart';
 
 import 'app_paths.dart';
 import 'enrollment.dart';
+import 'terminal_settings.dart';
 
-/// 管理端本地偏好：更新通道、GitHub 镜像与概览刷新频率。
+/// 管理端本地偏好：更新通道、GitHub 镜像、概览刷新频率与终端外观。
 /// 保存在用户配置目录，不随受控端同步。
 class ClientSettings extends ChangeNotifier {
   ClientSettings._();
@@ -18,6 +19,7 @@ class ClientSettings extends ChangeNotifier {
   String? updateChannel;
   String githubMirror = '';
   String nixMirror = '';
+  TerminalSettings terminal = const TerminalSettings();
   bool _loaded = false;
 
   Future<void> load() async {
@@ -38,6 +40,12 @@ class ClientSettings extends ChangeNotifier {
       }
       githubMirror = (decoded['github_mirror'] as String?)?.trim() ?? '';
       nixMirror = (decoded['nix_mirror'] as String?)?.trim() ?? '';
+      final terminal = decoded['terminal'];
+      if (terminal is Map) {
+        this.terminal = TerminalSettings.fromJson(
+          Map<String, dynamic>.from(terminal),
+        );
+      }
       notifyListeners();
     } catch (_) {
       // 本地偏好损坏时退回默认值。
@@ -54,6 +62,7 @@ class ClientSettings extends ChangeNotifier {
           'update_channel': updateChannel,
           'github_mirror': githubMirror,
           'nix_mirror': nixMirror,
+          'terminal': terminal.toJson(),
         }),
       );
       await restrictToOwner(file);
