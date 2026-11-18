@@ -82,10 +82,41 @@ const schema_v2 =
     \\);
 ;
 
+const schema_v3 =
+    \\CREATE TABLE IF NOT EXISTS tasks (
+    \\    id TEXT PRIMARY KEY,
+    \\    kind TEXT NOT NULL,
+    \\    title TEXT NOT NULL,
+    \\    status TEXT NOT NULL,
+    \\    phase TEXT NOT NULL DEFAULT '',
+    \\    progress INTEGER,
+    \\    params TEXT NOT NULL DEFAULT '{}',
+    \\    result TEXT NOT NULL DEFAULT '',
+    \\    error TEXT NOT NULL DEFAULT '',
+    \\    output_path TEXT NOT NULL,
+    \\    output_base INTEGER NOT NULL DEFAULT 0,
+    \\    output_bytes INTEGER NOT NULL DEFAULT 0,
+    \\    output_truncated INTEGER NOT NULL DEFAULT 0,
+    \\    exit_code INTEGER,
+    \\    idempotency_key TEXT,
+    \\    lock_key TEXT NOT NULL DEFAULT '',
+    \\    owner_cn TEXT NOT NULL DEFAULT '',
+    \\    created_at INTEGER NOT NULL,
+    \\    started_at INTEGER,
+    \\    finished_at INTEGER,
+    \\    updated_at INTEGER NOT NULL
+    \\);
+    \\CREATE UNIQUE INDEX IF NOT EXISTS tasks_idem ON tasks(kind, idempotency_key)
+    \\    WHERE idempotency_key IS NOT NULL AND idempotency_key <> '';
+    \\CREATE INDEX IF NOT EXISTS tasks_updated ON tasks(updated_at);
+    \\CREATE INDEX IF NOT EXISTS tasks_status ON tasks(status);
+;
+
 /// Append-only list: never rewrite an applied migration, only add new ones.
 const migrations = [_]Migration{
     .{ .version = 1, .name = "core tables", .sql = schema_v1 },
     .{ .version = 2, .name = "docker management", .sql = schema_v2 },
+    .{ .version = 3, .name = "tasks", .sql = schema_v3 },
 };
 
 /// `CREATE TABLE IF NOT EXISTS` cannot add columns, so databases created
@@ -289,7 +320,7 @@ test "legacy schema_migrations table gains the name column" {
     try database.exec("INSERT INTO schema_migrations(version, applied_at) VALUES(1, 0)");
 
     try migrate(allocator, &database);
-    try std.testing.expectEqual(@as(i64, 2), try currentVersion(&database));
+    try std.testing.expectEqual(@as(i64, @intCast(migrations.len)), try currentVersion(&database));
 }
 
 test "sqlite core migrations create the schema" {

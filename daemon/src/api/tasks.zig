@@ -1,0 +1,197 @@
+const std = @import("std");
+const context = @import("context.zig");
+const compat = @import("compat");
+const tasks = @import("../tasks.zig");
+
+const CreateBody = struct {
+    kind: []const u8,
+    title: []const u8 = "",
+    params: ?std.json.Value = null,
+    idempotency_key: []const u8 = "",
+};
+
+const DetailView = struct {
+    id: []const u8,
+    kind: []const u8,
+    title: []const u8,
+    status: []const u8,
+    phase: []const u8,
+    progress: ?i64,
+    params: []const u8,
+    result: []const u8,
+    @"error": []const u8,
+    output_base: i64,
+    output_bytes: i64,
+    output_truncated: bool,
+    output: []const u8,
+    output_offset: u64,
+    has_more: bool,
+    created_at: i64,
+    started_at: ?i64,
+    finished_at: ?i64,
+    updated_at: i64,
+    owner_cn: []const u8,
+};
+
+pub fn create(ctx: *context.Context) anyerror!void {
+    const body = ctx.requireJson(CreateBody) catch {
+        ctx.fail(400, "bad_task", "body must be a JSON object");
+        return;
+    };
+    if (body.kind.len == 0) {
+        ctx.fail(400, "bad_task", "kind is required");
+        return;
+    }
+    const params = if (body.params) |value|
+        std.json.Stringify.valueAlloc(ctx.arena, value, .{}) catch {
+            ctx.fail(400, "bad_task", "params must be JSON");
+            return;
+        }
+    else
+        "{}";
+
+    const summary = ctx.app.tasks.create(
+        ctx.arena,
+        body.kind,
+        body.title,
+        params,
+        body.idempotency_key,
+        ctx.peer_cn,
+    ) catch |err| switch (err) {
+        error.UnknownKind => {
+            ctx.fail(400, "unknown_kind", "unknown task kind");
+            return;
+        },
+        error.TooManyTasks => {
+            ctx.fail(429, "too_many_tasks", "task queue is full");
+            return;
+        },
+        error.InvalidTask => {
+            ctx.fail(400, "bad_task", "task fields are invalid");
+            return;
+        },
+        else => {
+            ctx.fail(500, "task_failed", "could not create task");
+            return;
+        },
+    };
+    try ctx.jsonStatus(202, .{ .task = summary });
+}
+
+pub fn index(ctx: *context.Context) anyerror!void {
+    const since_text = try ctx.query("since");
+    const since = if (since_text) |text|
+        std.fmt.parseInt(i64, text, 10) catch 0
+    else
+        0;
+    const active_text = try ctx.query("active");
+    const active_only = if (active_text) |text| std.mem.eql(u8, text, "1") else false;
+    const limit_text = try ctx.query("limit");
+    const parsed_limit = if (limit_text) |text|
+        std.fmt.parseInt(usize, text, 10) catch 100
+    else
+        100;
+    const limit = @min(@max(parsed_limit, 1), 500);
+    const items = try ctx.app.tasks.list(ctx.arena, since, active_only, limit);
+    try ctx.json(.{ .tasks = items });
+}
+
+pub fn get(ctx: *context.Context) anyerror!void {
+    const id = ctx.param("id") orelse {
+        ctx.fail(400, "bad_task", "missing task id");
+        return;
+    };
+    const detail = (try ctx.app.tasks.get(ctx.arena, id)) orelse {
+        ctx.fail(404, "not_found", "task not found");
+        return;
+    };
+
+    const offset_text = try ctx.query("output_offset");
+    const offset = if (offset_text) |text|
+        std.fmt.parseInt(u64, text, 10) catch 0
+    else
+        0;
+    const limit_text = try ctx.query("output_limit");
+    const parsed_limit = if (limit_text) |text|
+        std.fmt.parseInt(usize, text, 10) catch 64 * 1024
+    else
+        64 * 1024;
+    const limit = @min(@max(parsed_limit, 1), 512 * 1024);
+
+    var output: []const u8 = "";
+    var next_offset = offset;
+    var total = detail.output_bytes;
+    if (detail.output_path.len > 0) {
+        if (compat.openFileAbsolute(detail.output_path, .{})) |file| {
+            defer file.close();
+            if (file.stat()) |stat| {
+                if (stat.size > @as(u64, @intCast(total))) total = @intCast(stat.size);
+            } else |_| {}
+            const buffer = try ctx.arena.alloc(u8, limit);
+            const read = file.readPositionalAll(buffer, offset) catch 0;
+            output = buffer[0..read];
+            next_offset = offset + read;
+        } else |_| {}
+    }
+
+    try ctx.json(DetailView{
+        .id = detail.id,
+        .kind = detail.kind,
+        .title = detail.title,
+        .status = detail.status,
+        .phase = detail.phase,
+        .progress = detail.progress,
+        .params = detail.params,
+        .result = detail.result,
+        .@"error" = detail.error_text,
+        .output_base = detail.output_base,
+        .output_bytes = total,
+        .output_truncated = detail.output_truncated,
+        .output = output,
+        .output_offset = offset,
+        .has_more = next_offset < @as(u64, @intCast(total)),
+        .created_at = detail.created_at,
+        .started_at = detail.started_at,
+        .finished_at = detail.finished_at,
+        .updated_at = detail.updated_at,
+        .owner_cn = detail.owner_cn,
+    });
+}
+
+pub fn cancel(ctx: *context.Context) anyerror!void {
+    const id = ctx.param("id") orelse {
+        ctx.fail(400, "bad_task", "missing task id");
+        return;
+    };
+    if (ctx.app.tasks.cancel(id)) {
+        try ctx.json(.{ .ok = true });
+        return;
+    }
+    if ((try ctx.app.tasks.get(ctx.arena, id)) == null) {
+        ctx.fail(404, "not_found", "task not found");
+        return;
+    }
+    ctx.fail(409, "not_running", "task is not running");
+}
+
+pub fn dismiss(ctx: *context.Context) anyerror!void {
+    const id = ctx.param("id") orelse {
+        ctx.fail(400, "bad_task", "missing task id");
+        return;
+    };
+    const removed = ctx.app.tasks.dismiss(id) catch |err| switch (err) {
+        error.TaskRunning => {
+            ctx.fail(409, "task_running", "task is still running");
+            return;
+        },
+        else => {
+            ctx.fail(500, "task_failed", "could not dismiss task");
+            return;
+        },
+    };
+    if (!removed) {
+        ctx.fail(404, "not_found", "task not found");
+        return;
+    }
+    try ctx.json(.{ .ok = true });
+}

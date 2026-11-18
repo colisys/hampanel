@@ -4,6 +4,7 @@ const request = @import("../http/request.zig");
 
 const health = @import("health.zig");
 const system = @import("system.zig");
+const tasks = @import("tasks.zig");
 const metrics = @import("metrics.zig");
 const processes = @import("processes.zig");
 const files = @import("files.zig");
@@ -35,6 +36,12 @@ const host = @import("host.zig");
 
 pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/health", .handler = health.index },
+
+    .{ .method = .POST, .pattern = "/api/v1/tasks", .handler = tasks.create },
+    .{ .method = .GET, .pattern = "/api/v1/tasks", .handler = tasks.index },
+    .{ .method = .GET, .pattern = "/api/v1/tasks/:id", .handler = tasks.get },
+    .{ .method = .POST, .pattern = "/api/v1/tasks/:id/cancel", .handler = tasks.cancel },
+    .{ .method = .DELETE, .pattern = "/api/v1/tasks/:id", .handler = tasks.dismiss },
 
     .{ .method = .GET, .pattern = "/api/v1/update", .handler = update.index },
     .{ .method = .POST, .pattern = "/api/v1/update/check", .handler = update.check },

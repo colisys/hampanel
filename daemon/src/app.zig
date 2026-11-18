@@ -5,6 +5,7 @@ const tls = @import("tls.zig");
 const pki = @import("pki.zig");
 const audit = @import("audit.zig");
 const platform = @import("platform/mod.zig");
+const tasks = @import("tasks.zig");
 
 pub const App = struct {
     allocator: std.mem.Allocator,
@@ -19,6 +20,7 @@ pub const App = struct {
     tls: tls.Context,
     pki: pki.Paths,
     audit: audit.Log,
+    tasks: *tasks.Manager,
     metrics: platform.MetricsState = .{},
     active_connections: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
 
