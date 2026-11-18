@@ -42,6 +42,7 @@ const Tool = struct {
     package: []const u8,
     binary: []const u8,
     apt_package: ?[]const u8 = null,
+    apt_extra: ?[]const u8 = null,
 };
 
 const tools = [_]Tool{
@@ -59,6 +60,9 @@ const tools = [_]Tool{
     .{ .id = "zstd", .name = "zstd", .description = "Zstandard 压缩工具", .package = "zstd", .binary = "zstd" },
     .{ .id = "ripgrep", .name = "ripgrep", .description = "快速文本搜索 (rg)", .package = "ripgrep", .binary = "rg" },
     .{ .id = "fail2ban", .name = "Fail2ban", .description = "SSH 等服务防暴力破解", .package = "fail2ban", .binary = "fail2ban-client" },
+    .{ .id = "clamav", .name = "ClamAV", .description = "开源防病毒引擎，含 clamd 服务与病毒库更新", .package = "clamav", .binary = "clamdscan", .apt_extra = "clamav-daemon" },
+    .{ .id = "supervisord", .name = "Supervisord", .description = "进程监督器，管理后台进程", .package = "supervisor", .binary = "supervisord" },
+    .{ .id = "pure-ftpd", .name = "Pure-FTPD", .description = "轻量 FTP 服务", .package = "pure-ftpd", .binary = "pure-ftpd" },
     .{ .id = "rsyslog", .name = "rsyslog", .description = "传统文件日志服务（SSH 文件模式）", .package = "rsyslog", .binary = "rsyslogd" },
     .{ .id = "nix", .name = "Nix", .description = "可复现构建与运行环境（本面板使用精选属性）", .package = "nix", .binary = "nix", .apt_package = "nix-bin" },
     .{ .id = "docker", .name = "Docker", .description = "容器运行时与 CLI（容器页面依赖）", .package = "docker", .binary = "docker", .apt_package = "docker.io" },
@@ -88,7 +92,12 @@ pub fn install(allocator: std.mem.Allocator, id: []const u8) !Outcome {
     const tool = findTool(id) orelse return error.UnknownTool;
     const manager = detect(allocator);
     if (manager == .none) return error.ManagerUnavailable;
-    return installPackage(allocator, manager, packageFor(tool, manager));
+    var packages = std.array_list.Managed([]const u8).init(allocator);
+    try packages.append(packageFor(tool, manager));
+    if (manager == .apt) {
+        if (tool.apt_extra) |extra| try packages.append(extra);
+    }
+    return installPackage(allocator, manager, packages.items);
 }
 
 pub fn installCustom(allocator: std.mem.Allocator, package: []const u8) !Outcome {
@@ -96,23 +105,45 @@ pub fn installCustom(allocator: std.mem.Allocator, package: []const u8) !Outcome
     if (!validate.isPackageName(package)) return error.InvalidPackage;
     const manager = detect(allocator);
     if (manager == .none) return error.ManagerUnavailable;
-    return installPackage(allocator, manager, package);
+    return installPackage(allocator, manager, &.{package});
 }
 
-fn installPackage(allocator: std.mem.Allocator, manager: Manager, package: []const u8) !Outcome {
+fn installPackage(
+    allocator: std.mem.Allocator,
+    manager: Manager,
+    packages: []const []const u8,
+) !Outcome {
     var argv = std.array_list.Managed([]const u8).init(allocator);
     switch (manager) {
-        .apt => try argv.appendSlice(&.{
-            "apt-get", "-y",
-            "-o",      "Dpkg::Options::=--force-confdef",
-            "-o",      "Dpkg::Options::=--force-confold",
-            "install", package,
-        }),
-        .dnf => try argv.appendSlice(&.{ "dnf", "install", "-y", package }),
-        .yum => try argv.appendSlice(&.{ "yum", "install", "-y", package }),
-        .zypper => try argv.appendSlice(&.{ "zypper", "--non-interactive", "install", package }),
-        .pacman => try argv.appendSlice(&.{ "pacman", "-S", "--noconfirm", "--needed", package }),
-        .apk => try argv.appendSlice(&.{ "apk", "add", "--no-cache", package }),
+        .apt => {
+            try argv.appendSlice(&.{
+                "apt-get", "-y",
+                "-o",      "Dpkg::Options::=--force-confdef",
+                "-o",      "Dpkg::Options::=--force-confold",
+                "install",
+            });
+            try argv.appendSlice(packages);
+        },
+        .dnf => {
+            try argv.appendSlice(&.{ "dnf", "install", "-y" });
+            try argv.appendSlice(packages);
+        },
+        .yum => {
+            try argv.appendSlice(&.{ "yum", "install", "-y" });
+            try argv.appendSlice(packages);
+        },
+        .zypper => {
+            try argv.appendSlice(&.{ "zypper", "--non-interactive", "install" });
+            try argv.appendSlice(packages);
+        },
+        .pacman => {
+            try argv.appendSlice(&.{ "pacman", "-S", "--noconfirm", "--needed" });
+            try argv.appendSlice(packages);
+        },
+        .apk => {
+            try argv.appendSlice(&.{ "apk", "add", "--no-cache" });
+            try argv.appendSlice(packages);
+        },
         .none => unreachable,
     }
 
