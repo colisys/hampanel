@@ -518,163 +518,145 @@ class _SoftwarePageState extends State<SoftwarePage>
     }
     final status = _fail2ban;
     if (status == null) return const SizedBox.shrink();
-
+    final wide = MediaQuery.sizeOf(context).width >= 900;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  const Text(
-                    '封禁管理',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-                  ),
-                  StatusPill(
-                    text: status.active ? '运行中' : '未运行',
-                    good: status.active,
-                  ),
-                ],
-              ),
-            ),
-            OutlinedButton.icon(
-              onPressed: _loadFail2ban,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('刷新'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        if (status.message.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Text(
-              status.message,
-              style: TextStyle(fontSize: 11.5, color: hampanelDanger),
-            ),
+        PanelCard(
+          title: '封禁管理',
+          trailing: OutlinedButton.icon(
+            onPressed: _loadFail2ban,
+            icon: const Icon(Icons.refresh, size: 16),
+            label: const Text('刷新'),
           ),
-        if (status.jails.isEmpty)
-          Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              '当前没有启用的 jail。',
-              style: TextStyle(fontSize: 12, color: hampanelMuted),
-            ),
-          )
-        else
-          for (final jail in status.jails) _jailCard(jail),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'DEFAULT 阈值',
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-              ),
-            ),
-            FilledButton.icon(
-              onPressed: _saveLimits,
-              icon: const Icon(Icons.save_outlined, size: 16),
-              label: const Text('保存阈值'),
-            ),
-          ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (status.message.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(
+                    status.message,
+                    style: TextStyle(fontSize: 11.5, color: hampanelDanger),
+                  ),
+                ),
+              if (status.jails.isEmpty)
+                Text(
+                  '当前没有启用的 jail。',
+                  style: TextStyle(fontSize: 12, color: hampanelMuted),
+                )
+              else
+                for (final jail in status.jails) _jailCard(jail, wide: wide),
+            ],
+          ),
         ),
-        const SizedBox(height: 8),
-        FormRow(
-          children: [
-            TextField(
-              controller: _maxretryController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'maxretry'),
-            ),
-            TextField(
-              controller: _bantimeController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'bantime（秒）'),
-            ),
-            TextField(
-              controller: _findtimeController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'findtime（秒）'),
-            ),
-          ],
+        const SizedBox(height: 12),
+        PanelCard(
+          title: 'DEFAULT 阈值',
+          trailing: FilledButton.icon(
+            onPressed: _saveLimits,
+            icon: const Icon(Icons.save_outlined, size: 16),
+            label: const Text('保存阈值'),
+          ),
+          child: FormRow(
+            children: [
+              TextField(
+                controller: _maxretryController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'maxretry'),
+              ),
+              TextField(
+                controller: _bantimeController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'bantime（秒）'),
+              ),
+              TextField(
+                controller: _findtimeController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'findtime（秒）'),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
-  Widget _jailCard(Fail2banJail jail) {
+  Widget _jailCard(Fail2banJail jail, {required bool wide}) {
+    final all = jail.bannedIps.isEmpty
+        ? null
+        : TextButton(
+            onPressed: () => _showAllBanned(jail),
+            child: Text('查看全部 ${jail.bannedIps.length} 个封禁 IP'),
+          );
+    final ban = OutlinedButton.icon(
+      onPressed: () => _ban(jail),
+      icon: const Icon(Icons.block, size: 15),
+      label: const Text('封禁 IP'),
+    );
+    final name = Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Icon(Icons.gavel_outlined, size: 17, color: hampanelAccent),
+        Text(
+          jail.name,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        if (!wide) ban,
+      ],
+    );
+    final chips = Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (final ip in jail.bannedIps.take(10))
+          InputChip(
+            label: Text(ip, style: monospace.copyWith(fontSize: 11)),
+            onDeleted: () => _unban(jail, ip),
+            deleteIcon: const Icon(Icons.close, size: 14),
+          ),
+      ],
+    );
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: hampanelSurfaceAlt,
         borderRadius: BorderRadius.circular(3),
         border: Border.all(color: hampanelBorder),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Icon(Icons.gavel_outlined, size: 17, color: hampanelAccent),
-              Text(
-                jail.name,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              Text(
-                '当前封禁 ${jail.currentlyBanned} / 累计 ${jail.totalBanned}',
-                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _ban(jail),
-                icon: const Icon(Icons.block, size: 15),
-                label: const Text('封禁 IP'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'maxretry ${jail.maxretry} · bantime ${jail.bantime}s · findtime ${jail.findtime}s',
-            style: monospace.copyWith(fontSize: 11, color: hampanelMuted),
-          ),
-          if (jail.bannedIps.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
+      child: wide
+          ? Row(
               children: [
-                for (final ip in jail.bannedIps.take(10))
-                  InputChip(
-                    label: Text(ip, style: monospace.copyWith(fontSize: 11)),
-                    onDeleted: () => _unban(jail, ip),
-                    deleteIcon: const Icon(Icons.close, size: 14),
+                Icon(Icons.gavel_outlined, size: 17, color: hampanelAccent),
+                const SizedBox(width: 8),
+                Text(
+                  jail.name,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                   ),
+                ),
+                const Spacer(),
+                if (all != null) ...[all, const SizedBox(width: 6)],
+                ban,
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                name,
+                if (jail.bannedIps.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  chips,
+                  if (jail.bannedIps.length > 10 && all != null)
+                    Align(alignment: Alignment.centerLeft, child: all),
+                ],
               ],
             ),
-            if (jail.bannedIps.length > 10) ...[
-              const SizedBox(height: 4),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: () => _showAllBanned(jail),
-                  child: Text('查看全部 ${jail.bannedIps.length} 个封禁 IP'),
-                ),
-              ),
-            ],
-          ],
-        ],
-      ),
     );
   }
+
 }
