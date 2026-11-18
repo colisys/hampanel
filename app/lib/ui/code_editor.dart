@@ -17,6 +17,8 @@ import '../core/models/recycle_entry.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
+const double _editorHeaderHeight = 48;
+
 enum CodeLanguage {
   plain('文本'),
   ini('INI / systemd'),
@@ -90,7 +92,7 @@ class CodeEditorPaneState extends State<CodeEditorPane> {
       children: [
         if (widget.showToolbar)
           Container(
-            height: 36,
+            height: _editorHeaderHeight,
             padding: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
               color: hampanelSurfaceAlt,
@@ -105,8 +107,9 @@ class CodeEditorPaneState extends State<CodeEditorPane> {
                   child: Text(
                     widget.language.label,
                     style: TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6,
                       color: hampanelMuted,
                     ),
                   ),
@@ -138,9 +141,10 @@ class CodeEditorPaneState extends State<CodeEditorPane> {
             wordWrap: widget.wordWrap,
             autofocus: false,
             style: re.CodeEditorStyle(
-              fontSize: 12.5,
-              fontFamily: 'DejaVu Sans Mono',
+              fontSize: 13,
+              fontFamily: 'FiraCode',
               fontFamilyFallback: const [
+                'DejaVu Sans Mono',
                 'JetBrains Mono',
                 'Noto Sans Mono',
                 'monospace',
@@ -148,7 +152,7 @@ class CodeEditorPaneState extends State<CodeEditorPane> {
                 'Consolas',
                 'Menlo',
               ],
-              fontHeight: 1.45,
+              fontHeight: 1.5,
               textColor: hampanelInk,
               hintTextColor: hampanelMuted,
               backgroundColor: hampanelSurface,
@@ -160,17 +164,16 @@ class CodeEditorPaneState extends State<CodeEditorPane> {
               codeTheme: theme,
             ),
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-            indicatorBuilder: (context, editingController, chunkController, notifier) {
-              return re.DefaultCodeLineNumber(
-                controller: editingController,
-                notifier: notifier,
-              );
-            },
+            indicatorBuilder:
+                (context, editingController, chunkController, notifier) {
+                  return re.DefaultCodeLineNumber(
+                    controller: editingController,
+                    notifier: notifier,
+                  );
+                },
             leadingDivider: Container(width: 1, color: hampanelBorder),
-            findBuilder: (context, controller, readOnly) => _FindPanel(
-              controller: controller,
-              readOnly: readOnly,
-            ),
+            findBuilder: (context, controller, readOnly) =>
+                _FindPanel(controller: controller, readOnly: readOnly),
             toolbarController: const _SelectionToolbar(),
             onChanged: (_) => widget.onChanged?.call(_controller.text),
           ),
@@ -308,17 +311,12 @@ class _CodeEditorPageState extends State<CodeEditorPage> {
         backgroundColor: hampanelBackground,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
-        title: Text(
-          widget.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           if (hasHistory && !wide)
             IconButton(
               tooltip: '文件历史',
-              onPressed: () =>
-                  setState(() => _historyOpen = !_historyOpen),
+              onPressed: () => setState(() => _historyOpen = !_historyOpen),
               icon: Icon(
                 _historyOpen ? Icons.history_toggle_off : Icons.history,
                 size: 20,
@@ -362,10 +360,7 @@ class _CodeEditorPageState extends State<CodeEditorPage> {
     if (_historyError != null) {
       return Padding(
         padding: const EdgeInsets.all(12),
-        child: ErrorBanner(
-          message: _historyError!,
-          onRetry: _loadHistory,
-        ),
+        child: ErrorBanner(message: _historyError!, onRetry: _loadHistory),
       );
     }
     return Column(
@@ -378,10 +373,7 @@ class _CodeEditorPageState extends State<CodeEditorPage> {
               const Expanded(
                 child: Text(
                   '文件历史',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
                 ),
               ),
               IconButton(
@@ -433,8 +425,12 @@ class _FindPanel extends StatelessWidget implements PreferredSizeWidget {
   final re.CodeFindController controller;
   final bool readOnly;
 
+  static const double _height = 34;
+
   @override
-  Size get preferredSize => const Size(double.infinity, 40);
+  Size get preferredSize => controller.value == null
+      ? Size.zero
+      : const Size(double.infinity, _height);
 
   @override
   Widget build(BuildContext context) {
@@ -445,8 +441,8 @@ class _FindPanel extends StatelessWidget implements PreferredSizeWidget {
         ? '无匹配'
         : '${result.index + 1}/${result.matches.length}';
     return Container(
-      height: preferredSize.height,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      height: _height,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
         color: hampanelSurfaceAlt,
         border: Border(bottom: BorderSide(color: hampanelBorder)),
@@ -458,9 +454,13 @@ class _FindPanel extends StatelessWidget implements PreferredSizeWidget {
               controller: controller.findInputController,
               focusNode: controller.findInputFocusNode,
               onSubmitted: (_) => controller.nextMatch(),
-              style: const TextStyle(fontSize: 12),
+              style: const TextStyle(fontSize: 11.5),
               decoration: const InputDecoration(
                 isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 7,
+                ),
                 hintText: '搜索内容',
                 border: OutlineInputBorder(),
               ),
@@ -468,23 +468,47 @@ class _FindPanel extends StatelessWidget implements PreferredSizeWidget {
           ),
           const SizedBox(width: 6),
           Text(label, style: TextStyle(fontSize: 10.5, color: hampanelMuted)),
-          IconButton(
+          _FindButton(
             tooltip: '上一个',
             onPressed: result == null ? null : controller.previousMatch,
-            icon: const Icon(Icons.keyboard_arrow_up, size: 18),
+            icon: Icons.keyboard_arrow_up,
           ),
-          IconButton(
+          _FindButton(
             tooltip: '下一个',
             onPressed: result == null ? null : controller.nextMatch,
-            icon: const Icon(Icons.keyboard_arrow_down, size: 18),
+            icon: Icons.keyboard_arrow_down,
           ),
-          IconButton(
+          _FindButton(
             tooltip: '关闭',
             onPressed: controller.close,
-            icon: const Icon(Icons.close, size: 18),
+            icon: Icons.close,
           ),
         ],
       ),
+    );
+  }
+}
+
+class _FindButton extends StatelessWidget {
+  const _FindButton({
+    required this.tooltip,
+    required this.onPressed,
+    required this.icon,
+  });
+
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+      onPressed: onPressed,
+      icon: Icon(icon, size: 17),
     );
   }
 }
@@ -516,18 +540,9 @@ class _SelectionToolbar implements re.SelectionToolbarController {
       context: context,
       position: position,
       items: [
-        PopupMenuItem<void>(
-          onTap: controller.cut,
-          child: const Text('剪切'),
-        ),
-        PopupMenuItem<void>(
-          onTap: controller.copy,
-          child: const Text('复制'),
-        ),
-        PopupMenuItem<void>(
-          onTap: controller.paste,
-          child: const Text('粘贴'),
-        ),
+        PopupMenuItem<void>(onTap: controller.cut, child: const Text('剪切')),
+        PopupMenuItem<void>(onTap: controller.copy, child: const Text('复制')),
+        PopupMenuItem<void>(onTap: controller.paste, child: const Text('粘贴')),
       ],
     ).whenComplete(() => visibility.value = false);
   }

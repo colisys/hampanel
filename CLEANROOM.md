@@ -23,4 +23,5 @@ Hampanel 是独立实现的服务器运维面板。
 
 - 本项目以 **GPL-3.0-or-later** 发布，见 [LICENSE](LICENSE)。
 - 第三方依赖（OpenSSL、Flutter/Dart 包）遵循其各自许可证，且与本项目许可证兼容。
+- 字体：编辑器使用未修改的 Fira Code 6.2 二进制（SIL OFL 1.1）。版权与许可证见 `app/assets/fonts/OFL.txt`，运行时注册到「开源许可」页面；该许可允许随软件嵌入与再分发，不单独售卖字体。
 - 贡献者提交代码即表示确认其贡献为原创或来自 GPL-3.0-or-later 兼容来源，并同意以 GPL-3.0-or-later 授权。
