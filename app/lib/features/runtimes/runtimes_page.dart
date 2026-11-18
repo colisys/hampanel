@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
@@ -77,54 +79,45 @@ class _RuntimesPageState extends State<RuntimesPage> {
             builder: (_) => _CreateRuntimeDialog(api: _api, catalog: catalog),
           );
     if (request == null) return;
+    if (!mounted) return;
     setState(() => _busy = true);
     try {
-      final result = await _api.postJson(
-        '/api/v1/runtimes',
-        request,
-        timeout: const Duration(minutes: 10),
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'runtime.create',
+        title: '创建环境 ${request['name'] ?? ''}',
+        params: request,
       );
-      final map = result as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
-      if (map['ok'] != true) {
-        await showOutputDialog(
-          context,
-          '创建失败',
-          map['output'] as String? ?? '未知错误',
-        );
-      } else {
-        _toast('环境已创建');
-      }
+      _toast('已提交任务：${task.title}');
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
     } catch (error) {
       _toast(describeError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
-      await _load();
     }
   }
 
   Future<void> _action(RuntimeEnvironment env, String action) async {
     setState(() => _busy = true);
     try {
-      final result = await _api.postJson(
-        '/api/v1/runtimes/${env.id}/$action',
-        const {},
-        timeout: const Duration(minutes: 10),
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'runtime.action',
+        title: '${env.name} $action',
+        params: {'id': env.id, 'action': action},
       );
-      final map = result as Map<String, dynamic>? ?? const {};
-      if (map['ok'] == false) {
-        if (!mounted) return;
-        await showOutputDialog(
-          context,
-          '操作失败',
-          map['output'] as String? ?? '未知错误',
-        );
-      }
+      if (!mounted) return;
+      _toast('已提交任务：${task.title}');
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
     } catch (error) {
       _toast(describeError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
-      await _load();
     }
   }
 
@@ -137,18 +130,24 @@ class _RuntimesPageState extends State<RuntimesPage> {
       danger: true,
     );
     if (!ok) return;
+    if (!mounted) return;
     setState(() => _busy = true);
     try {
-      await _api.deleteJson(
-        '/api/v1/runtimes/${env.id}',
-        query: volumes ? {'volumes': 'true'} : null,
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'runtime.action',
+        title: '删除环境 ${env.name}',
+        params: {'id': env.id, 'action': 'remove', 'volumes': volumes},
       );
-      _toast('${env.name} 已删除');
+      if (!mounted) return;
+      _toast('已提交任务：${task.title}');
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
     } catch (error) {
       _toast(describeError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
-      await _load();
     }
   }
 
@@ -1099,19 +1098,17 @@ class _ExtensionsDialogState extends State<_ExtensionsDialog> {
   Future<void> _save() async {
     setState(() => _busy = true);
     try {
-      final result = await widget.api.putJson(
-        '/api/v1/runtimes/${widget.env.id}/extensions',
-        {'extensions': _selected.toList()},
-        timeout: const Duration(minutes: 10),
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'runtime.extensions',
+        title: '更新扩展 ${widget.env.name}',
+        params: {'id': widget.env.id, 'extensions': _selected.toList()..sort()},
       );
-      final map = result as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
-      if (map['ok'] != true) {
-        await showOutputDialog(context, '重建失败', map['output'] as String? ?? '');
-      } else {
-        await widget.onChanged();
-        if (mounted) Navigator.of(context).pop();
-      }
+      unawaited(center.waitFor(task.id).then((_) {
+        widget.onChanged();
+      }));
+      Navigator.of(context).pop();
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -1676,20 +1673,18 @@ class _RuntimeExtensionsTabState extends State<_RuntimeExtensionsTab> {
   Future<void> _save() async {
     setState(() => _busy = true);
     try {
-      final json = await widget.api.putJson(
-        '/api/v1/runtimes/${widget.env.id}/extensions',
-        {'extensions': _selected.toList()..sort()},
-        timeout: const Duration(minutes: 10),
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'runtime.extensions',
+        title: '更新扩展 ${widget.env.name}',
+        params: {'id': widget.env.id, 'extensions': _selected.toList()..sort()},
       );
-      final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
-      if (map['ok'] == true) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('扩展已保存，正在重建镜像')));
-        await widget.onChanged();
-      } else {
-        await showOutputDialog(context, '保存失败', map['output'] as String? ?? '');
-      }
+      showAppSnackBar(context, SnackBar(content: Text('已提交任务：${task.title}')));
+      unawaited(center.waitFor(task.id).then((_) {
+        widget.onChanged();
+      }));
+      Navigator.of(context).pop();
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context)
