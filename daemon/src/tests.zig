@@ -32,6 +32,9 @@ test {
     _ = @import("api/mod.zig");
     _ = @import("store/catalog.zig");
     _ = @import("store/apps.zig");
+    _ = @import("tasks.zig");
+    _ = @import("task_handlers.zig");
+    _ = @import("api/tasks.zig");
 }
 
 test "config defaults survive empty file" {

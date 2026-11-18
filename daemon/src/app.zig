@@ -93,8 +93,11 @@ pub const App = struct {
             defer self.mutex.unlock(compat.io());
             const entry = self.counts.getEntry(cn) orelse return;
             if (entry.value_ptr.* <= 1) {
+                // `remove` may swap entries, so the key slice must be copied
+                // before the map is mutated.
+                const key = entry.key_ptr.*;
                 _ = self.counts.remove(cn);
-                allocator.free(entry.key_ptr.*);
+                allocator.free(key);
             } else {
                 entry.value_ptr.* -= 1;
             }

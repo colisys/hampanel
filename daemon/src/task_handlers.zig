@@ -307,7 +307,7 @@ fn storeDeploy(ctx: *tasks.Context) !void {
         &provided,
     ) catch |err| return err;
     try ctx.write(result.output);
-    ctx.result = try std.json.stringifyAlloc(
+    ctx.result = try std.json.Stringify.valueAlloc(
         ctx.allocator,
         .{ .params = result.params },
         .{},

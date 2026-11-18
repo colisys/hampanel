@@ -43,7 +43,7 @@ pub fn create(ctx: *context.Context) anyerror!void {
         return;
     }
     const allowed = ctx.app.task_limits.allow(
-        ctx.arena,
+        ctx.app.allocator,
         ctx.peer_cn,
         max_submissions_per_minute,
         60 * 1000,
