@@ -48,8 +48,14 @@ class _LogsPageState extends State<LogsPage> {
           .toList();
       if (!mounted) return;
       setState(() {
-        _sources = sources;
-        _selected = sources.isEmpty ? null : sources.first.id;
+        _sources = sources
+            .where((source) => source.available)
+            .toList(growable: false);
+        if (_sources.isEmpty) {
+          _selected = null;
+        } else if (!_sources.any((source) => source.id == _selected)) {
+          _selected = _sources.first.id;
+        }
         _loading = false;
       });
       if (_selected != null) await _loadTail();
