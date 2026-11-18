@@ -79,6 +79,18 @@ pub fn autoDetect(allocator: std.mem.Allocator, socket: []const u8) !Engine {
     return error.EngineUnavailable;
 }
 
+fn containsIgnoreCase(haystack: []const u8, needle: []const u8) bool {
+    if (needle.len == 0) return true;
+    if (needle.len > haystack.len) return false;
+    var index: usize = 0;
+    while (index + needle.len <= haystack.len) : (index += 1) {
+        if (std.ascii.eqlIgnoreCase(haystack[index .. index + needle.len], needle)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 pub fn run(
     allocator: std.mem.Allocator,
     engine: Engine,
@@ -108,20 +120,45 @@ pub fn composeCommand(
     engine: Engine,
     socket: []const u8,
 ) ![]const []const u8 {
-    const candidates = [_][]const []const u8{
-        &.{ engine.name, "compose" },
-        if (engine.podman) &.{"podman-compose"} else &.{"docker-compose"},
-    };
+    // Prefer the standalone Podman provider first. Some Podman 4.x builds
+    // expose a `podman compose` stub that exits 0 while printing
+    // "unrecognized command", so exit status alone is not enough.
+    const candidates: []const []const []const u8 = if (engine.podman)
+        &.{
+            &.{"podman-compose"},
+            &.{"docker-compose"},
+            &.{ engine.name, "compose" },
+        }
+    else
+        &.{
+            &.{ engine.name, "compose" },
+            &.{"docker-compose"},
+        };
     for (candidates) |base| {
         var probe = std.array_list.Managed([]const u8).init(allocator);
         try probe.appendSlice(base);
         try probe.append("version");
         const result = run(allocator, engine, socket, probe.items, .{ .max_output = 64 * 1024 }) catch continue;
-        if (result.ok()) {
+        if (result.ok() and !probeIndicatesUnsupported(result)) {
             const out = try allocator.alloc([]const u8, base.len);
             @memcpy(out, base);
             return out;
         }
     }
     return error.ComposeUnavailable;
+}
+
+fn probeIndicatesUnsupported(result: exec.Result) bool {
+    const needles = [_][]const u8{
+        "unrecognized command",
+        "unknown command",
+        "not a podman command",
+        "is not a docker command",
+        "error: unrecognized",
+    };
+    for (needles) |needle| {
+        if (containsIgnoreCase(result.stdout, needle)) return true;
+        if (containsIgnoreCase(result.stderr, needle)) return true;
+    }
+    return false;
 }
