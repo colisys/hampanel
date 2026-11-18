@@ -196,6 +196,19 @@ class _SettingsPageState extends State<SettingsPage> {
     );
     if (confirmed != true) return;
     setState(() => _updateBusy = true);
+    var before = _serverVersion;
+    if (before == null || before == '?') {
+      try {
+        final health = await _api.getJson(
+          '/api/v1/health',
+          timeout: const Duration(seconds: 5),
+        );
+        before = (health as Map<String, dynamic>?)?['version'] as String?;
+        if (mounted && before != null) {
+          setState(() => _serverVersion = before);
+        }
+      } catch (_) {}
+    }
     try {
       final result = await _api.postJson(
         '/api/v1/update/apply',
@@ -206,11 +219,46 @@ class _SettingsPageState extends State<SettingsPage> {
           ? result['message'] as String? ?? '更新完成'
           : '更新完成';
       _toast(message);
+      await _waitForRestart(before);
+      await _loadUpdate();
     } catch (error) {
-      _toast('更新失败：${describeError(error)}');
+      final restarted = await _waitForRestart(before);
+      if (restarted) {
+        _toast('更新已应用，服务已重启');
+        await _loadUpdate();
+      } else {
+        _toast('更新失败：${describeError(error)}');
+      }
     } finally {
       if (mounted) setState(() => _updateBusy = false);
     }
+  }
+
+  Future<bool> _waitForRestart(String? before) async {
+    if (before == null || before == '?' || before.isEmpty) return false;
+    for (var attempt = 0; attempt < 20; attempt++) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (!mounted) return false;
+      try {
+        final json = await _api.getJson(
+          '/api/v1/health',
+          timeout: const Duration(seconds: 3),
+        );
+        final current = (json as Map<String, dynamic>?)?['version'] as String?;
+        if (current != null && current != before) {
+          if (mounted) {
+            setState(() {
+              _serverVersion = current;
+              _health = '连接正常 · 服务端 $current';
+            });
+          }
+          return true;
+        }
+      } catch (_) {
+        // Expected while the service is between stop and start.
+      }
+    }
+    return false;
   }
 
   Future<void> _toggleUpdateSchedule() async {

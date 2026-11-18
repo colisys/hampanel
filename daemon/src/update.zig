@@ -127,7 +127,7 @@ pub fn apply(allocator: std.mem.Allocator, database: *db.Db, cfg: config.Config)
 
     if (builtin.os.tag == .linux) {
         extractLinux(allocator, archive_path, workdir) catch return error.ExtractFailed;
-        replaceLinux(allocator, workdir, cfg) catch |err| return switch (err) {
+        replaceLinux(allocator, workdir) catch |err| return switch (err) {
             error.UpstreamBinaryUnusable => error.UpstreamBinaryUnusable,
             else => error.ReplaceFailed,
         };
@@ -146,6 +146,11 @@ pub fn apply(allocator: std.mem.Allocator, database: *db.Db, cfg: config.Config)
         .install_mode = cfg.install_mode,
     };
     saveState(allocator, database, state) catch {};
+
+    if (builtin.os.tag == .linux) {
+        scheduleRestart(allocator, cfg) catch return error.RestartFailed;
+        return .{ .updated = true, .message = "update applied; service restart scheduled" };
+    }
 
     return .{ .updated = true, .message = "update downloaded and applied" };
 }
@@ -353,7 +358,7 @@ fn extractLinux(allocator: std.mem.Allocator, archive: []const u8, workdir: []co
     if (!result.ok()) return error.ExtractFailed;
 }
 
-fn replaceLinux(allocator: std.mem.Allocator, workdir: []const u8, cfg: config.Config) !void {
+fn replaceLinux(allocator: std.mem.Allocator, workdir: []const u8) !void {
     const self_exe = try compat.selfExePathAlloc(allocator);
     const new_bin = try compat.path.join(allocator, &.{ workdir, "hampaneld" });
     const staged = try std.fmt.allocPrint(allocator, "{s}.new", .{self_exe});
@@ -383,9 +388,20 @@ fn replaceLinux(allocator: std.mem.Allocator, workdir: []const u8, cfg: config.C
             compat.cwd().rename(staged_risk, risk_old) catch return;
         } else |_| {}
     }
+}
 
-    const result = exec.run(allocator, &.{ "systemctl", "restart", cfg.service_name }, 1024 * 1024) catch
-        return error.RestartFailed;
+/// Restart after the HTTP response has been flushed. A transient systemd
+/// service runs outside the hampanel service cgroup, so `systemctl restart` can
+/// stop the daemon without killing the operation that requests the restart.
+fn scheduleRestart(allocator: std.mem.Allocator, cfg: config.Config) !void {
+    var random: [4]u8 = undefined;
+    compat.randomBytes(&random);
+    const unit = try std.fmt.allocPrint(allocator, "hampanel-self-update-{s}", .{std.fmt.bytesToHex(random, .lower)});
+    const script = try std.fmt.allocPrint(allocator, "sleep 2; exec /bin/systemctl restart {s}", .{cfg.service_name});
+    const result = exec.run(allocator, &.{
+        "systemd-run", "--quiet", "--collect", "--unit", unit,
+        "/bin/sh", "-c", script,
+    }, 256 * 1024) catch return error.RestartFailed;
     if (!result.ok()) return error.RestartFailed;
 }
 
