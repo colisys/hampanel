@@ -303,7 +303,7 @@ class _ImagesSectionState extends State<ImagesSection> {
     final ok = await confirmDialog(
       context,
       title: '清理构建缓存?',
-      message: '会删除 Docker builder 缓存。',
+      message: '会删除构建缓存。',
       confirmLabel: '清理',
       danger: true,
     );

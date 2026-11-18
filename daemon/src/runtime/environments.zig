@@ -4,6 +4,7 @@ const db = @import("../db.zig");
 const exec = @import("shared").exec;
 const catalog = @import("catalog.zig");
 const images = @import("images.zig");
+const engine_mod = @import("engine.zig");
 
 pub const Environment = struct {
     id: []const u8,
@@ -50,6 +51,17 @@ pub const ConfigEntry = struct {
     path: []const u8,
     content: []const u8,
 };
+
+const EngineCommand = struct {
+    engine: engine_mod.Engine,
+    socket: []const u8,
+};
+
+fn engineCommand(allocator: std.mem.Allocator, database: *db.Db) !EngineCommand {
+    const socket = engine_mod.socketFromDb(allocator, database);
+    const engine = try engine_mod.detect(allocator, socket);
+    return .{ .engine = engine, .socket = socket };
+}
 
 const select_columns =
     "id, name, runtime, image, tag, status, port, cpu, memory_mb, volume, extensions, pkg_mirror, config_version, created_at, updated_at";
@@ -151,10 +163,23 @@ pub fn restart(allocator: std.mem.Allocator, database: *db.Db, id: []const u8) !
 
 pub fn remove(allocator: std.mem.Allocator, database: *db.Db, id: []const u8, volumes: bool) !Outcome {
     const environment = (try get(allocator, database, id)) orelse return error.NotFound;
+    const command = try engineCommand(allocator, database);
     const name = try containerName(allocator, id);
-    const result = try exec.run(allocator, &.{ "docker", "rm", "-f", name }, 2 * 1024 * 1024);
+    const result = try engine_mod.run(
+        allocator,
+        command.engine,
+        command.socket,
+        &.{ command.engine.name, "rm", "-f", name },
+        .{ .max_output = 2 * 1024 * 1024 },
+    );
     if (volumes) {
-        _ = exec.run(allocator, &.{ "docker", "volume", "rm", environment.volume }, 1024 * 1024) catch {};
+        _ = engine_mod.run(
+            allocator,
+            command.engine,
+            command.socket,
+            &.{ command.engine.name, "volume", "rm", environment.volume },
+            .{ .max_output = 1024 * 1024 },
+        ) catch {};
     }
     if (result.ok()) {
         try database.execute("DELETE FROM runtime_environments WHERE id = ?1", &.{.{ .text = id }});
@@ -163,10 +188,16 @@ pub fn remove(allocator: std.mem.Allocator, database: *db.Db, id: []const u8, vo
 }
 
 pub fn logs(allocator: std.mem.Allocator, database: *db.Db, id: []const u8, lines: usize) !Outcome {
-    _ = database;
+    const command = try engineCommand(allocator, database);
     const name = try containerName(allocator, id);
     const tail = try std.fmt.allocPrint(allocator, "{d}", .{lines});
-    const result = try exec.run(allocator, &.{ "docker", "logs", "--tail", tail, name }, 8 * 1024 * 1024);
+    const result = try engine_mod.run(
+        allocator,
+        command.engine,
+        command.socket,
+        &.{ command.engine.name, "logs", "--tail", tail, name },
+        .{ .max_output = 8 * 1024 * 1024 },
+    );
     return .{
         .ok = result.ok(),
         .output = try std.mem.concat(allocator, u8, &.{ result.stdout, result.stderr }),
@@ -174,9 +205,15 @@ pub fn logs(allocator: std.mem.Allocator, database: *db.Db, id: []const u8, line
 }
 
 pub fn liveStatus(allocator: std.mem.Allocator, database: *db.Db, id: []const u8) ![]u8 {
+    const command = engineCommand(allocator, database) catch return allocator.dupe(u8, "unknown");
     const name = try containerName(allocator, id);
-    const result = exec.run(allocator, &.{ "docker", "inspect", "--format", "{{.State.Status}}", name }, 64 * 1024) catch
-        return allocator.dupe(u8, "unknown");
+    const result = engine_mod.run(
+        allocator,
+        command.engine,
+        command.socket,
+        &.{ command.engine.name, "inspect", "--format", "{{.State.Status}}", name },
+        .{ .max_output = 64 * 1024 },
+    ) catch return allocator.dupe(u8, "unknown");
     if (!result.ok()) return allocator.dupe(u8, "missing");
     const status = std.mem.trim(u8, result.stdout, " \t\r\n");
     updateStatus(database, id, status) catch {};
@@ -228,8 +265,15 @@ pub fn configSave(
 
     try writeConfigFile(allocator, data_dir, id, file_path, content);
     if (std.mem.eql(u8, environment.status, "running") or std.mem.eql(u8, environment.status, "restarting")) {
+        const command = try engineCommand(allocator, database);
         const name = try containerName(allocator, id);
-        const result = try exec.run(allocator, &.{ "docker", "restart", name }, 2 * 1024 * 1024);
+        const result = try engine_mod.run(
+            allocator,
+            command.engine,
+            command.socket,
+            &.{ command.engine.name, "restart", name },
+            .{ .max_output = 2 * 1024 * 1024 },
+        );
         return .{ .ok = result.ok(), .output = textOf(result) };
     }
     return .{ .ok = true, .output = "配置已保存" };
@@ -264,9 +308,17 @@ pub fn rebuild(allocator: std.mem.Allocator, database: *db.Db, data_dir: []const
 }
 
 pub fn processes(allocator: std.mem.Allocator, database: *db.Db, id: []const u8) !Outcome {
-    _ = database;
+    const command = engineCommand(allocator, database) catch |err| {
+        return .{ .ok = false, .output = @errorName(err) };
+    };
     const name = try containerName(allocator, id);
-    const result = exec.run(allocator, &.{ "docker", "exec", name, "supervisorctl", "-c", "/etc/hampanel/supervisord.conf", "status" }, 1024 * 1024) catch |err| {
+    const result = engine_mod.run(
+        allocator,
+        command.engine,
+        command.socket,
+        &.{ command.engine.name, "exec", name, "supervisorctl", "-c", "/etc/hampanel/supervisord.conf", "status" },
+        .{ .max_output = 1024 * 1024 },
+    ) catch |err| {
         return .{ .ok = false, .output = @errorName(err) };
     };
     return .{
@@ -282,7 +334,6 @@ pub fn processAction(
     process: []const u8,
     action: []const u8,
 ) !Outcome {
-    _ = database;
     if (!validProcessName(process)) return error.InvalidProcess;
     const allowed = [_][]const u8{ "start", "stop", "restart" };
     var valid = false;
@@ -290,8 +341,17 @@ pub fn processAction(
         valid = true;
     };
     if (!valid) return error.InvalidAction;
+    const command = engineCommand(allocator, database) catch |err| {
+        return .{ .ok = false, .output = @errorName(err) };
+    };
     const name = try containerName(allocator, id);
-    const result = exec.run(allocator, &.{ "docker", "exec", name, "supervisorctl", "-c", "/etc/hampanel/supervisord.conf", action, process }, 1024 * 1024) catch |err| {
+    const result = engine_mod.run(
+        allocator,
+        command.engine,
+        command.socket,
+        &.{ command.engine.name, "exec", name, "supervisorctl", "-c", "/etc/hampanel/supervisord.conf", action, process },
+        .{ .max_output = 1024 * 1024 },
+    ) catch |err| {
         return .{ .ok = false, .output = @errorName(err) };
     };
     return .{
@@ -308,6 +368,7 @@ fn rebuildEnvironment(
     runtime: *const catalog.Runtime,
 ) !Outcome {
     updateStatus(database, environment.id, "building") catch {};
+    const command = try engineCommand(allocator, database);
     const config_version = environment.config_version + 1;
     const dockerfile = try images.renderDockerfile(
         allocator,
@@ -322,17 +383,29 @@ fn rebuildEnvironment(
     try writeFileAbsolute(allocator, dir, "Dockerfile", dockerfile);
 
     const image_tag = try imageTag(allocator, environment.id, config_version);
-    const build = try exec.run(allocator, &.{ "docker", "build", "-t", image_tag, dir }, 16 * 1024 * 1024);
+    const build = try engine_mod.run(
+        allocator,
+        command.engine,
+        command.socket,
+        &.{ command.engine.name, "build", "-t", image_tag, dir },
+        .{ .max_output = 16 * 1024 * 1024 },
+    );
     if (!build.ok()) {
         updateStatus(database, environment.id, "error") catch {};
         return .{ .ok = false, .output = textOf(build) };
     }
 
     const name = try containerName(allocator, environment.id);
-    _ = exec.run(allocator, &.{ "docker", "rm", "-f", name }, 1024 * 1024) catch {};
+    _ = engine_mod.run(
+        allocator,
+        command.engine,
+        command.socket,
+        &.{ command.engine.name, "rm", "-f", name },
+        .{ .max_output = 1024 * 1024 },
+    ) catch {};
 
     var argv = std.array_list.Managed([]const u8).init(allocator);
-    try argv.appendSlice(&.{ "docker", "run", "-d", "--name", name, "--restart", "unless-stopped", "--label" });
+    try argv.appendSlice(&.{ command.engine.name, "run", "-d", "--name", name, "--restart", "unless-stopped", "--label" });
     try argv.append(try std.fmt.allocPrint(allocator, "hampanel.runtime={s}", .{environment.id}));
     if (environment.memory_mb) |memory| {
         try argv.appendSlice(&.{ "--memory", try std.fmt.allocPrint(allocator, "{d}m", .{memory}) });
@@ -357,7 +430,13 @@ fn rebuildEnvironment(
     }
     try argv.append(image_tag);
 
-    const run = try exec.run(allocator, argv.items, 8 * 1024 * 1024);
+    const run = try engine_mod.run(
+        allocator,
+        command.engine,
+        command.socket,
+        argv.items,
+        .{ .max_output = 8 * 1024 * 1024 },
+    );
     if (!run.ok()) {
         updateStatus(database, environment.id, "error") catch {};
         return .{ .ok = false, .output = textOf(run) };
@@ -371,8 +450,15 @@ fn rebuildEnvironment(
 }
 
 fn simpleAction(allocator: std.mem.Allocator, database: *db.Db, id: []const u8, action: []const u8, status: []const u8) !Outcome {
+    const command = try engineCommand(allocator, database);
     const name = try containerName(allocator, id);
-    const result = try exec.run(allocator, &.{ "docker", action, name }, 2 * 1024 * 1024);
+    const result = try engine_mod.run(
+        allocator,
+        command.engine,
+        command.socket,
+        &.{ command.engine.name, action, name },
+        .{ .max_output = 2 * 1024 * 1024 },
+    );
     if (result.ok()) updateStatus(database, id, status) catch {};
     return .{ .ok = result.ok(), .output = textOf(result) };
 }

@@ -3,10 +3,10 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/api_client.dart';
 import '../../core/models/docker.dart';
 import '../../core/session.dart';
-import '../../ui/code_editor.dart';
 import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
+import 'podman_settings_panel.dart';
 
 class DockerSettingsSection extends StatefulWidget {
   const DockerSettingsSection({super.key, this.engine});
@@ -36,6 +36,7 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
   bool get _isPodman => _podman || widget.engine == 'podman';
   bool _loading = true;
   bool _saving = false;
+  bool _restarting = false;
   String? _error;
 
   ApiClient get _api => PanelScope.of(context).api;
@@ -93,43 +94,24 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
     }
   }
 
-  Future<void> _editPodmanFile(String path, String title) async {
+  Future<void> _restart() async {
+    setState(() => _restarting = true);
     try {
-      Map<String, dynamic> map = const {};
-      try {
-        final json = await _api.getJson(
-          '/api/v1/files/content',
-          query: {'path': path},
-        );
-        map = json as Map<String, dynamic>;
-      } on ApiException catch (error) {
-        if (error.status != 404) rethrow;
-      }
-      final encoding = map['encoding'] as String? ?? 'utf8';
-      if (encoding != 'utf8') {
-        _toast('该文件不是 UTF-8 文本，暂不支持在线编辑');
-        return;
-      }
-      if (!mounted) return;
-      final edited = await Navigator.of(context).push<String>(
-        MaterialPageRoute(
-          builder: (_) => CodeEditorPage(
-            title: title,
-            initialText: map['content'] as String? ?? '',
-            language: CodeLanguage.toml,
-            api: _api,
-            filePath: path,
-          ),
-        ),
+      final json = await _api.postJson(
+        '/api/v1/docker/restart',
+        const <String, dynamic>{},
       );
-      if (edited == null) return;
-      await _api.putJson('/api/v1/files/content', {
-        'path': path,
-        'content': edited,
-      });
-      _toast('已保存 $path');
+      final map = json as Map<String, dynamic>? ?? const {};
+      final output = (map['output'] as String? ?? '').trim();
+      _toast(
+        map['ok'] == true
+            ? (output.isEmpty ? '容器管理器已重启' : output)
+            : (output.isEmpty ? '容器管理器重启失败' : output),
+      );
     } catch (error) {
       _toast(describeError(error));
+    } finally {
+      if (mounted) setState(() => _restarting = false);
     }
   }
 
@@ -144,12 +126,9 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
     if (_isPodman) return;
     final ok = await confirmDialog(
       context,
-      title: '应用 Docker 设置?',
-      message:
-          '会写入 daemon.json 并重启 Docker。'
-          '未开启 Live Restore 时，重启会停止运行中的容器。',
-      confirmLabel: '应用并重启',
-      danger: true,
+      title: '保存 Docker 设置?',
+      message: '会写入 daemon.json；重启 Docker 后生效。',
+      confirmLabel: '保存',
     );
     if (!ok) return;
     setState(() {
@@ -171,7 +150,7 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
         'cgroup_driver': _cgroup,
         'nvidia_runtime': _nvidia,
         'socket_path': _socket.text.trim(),
-        'restart': true,
+        'restart': false,
       });
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
@@ -180,9 +159,12 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
         SnackBar(
           content: Text(
             map['ok'] == true
-                ? (output.isEmpty ? '设置已应用' : output)
-                : (output.isEmpty ? '应用失败' : output),
+                ? (output.isEmpty ? 'Docker 配置已保存；重启 Docker 后生效' : output)
+                : (output.isEmpty ? '保存失败' : output),
           ),
+          action: map['ok'] == true
+              ? SnackBarAction(label: '立即重启', onPressed: _restart)
+              : null,
         ),
       );
       await _load();
@@ -201,105 +183,52 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
         PageHeader(
           title: _isPodman ? 'Podman 设置' : 'Docker 设置',
           subtitle: _isPodman
-              ? 'Podman 引擎连接与配置'
+              ? 'Podman 引擎配置与重启'
               : (_path.isEmpty ? 'daemon.json 与连接参数' : _path),
-          actions: [
-            if (!_isPodman) ...[
-              FilledButton.icon(
-                onPressed: _saving ? null : _save,
-                icon: _saving
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_outlined, size: 16),
-                label: Text(_saving ? '应用中…' : '应用'),
-              ),
-              const SizedBox(width: 8),
-            ],
-            PageRefreshButton(onPressed: _load),
-          ],
+          actions: [PageRefreshButton(onPressed: _load)],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
         Expanded(
           child: _loading
               ? const LoadingView()
               : _isPodman
-              ? ListView(
-                  padding: pageContentPadding(context, top: 8),
-                  children: [
-                    PanelCard(
-                      title: 'Podman',
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '当前容器引擎为 Podman。Docker daemon.json 专属项不可用；'
-                            '下面直接编辑 Podman 官方配置文件。',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: hampanelMuted,
-                              height: 1.5,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          TextField(
-                            controller: _socket,
-                            readOnly: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Podman socket 路径',
-                              hintText:
-                                  '/run/podman/podman.sock 或 /run/user/1000/podman/podman.sock',
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            '官方配置项参考：containers.conf、registries.conf、storage.conf。',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              color: hampanelMuted,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: () => _editPodmanFile(
-                                  '/etc/containers/containers.conf',
-                                  'Podman containers.conf',
-                                ),
-                                icon: const Icon(Icons.edit_document, size: 16),
-                                label: const Text('containers.conf'),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: () => _editPodmanFile(
-                                  '/etc/containers/registries.conf',
-                                  'Podman registries.conf',
-                                ),
-                                icon: const Icon(Icons.edit_document, size: 16),
-                                label: const Text('registries.conf'),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: () => _editPodmanFile(
-                                  '/etc/containers/storage.conf',
-                                  'Podman storage.conf',
-                                ),
-                                icon: const Icon(Icons.edit_document, size: 16),
-                                label: const Text('storage.conf'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                )
+              ? PodmanSettingsPanel(api: _api)
               : ListView(
                   padding: pageContentPadding(context, top: 8),
                   children: [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: _saving ? null : _save,
+                          icon: _saving
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.save_outlined, size: 16),
+                          label: Text(_saving ? '保存中…' : '保存配置'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _restarting ? null : _restart,
+                          icon: _restarting
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.restart_alt, size: 16),
+                          label: Text(_restarting ? '重启中…' : '重启 Docker'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
                     _Section(
                       title: '容器加速',
                       child: TextField(

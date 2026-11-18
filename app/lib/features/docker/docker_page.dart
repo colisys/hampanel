@@ -43,6 +43,8 @@ class _DockerPageState extends State<DockerPage> {
 
   ApiClient get _api => PanelScope.of(context).api;
 
+  String get _engineLabel => _engine == 'podman' ? 'Podman' : 'Docker';
+
   @override
   void initState() {
     super.initState();
@@ -67,8 +69,18 @@ class _DockerPageState extends State<DockerPage> {
         _checking = false;
       });
     } on ApiException catch (error) {
+      String? configured;
+      if (error.code == 'engine_unavailable') {
+        try {
+          final settings = await _api.getJson('/api/v1/docker/settings');
+          if (settings is Map<String, dynamic>) {
+            configured = settings['engine'] as String?;
+          }
+        } catch (_) {}
+      }
       if (!mounted) return;
       setState(() {
+        _engine = configured ?? _engine;
         _engineMissing = error.code == 'engine_unavailable';
         _error = _engineMissing ? null : error.message;
         _checking = false;
@@ -82,20 +94,22 @@ class _DockerPageState extends State<DockerPage> {
     }
   }
 
-  Future<void> _installDocker() async {
+  Future<void> _installEngine() async {
+    final package = _engine == 'podman' ? 'podman' : 'docker';
+    final label = package == 'podman' ? 'Podman' : 'Docker';
     setState(() => _installing = true);
     try {
       final json = await _api.postJson(
-        '/api/v1/store/packages/docker/install',
+        '/api/v1/store/packages/$package/install',
         const <String, dynamic>{},
         timeout: const Duration(minutes: 5),
       );
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       if (map['ok'] == false) {
-        _toast(map['output'] as String? ?? 'Docker 安装失败');
+        _toast(map['output'] as String? ?? '$label 安装失败');
       } else {
-        _toast('Docker 已安装，正在重新检测');
+        _toast('$label 已安装，正在重新检测');
       }
       await _checkConnection();
     } catch (error) {
@@ -119,16 +133,19 @@ class _DockerPageState extends State<DockerPage> {
     if (_engineMissing) {
       return Column(
         children: [
-          const PageHeader(title: '容器', subtitle: '未检测到 Docker 或 Podman'),
+          PageHeader(
+            title: '容器',
+            subtitle: '未检测到 $_engineLabel',
+          ),
           Expanded(
             child: EmptyState(
               icon: Icons.widgets_outlined,
               title: '还没有容器运行时',
               message:
-                  '容器、运行环境和应用商店的 Docker 应用都依赖 Docker（或兼容的 Podman）。'
-                  '可以在应用商店的系统工具里安装 Docker，或直接点击下面的按钮。',
+                  '容器、运行环境和应用商店的 Compose 应用都依赖 $_engineLabel。'
+                  '可以在应用商店安装 $_engineLabel，或直接点击下面的按钮。',
               action: FilledButton.icon(
-                onPressed: _installing ? null : _installDocker,
+                onPressed: _installing ? null : _installEngine,
                 icon: _installing
                     ? const SizedBox(
                         width: 14,
@@ -136,7 +153,7 @@ class _DockerPageState extends State<DockerPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.download_outlined, size: 16),
-                label: Text(_installing ? '安装中…' : '安装 Docker'),
+                label: Text(_installing ? '安装中…' : '安装 $_engineLabel'),
               ),
             ),
           ),
@@ -219,7 +236,7 @@ class _DockerPageState extends State<DockerPage> {
       case 5:
         return const VolumesSection();
       case 6:
-        return const RegistriesSection();
+        return RegistriesSection(engine: _engine);
       case 7:
         return DockerSettingsSection(engine: _engine);
       default:

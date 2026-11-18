@@ -3,6 +3,7 @@ const context = @import("context.zig");
 const catalog = @import("../runtime/catalog.zig");
 const environments = @import("../runtime/environments.zig");
 const docker_settings = @import("../runtime/docker_settings.zig");
+const engine_mod = @import("../runtime/engine.zig");
 const exec = @import("shared").exec;
 const log = @import("../log.zig");
 const redact = @import("../util/redact.zig");
@@ -519,6 +520,69 @@ pub fn dockerSettingsSave(ctx: *context.Context) anyerror!void {
         .output = outcome.output,
         .restart_required = outcome.restart_required,
     });
+}
+
+pub fn engineRestart(ctx: *context.Context) anyerror!void {
+    var engine = ctx.app.config.container;
+    if (engine.len == 0) {
+        const socket = engine_mod.socketFromDb(ctx.arena, ctx.app.db);
+        const detected = engine_mod.detect(ctx.arena, socket) catch |err| {
+            ctx.fail(501, "engine_unavailable", @errorName(err));
+            return;
+        };
+        engine = detected.name;
+    }
+    var socket_result: exec.Result = undefined;
+    var service_result: exec.Result = undefined;
+    var ok = false;
+    var output: []const u8 = "";
+
+    if (std.mem.eql(u8, engine, "podman")) {
+        socket_result = exec.run(
+            ctx.arena,
+            &.{ "systemctl", "restart", "podman.socket" },
+            2 * 1024 * 1024,
+        ) catch |err| {
+            ctx.fail(502, "restart_failed", @errorName(err));
+            return;
+        };
+        service_result = exec.run(
+            ctx.arena,
+            &.{ "systemctl", "restart", "podman.service" },
+            2 * 1024 * 1024,
+        ) catch |err| {
+            ctx.fail(502, "restart_failed", @errorName(err));
+            return;
+        };
+        ok = socket_result.ok() and service_result.ok();
+        output = try std.mem.concat(ctx.arena, u8, &.{
+            socket_result.stderr,
+            socket_result.stdout,
+            service_result.stderr,
+            service_result.stdout,
+        });
+    } else if (std.mem.eql(u8, engine, "docker")) {
+        service_result = exec.run(
+            ctx.arena,
+            &.{ "systemctl", "restart", "docker" },
+            2 * 1024 * 1024,
+        ) catch |err| {
+            ctx.fail(502, "restart_failed", @errorName(err));
+            return;
+        };
+        ok = service_result.ok();
+        output = try std.mem.concat(ctx.arena, u8, &.{
+            service_result.stderr,
+            service_result.stdout,
+        });
+    } else {
+        ctx.fail(409, "unsupported_engine", "container engine is not Docker or Podman");
+        return;
+    }
+
+    if (!ok) ctx.response.status = 502;
+    log.info("engine: restart engine={s} ok={}", .{ engine, ok });
+    try ctx.json(.{ .ok = ok, .engine = engine, .output = output });
 }
 
 fn requireId(ctx: *context.Context) ?[]const u8 {

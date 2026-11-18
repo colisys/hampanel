@@ -8,7 +8,9 @@ import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 
 class RegistriesSection extends StatefulWidget {
-  const RegistriesSection({super.key});
+  const RegistriesSection({super.key, this.engine});
+
+  final String? engine;
 
   @override
   State<RegistriesSection> createState() => _RegistriesSectionState();
@@ -55,7 +57,7 @@ class _RegistriesSectionState extends State<RegistriesSection> {
   Future<void> _edit([DockerRegistry? registry]) async {
     final saved = await showDialog<bool>(
       context: context,
-      builder: (context) => _RegistryDialog(api: _api, registry: registry),
+      builder: (context) => _RegistryDialog(api: _api, registry: registry, engine: widget.engine),
     );
     if (saved == true) {
       _toast(registry == null ? '镜像源已添加' : '镜像源已更新');
@@ -86,7 +88,7 @@ class _RegistriesSectionState extends State<RegistriesSection> {
     final ok = await confirmDialog(
       context,
       title: '删除镜像源 ${registry.name}?',
-      message: '只会删除 hampanel 保存的登录信息，不会退出 Docker 当前登录。',
+      message: '只会删除 hampanel 保存的登录信息，不会退出当前容器引擎的登录。',
       confirmLabel: '删除',
       danger: true,
     );
@@ -240,10 +242,11 @@ class _RegistriesSectionState extends State<RegistriesSection> {
 }
 
 class _RegistryDialog extends StatefulWidget {
-  const _RegistryDialog({required this.api, this.registry});
+  const _RegistryDialog({required this.api, this.registry, this.engine});
 
   final ApiClient api;
   final DockerRegistry? registry;
+  final String? engine;
 
   @override
   State<_RegistryDialog> createState() => _RegistryDialogState();
@@ -271,7 +274,7 @@ class _RegistryDialogState extends State<_RegistryDialog> {
     _host = TextEditingController(text: registry?.host ?? '');
     _username = TextEditingController(text: registry?.username ?? '');
     _secret = TextEditingController();
-    _engine = registry?.engine ?? 'docker';
+    _engine = registry?.engine ?? (widget.engine == 'podman' ? 'podman' : 'docker');
     _protocol = registry?.protocol ?? 'https';
   }
 

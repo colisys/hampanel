@@ -50,7 +50,7 @@ class StorePage extends StatelessWidget {
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             tabs: [
-              Tab(text: 'Docker 应用'),
+              Tab(text: 'Compose 应用'),
               Tab(text: '系统工具'),
               Tab(text: 'Nix'),
             ],

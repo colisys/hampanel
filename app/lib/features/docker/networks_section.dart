@@ -135,7 +135,7 @@ class _NetworksSectionState extends State<NetworksSection> {
               ? const EmptyState(
                   icon: Icons.hub_outlined,
                   title: '没有网络',
-                  message: 'Docker 中还没有自定义网络。',
+                  message: '当前容器引擎中还没有自定义网络。',
                 )
               : ListView.separated(
                   padding: pageContentPadding(context, top: 8),

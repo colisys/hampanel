@@ -64,6 +64,7 @@ pub const routes = [_]router.Route{
     .{ .method = .DELETE, .pattern = "/api/v1/runtimes/:id", .handler = runtimes.remove },
     .{ .method = .GET, .pattern = "/api/v1/docker/settings", .handler = runtimes.dockerSettings },
     .{ .method = .PUT, .pattern = "/api/v1/docker/settings", .handler = runtimes.dockerSettingsSave },
+    .{ .method = .POST, .pattern = "/api/v1/docker/restart", .handler = runtimes.engineRestart },
 
     .{ .method = .GET, .pattern = "/api/v1/host/settings", .handler = host.settings },
     .{ .method = .POST, .pattern = "/api/v1/host/swap", .handler = host.swap },

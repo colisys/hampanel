@@ -537,7 +537,7 @@ class _ContainerEditorDialogState extends State<ContainerEditorDialog> {
         context,
         title: '重建容器 ${_name.text.trim()}?',
         message:
-            'Docker 容器不可原地修改。保存后会停止旧容器、按新配置重建；'
+            '容器不可原地修改。保存后会停止旧容器、按新配置重建；'
             '未在表单中保留的运行时参数可能丢失，旧配置会备份在数据目录。',
         confirmLabel: '重建',
         danger: true,
