@@ -3,13 +3,14 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/api_client.dart';
 import '../../core/format.dart';
 import '../../core/models/recycle_entry.dart';
-import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../store/deploy_dialog.dart';
 
 class RecyclePage extends StatefulWidget {
-  const RecyclePage({super.key});
+  const RecyclePage({super.key, required this.api});
+
+  final ApiClient api;
 
   @override
   State<RecyclePage> createState() => _RecyclePageState();
@@ -20,7 +21,7 @@ class _RecyclePageState extends State<RecyclePage> {
   bool _loading = true;
   String? _error;
 
-  ApiClient get _api => PanelScope.of(context).api;
+  ApiClient get _api => widget.api;
 
   @override
   void initState() {
@@ -117,46 +118,61 @@ class _RecyclePageState extends State<RecyclePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        PageHeader(
-          title: '回收站',
-          subtitle: '通过面板删除的文件与目录会先移动到面板数据目录',
-          actions: [
-            OutlinedButton.icon(
-              onPressed: _entries.isEmpty ? null : _empty,
-              icon: const Icon(Icons.delete_sweep_outlined, size: 16),
-              label: const Text('清空回收站'),
+    return Scaffold(
+      backgroundColor: hampanelBackground,
+      appBar: AppBar(
+        title: const Text('回收站'),
+        backgroundColor: hampanelSurface,
+        foregroundColor: hampanelInk,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: '清空回收站',
+            onPressed: _loading || _entries.isEmpty ? null : _empty,
+            icon: const Icon(Icons.delete_sweep_outlined, size: 20),
+          ),
+          IconButton(
+            tooltip: '刷新',
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.refresh, size: 20),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 4),
+              child: Text(
+                '通过面板删除的文件与目录会先移动到面板数据目录',
+                style: TextStyle(fontSize: 12.5, color: hampanelMuted),
+              ),
             ),
-            const SizedBox(width: 8),
-            IconButton(
-              tooltip: '刷新',
-              onPressed: _loading ? null : _load,
-              icon: const Icon(Icons.refresh, size: 20),
+            Expanded(
+              child: _loading
+                  ? LoadingView()
+                  : _error != null
+                  ? SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                      child: ErrorBanner(message: _error!, onRetry: _load),
+                    )
+                  : _entries.isEmpty
+                  ? EmptyState(
+                      icon: Icons.delete_outline,
+                      title: '回收站为空',
+                      message: '从「文件」页面删除的内容会出现在这里，可恢复或永久删除。',
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                      itemCount: _entries.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) => _card(_entries[index]),
+                    ),
             ),
           ],
         ),
-        Expanded(
-          child: _loading
-              ? LoadingView()
-              : _error != null
-              ? SingleChildScrollView(
-                  child: ErrorBanner(message: _error!, onRetry: _load),
-                )
-              : _entries.isEmpty
-              ? EmptyState(
-                  icon: Icons.delete_outline,
-                  title: '回收站为空',
-                  message: '从「文件」页面删除的内容会出现在这里，可恢复或永久删除。',
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
-                  itemCount: _entries.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) => _card(_entries[index]),
-                ),
-        ),
-      ],
+      ),
     );
   }
 

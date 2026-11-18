@@ -445,7 +445,7 @@ class _FilesPageState extends State<FilesPage> {
 
   Future<void> _openRecycle() async {
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const RecyclePage()),
+      MaterialPageRoute<void>(builder: (_) => RecyclePage(api: _api)),
     );
     if (mounted) _load(_path);
   }
