@@ -16,7 +16,9 @@ pub fn set(handle: std.posix.fd_t, read_ms: u32, write_ms: u32) void {
         };
         var r: u32 = read_ms;
         var w: u32 = write_ms;
-        const socket: usize = @intCast(handle);
+        // On Windows the handle is the SOCKET value carried as an opaque
+        // pointer, exactly like tls.accept() converts it.
+        const socket: usize = @intCast(@intFromPtr(handle));
         _ = ws2.setsockopt(socket, 0xffff, 4102, std.mem.asBytes(&r).ptr, 4);
         _ = ws2.setsockopt(socket, 0xffff, 4101, std.mem.asBytes(&w).ptr, 4);
         return;

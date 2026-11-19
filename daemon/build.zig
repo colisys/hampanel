@@ -262,6 +262,20 @@ pub fn build(b: *std.Build) void {
         .name = "hampanel-windows-check",
         .root_module = windows_check_module,
     });
+    const windows_shared_module = b.createModule(.{
+        .root_source_file = b.path("src/windows_shared_check.zig"),
+        .target = windows_target,
+        .optimize = .Debug,
+        .link_libc = true,
+    });
+    windows_shared_module.addImport("shared", shared);
+    windows_shared_module.addImport("compat", compat);
+    const windows_shared = b.addObject(.{
+        .name = "hampanel-windows-shared-check",
+        .root_module = windows_shared_module,
+    });
+
     const check_step = b.step("check-windows", "Type-check the Windows backend");
     check_step.dependOn(&windows_check.step);
+    check_step.dependOn(&windows_shared.step);
 }
