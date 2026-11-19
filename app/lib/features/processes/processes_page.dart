@@ -31,7 +31,7 @@ class _ProcessesPageState extends State<ProcessesPage> {
   bool _loading = true;
   String _filter = '';
   String _state = '全部';
-  _ProcessSort _sort = _ProcessSort.memory;
+  _ProcessSort _sort = _ProcessSort.pid;
   int? _childrenOf;
   int? _busyPid;
 
@@ -286,7 +286,7 @@ class _ProcessesPageState extends State<ProcessesPage> {
         for (final sort in _ProcessSort.values)
           DropdownMenuItem(value: sort, child: Text(sort.label)),
       ],
-      onChanged: (value) => setState(() => _sort = value ?? _ProcessSort.memory),
+      onChanged: (value) => setState(() => _sort = value ?? _ProcessSort.pid),
     );
     final childrenChip = _childrenOf == null
         ? null
