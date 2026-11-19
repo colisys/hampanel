@@ -128,6 +128,63 @@ class _DockButton extends StatelessWidget {
   }
 }
 
+/// Full-width bottom navigation. Each item takes an equal share, unlike
+/// [SubNavMenu], which shrinks to its label and leaves the rest of the rail
+/// empty.
+class SubNavBar extends StatelessWidget {
+  const SubNavBar({
+    super.key,
+    required this.items,
+    required this.index,
+    required this.onChanged,
+  });
+
+  final List<String> items;
+  final int index;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (var i = 0; i < items.length; i++)
+          Expanded(
+            child: InkWell(
+              onTap: () => onChanged(i),
+              borderRadius: BorderRadius.circular(2),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      items[i],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: i == index
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color: i == index ? hampanelAccent : hampanelMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      height: 2,
+                      width: 18,
+                      color: i == index ? hampanelAccent : Colors.transparent,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// A metric tile shared by the Docker overview and dashboard.
 class MetricCard extends StatelessWidget {
   const MetricCard({

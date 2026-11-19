@@ -15,6 +15,7 @@ import '../../core/platform_support.dart';
 import '../../core/session.dart';
 import '../../ui/collapsible.dart';
 import '../../ui/layout.dart';
+import '../../ui/remote_picker.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../ai/ai_tools.dart';
@@ -849,15 +850,14 @@ class _SettingsPageState extends State<SettingsPage> {
                                         ),
                                       const SizedBox(height: 10),
                                       FieldWithActions(
-                                        field: TextField(
+                                        field: RemotePathField(
+                                          api: _api,
                                           controller: _sensitivePathController,
-                                          decoration: const InputDecoration(
-                                            labelText: '添加敏感路径',
-                                            hintText:
-                                                '/etc/shadow 或 /root/.ssh',
-                                          ),
-                                          onSubmitted: (_) =>
-                                              _addSensitivePath(),
+                                          label: '添加敏感路径',
+                                          hintText:
+                                              '/etc/shadow 或 /root/.ssh',
+                                          allowFiles: true,
+                                          onPicked: (_) => _addSensitivePath(),
                                         ),
                                         actions: [
                                           OutlinedButton.icon(
@@ -958,7 +958,7 @@ class _SettingsPageState extends State<SettingsPage> {
             padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
             child: SafeArea(
               top: false,
-              child: SubNavMenu(
+              child: SubNavBar(
                 items: const ['常规', 'AI', '主机', '关于'],
                 index: _tab.index,
                 onChanged: (index) =>
