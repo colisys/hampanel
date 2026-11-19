@@ -141,6 +141,7 @@ class _ServicesPageState extends State<ServicesPage> {
       children: [
         PageHeader(
           title: '服务',
+          subtitle: '${_filtered.length} 个单元',
           actions: [
             PageRefreshButton(onPressed: _load, refreshing: _loading),
           ],
@@ -158,11 +159,6 @@ class _ServicesPageState extends State<ServicesPage> {
                   ),
                   onChanged: (value) => setState(() => _filter = value),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Text(
-                '${_filtered.length} 个单元',
-                style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               ),
             ],
           ),
