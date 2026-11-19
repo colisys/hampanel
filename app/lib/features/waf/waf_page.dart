@@ -24,7 +24,6 @@ class _WafPageState extends State<WafPage>
   WafStatus? _status;
   bool _loading = true;
   bool _busy = false;
-  int _wafSection = 0;
   String? _error;
 
   final _listenHost = TextEditingController();
@@ -587,6 +586,8 @@ class _WafPageState extends State<WafPage>
 
   @override
   Widget build(BuildContext context) {
+    final status = _status;
+    final sections = status == null ? const <Widget>[] : _sections(status);
     return Column(
       children: [
         PageHeader(
@@ -598,21 +599,25 @@ class _WafPageState extends State<WafPage>
             controller: _sectionTabs,
             isScrollable: true,
             tabAlignment: TabAlignment.start,
-            onTap: (index) => setState(() => _wafSection = index),
             tabs: [for (final label in _sectionLabels) Tab(text: label)],
           ),
         Expanded(
           child: _loading
               ? const LoadingView()
-              : ListView(
-                  padding: pageContentPadding(context, top: 4),
+              : TabBarView(
+                  controller: _sectionTabs,
                   children: [
-                    if (_error != null) ...[
-                      ErrorBanner(message: _error!, onRetry: _load),
-                      const SizedBox(height: 12),
-                    ],
-                    if (_status == null) const SizedBox.shrink(),
-                    if (_status != null) ..._content(_status!),
+                    for (var index = 0; index < _sectionLabels.length; index++)
+                      ListView(
+                        padding: pageContentPadding(context, top: 4),
+                        children: [
+                          if (_error != null) ...[
+                            ErrorBanner(message: _error!, onRetry: _load),
+                            const SizedBox(height: 12),
+                          ],
+                          if (index < sections.length) sections[index],
+                        ],
+                      ),
                   ],
                 ),
         ),
@@ -620,7 +625,7 @@ class _WafPageState extends State<WafPage>
     );
   }
 
-  List<Widget> _content(WafStatus status) {
+  List<Widget> _sections(WafStatus status) {
     final sections = <Widget>[
       PanelCard(
         title: 'WAF 边缘状态',
@@ -1122,8 +1127,7 @@ class _WafPageState extends State<WafPage>
         ),
       ),
     ];
-    final index = _wafSection.clamp(0, sections.length - 1);
-    return [sections[index]];
+    return sections;
   }
 
   Widget _kv(String key, String value) {
