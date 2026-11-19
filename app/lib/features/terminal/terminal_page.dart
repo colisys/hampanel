@@ -11,6 +11,7 @@ import '../../core/client_settings.dart';
 import '../../core/platform_support.dart';
 import '../../core/session.dart';
 import '../../core/terminal_settings.dart';
+import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 
@@ -201,6 +202,9 @@ class _TerminalPageState extends State<TerminalPage> {
         await socket.close();
         return;
       }
+      // Application-level heartbeat: the daemon answers WebSocket pings with
+      // pongs, so a dead NAT/firewall mapping is detected instead of hanging.
+      socket.pingInterval = const Duration(seconds: 20);
       session.socket = socket;
       session.connected = true;
       setState(() => session.status = '已连接');
@@ -502,6 +506,7 @@ class _TerminalPageState extends State<TerminalPage> {
   @override
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 720;
+    final keyboardOpen = MediaQuery.viewInsetsOf(context).bottom > 0;
     final session = _active;
     return Column(
       children: [
@@ -514,55 +519,53 @@ class _TerminalPageState extends State<TerminalPage> {
               good: session?.connected ?? false,
             ),
             const SizedBox(width: 6),
-            IconButton(
-              tooltip: '复制（有选中内容时仅复制选中）',
-              visualDensity: VisualDensity.compact,
-              onPressed: session == null ? null : _copy,
-              icon: const Icon(Icons.copy_all_outlined, size: 18),
-            ),
-            IconButton(
-              tooltip: '粘贴',
-              visualDensity: VisualDensity.compact,
-              onPressed: session == null ? null : _paste,
-              icon: const Icon(Icons.content_paste_outlined, size: 18),
-            ),
-            IconButton(
-              tooltip: '终端外观',
-              visualDensity: VisualDensity.compact,
-              onPressed: _openStyleSettings,
-              icon: const Icon(Icons.tune_outlined, size: 18),
-            ),
-            IconButton(
-              tooltip: '新建会话',
-              visualDensity: VisualDensity.compact,
-              onPressed: _addSession,
-              icon: const Icon(Icons.add_comment_outlined, size: 18),
-            ),
-            if (compact)
+            if (!compact) ...[
               IconButton(
-                tooltip: '会话列表',
+                tooltip: '复制（有选中内容时仅复制选中）',
                 visualDensity: VisualDensity.compact,
-                onPressed: _openSessionPicker,
-                icon: const Icon(Icons.forum_outlined, size: 18),
+                onPressed: session == null ? null : _copy,
+                icon: const Icon(Icons.copy_all_outlined, size: 18),
               ),
-            IconButton(
-              tooltip: '重新连接',
-              visualDensity: VisualDensity.compact,
-              onPressed: session == null ? null : () => _connect(session),
-              icon: const Icon(Icons.refresh, size: 18),
-            ),
-            if (PlatformSupport.isMobile)
               IconButton(
-                tooltip: '切换键盘',
+                tooltip: '粘贴',
                 visualDensity: VisualDensity.compact,
-                onPressed: () {
-                  if (session?.focus.hasFocus ?? false) {
-                    session?.focus.unfocus();
-                  } else {
-                    session?.focus.requestFocus();
-                  }
-                },
-                icon: const Icon(Icons.keyboard_outlined, size: 18),
+                onPressed: session == null ? null : _paste,
+                icon: const Icon(Icons.content_paste_outlined, size: 18),
+              ),
+              IconButton(
+                tooltip: '终端外观',
+                visualDensity: VisualDensity.compact,
+                onPressed: _openStyleSettings,
+                icon: const Icon(Icons.tune_outlined, size: 18),
+              ),
+              IconButton(
+                tooltip: '新建会话',
+                visualDensity: VisualDensity.compact,
+                onPressed: _addSession,
+                icon: const Icon(Icons.add_comment_outlined, size: 18),
+              ),
+              IconButton(
+                tooltip: '重新连接',
+                visualDensity: VisualDensity.compact,
+                onPressed: session == null ? null : () => _connect(session),
+                icon: const Icon(Icons.refresh, size: 18),
+              ),
+              if (PlatformSupport.isMobile)
+                IconButton(
+                  tooltip: '切换键盘',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    if (session?.focus.hasFocus ?? false) {
+                      session?.focus.unfocus();
+                    } else {
+                      session?.focus.requestFocus();
+                    }
+                  },
+                  icon: const Icon(Icons.keyboard_outlined, size: 18),
+                ),
+            ] else
+              PageRefreshButton(
+                onPressed: session == null ? null : () => _connect(session),
               ),
           ],
         ),
@@ -623,8 +626,102 @@ class _TerminalPageState extends State<TerminalPage> {
             ],
           ),
         ),
-        if (compact) _shortcutBar(session),
+        if (compact) ...[
+          // Only while the soft keyboard is up; it floats right above the keys.
+          if (keyboardOpen) _shortcutBar(session),
+          _quickActionBar(session),
+          ActionDock(
+            actions: [
+              ActionDockItem(
+                icon: Icons.forum_outlined,
+                label: '会话',
+                onPressed: _openSessionPicker,
+              ),
+              ActionDockItem(
+                icon: Icons.add_comment_outlined,
+                label: '新建',
+                onPressed: _addSession,
+              ),
+              ActionDockItem(
+                icon: Icons.tune_outlined,
+                label: '外观',
+                onPressed: _openStyleSettings,
+              ),
+              ActionDockItem(
+                icon: Icons.keyboard_outlined,
+                label: '键盘',
+                onPressed: session == null
+                    ? null
+                    : () {
+                        if (session.focus.hasFocus) {
+                          session.focus.unfocus();
+                        } else {
+                          session.focus.requestFocus();
+                        }
+                      },
+              ),
+            ],
+          ),
+        ],
       ],
+    );
+  }
+
+  /// Secondary terminal actions, kept directly above the bottom action dock so
+  /// the terminal view keeps the available height.
+  Widget _quickActionBar(_TerminalSession? session) {
+    return Container(
+      decoration: BoxDecoration(
+        color: hampanelSurface,
+        border: Border(top: BorderSide(color: hampanelBorder)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        children: [
+          _quickAction(
+            icon: Icons.content_copy_outlined,
+            label: '复制',
+            onPressed: session == null ? null : _copy,
+          ),
+          _quickAction(
+            icon: Icons.content_paste_outlined,
+            label: '粘贴',
+            onPressed: session == null ? null : _paste,
+          ),
+          _quickAction(
+            icon: Icons.clear_all,
+            label: '清屏',
+            onPressed: session == null
+                ? null
+                : () => session.terminal.eraseDisplay(),
+          ),
+          _quickAction(
+            icon: Icons.refresh,
+            label: '重连',
+            onPressed: session == null ? null : () => _connect(session),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+  }) {
+    return Expanded(
+      child: TextButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 16),
+        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          minimumSize: const Size(0, 34),
+          visualDensity: VisualDensity.compact,
+          textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+        ),
+      ),
     );
   }
 
