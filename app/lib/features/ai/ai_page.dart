@@ -22,6 +22,7 @@ const _systemPrompt = '''
 1. 只能通过提供的工具操作服务器，禁止请求或执行任意 shell、脚本或系统命令。
 2. 删除文件和目录只能通过 delete_path，内容会进入回收站，绝不可要求永久删除。
 3. 所有修改类工具以及 read_file 都会由用户人工审核；如果用户拒绝，不要重复请求。
+   日志读取工具会把内容交给用户预检和修改，助手只应使用最终返回的文本。
 4. 不要猜测服务器状态，先调用只读工具确认。
 5. 绝不能通过计划任务、写文件或其他方式执行任意 shell 命令。
 5. 使用中文回答，简洁说明将要做什么和执行结果。
@@ -497,6 +498,35 @@ class _AiPageState extends State<AiPage> {
               'ok': false,
               'error': '工具未启用或不存在: ${call.name}',
             });
+          } else if (tool.review != null) {
+            // High-risk reads (logs) are fetched into the editor first; the
+            // user can redact or edit before the assistant sees them.
+            if (!mounted) break;
+            try {
+              final reviewed = await tool.review!(
+                context,
+                _api,
+                call.arguments,
+              );
+              if (reviewed == null) {
+                result = jsonEncode({
+                  'ok': false,
+                  'error': '用户取消了本次读取',
+                });
+                _appendToolNotice('已取消：${tool.summary(call.arguments)}');
+              } else {
+                result = reviewed;
+                _appendToolNotice(
+                  '人工预检后发送：${tool.summary(call.arguments)}',
+                );
+              }
+            } catch (error) {
+              result = jsonEncode({
+                'ok': false,
+                'error': describeError(error),
+              });
+              _appendToolNotice('预检失败：${tool.summary(call.arguments)}');
+            }
           } else if (tool.mutating ||
               (tool.requiresApproval?.call(call.arguments) ?? false)) {
             final approved = await _approve(tool, call.arguments);

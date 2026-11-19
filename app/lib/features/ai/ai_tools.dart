@@ -1,9 +1,10 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../core/ai_config.dart';
 import '../../core/api_client.dart';
+import '../../ui/log_review_page.dart';
 
 class AiTool {
   const AiTool({
@@ -14,7 +15,9 @@ class AiTool {
     required this.summary,
     required this.run,
     this.defaultEnabled = true,
+    this.highRisk = false,
     this.requiresApproval,
+    this.review,
   });
 
   final String name;
@@ -23,8 +26,22 @@ class AiTool {
   final bool mutating;
   final bool defaultEnabled;
 
+  /// High-risk tools are hidden from the default set and listed separately in
+  /// settings. Log reads live here because log lines may contain secrets.
+  final bool highRisk;
+
   /// Dynamic approval predicate, e.g. sensitive file reads.
   final bool Function(Map<String, dynamic> args)? requiresApproval;
+
+  /// When set, the call is not executed directly: the client fetches the
+  /// content, opens the review editor and returns the edited text (or null when
+  /// the user cancels). Used for log reads, which may contain secrets.
+  final Future<String?> Function(
+    BuildContext context,
+    ApiClient api,
+    Map<String, dynamic> args,
+  )?
+  review;
   final String Function(Map<String, dynamic> args) summary;
   final Future<String> Function(ApiClient api, Map<String, dynamic> args) run;
 }
@@ -97,6 +114,130 @@ List<AiTool> buildAiTools() {
       mutating: false,
       summary: (_) => '读取实时指标',
       run: (api, _) async => _result(await api.getJson('/api/v1/metrics')),
+    ),
+    AiTool(
+      name: 'list_log_sources',
+      description:
+          '列出可读取的日志源（Web 服务、认证、系统、站点）。读取日志前先调用它拿到 source。',
+      parameters: _object({}),
+      mutating: false,
+      defaultEnabled: false,
+      highRisk: true,
+      summary: (_) => '列出日志源',
+      run: (api, _) async =>
+          _result(await api.getJson('/api/v1/logs/sources')),
+    ),
+    AiTool(
+      name: 'read_logs',
+      description:
+          '读取指定日志源的尾部内容。source 来自 list_log_sources；audit 是面板审计日志。',
+      parameters: _object({
+        'source': _string('日志源 id，例如 audit、journal:auth、site-xxx'),
+        'lines': {
+          'type': 'integer',
+          'description': '读取行数，1-500，默认 100',
+        },
+      }, ['source']),
+      mutating: false,
+      defaultEnabled: false,
+      highRisk: true,
+      review: (context, api, args) {
+        final source = _segment(args, 'source');
+        final lines = _clampLines(args, 100);
+        return _reviewLog(
+          context,
+          api,
+          title: '${args['source']} · 最近 $lines 行',
+          path: '/api/v1/logs/tail',
+          query: {'source': source, 'lines': '$lines'},
+          contentKey: 'content',
+        );
+      },
+      summary: (args) => '读取日志 ${args['source']}',
+      run: (api, args) async {
+        final source = _segment(args, 'source');
+        final lines = _clampLines(args, 100);
+        return _result(
+          await api.getJson(
+            '/api/v1/logs/tail',
+            query: {'source': source, 'lines': '$lines'},
+          ),
+        );
+      },
+    ),
+    AiTool(
+      name: 'read_service_logs',
+      description: '读取 systemd 单元的 journal 日志。',
+      parameters: _object({
+        'unit': _string('单元名，例如 nginx.service'),
+        'lines': {
+          'type': 'integer',
+          'description': '读取行数，1-500，默认 100',
+        },
+      }, ['unit']),
+      mutating: false,
+      defaultEnabled: false,
+      highRisk: true,
+      review: (context, api, args) {
+        final unit = _segment(args, 'unit');
+        final lines = _clampLines(args, 100);
+        return _reviewLog(
+          context,
+          api,
+          title: '${args['unit']} · 最近 $lines 行',
+          path: '/api/v1/services/$unit/logs',
+          query: {'lines': '$lines'},
+          contentKey: 'lines',
+        );
+      },
+      summary: (args) => '读取 ${args['unit']} 日志',
+      run: (api, args) async {
+        final unit = _segment(args, 'unit');
+        final lines = _clampLines(args, 100);
+        return _result(
+          await api.getJson(
+            '/api/v1/services/$unit/logs',
+            query: {'lines': '$lines'},
+          ),
+        );
+      },
+    ),
+    AiTool(
+      name: 'read_container_logs',
+      description: '读取 Docker/Podman 容器的日志尾部。',
+      parameters: _object({
+        'id': _string('容器 ID'),
+        'lines': {
+          'type': 'integer',
+          'description': '读取行数，1-500，默认 100',
+        },
+      }, ['id']),
+      mutating: false,
+      defaultEnabled: false,
+      highRisk: true,
+      review: (context, api, args) {
+        final id = _segment(args, 'id');
+        final lines = _clampLines(args, 100);
+        return _reviewLog(
+          context,
+          api,
+          title: '容器 ${args['id']} · 最近 $lines 行',
+          path: '/api/v1/docker/containers/$id/logs',
+          query: {'lines': '$lines'},
+          contentKey: 'output',
+        );
+      },
+      summary: (args) => '读取容器 ${args['id']} 日志',
+      run: (api, args) async {
+        final id = _segment(args, 'id');
+        final lines = _clampLines(args, 100);
+        return _result(
+          await api.getJson(
+            '/api/v1/docker/containers/$id/logs',
+            query: {'lines': '$lines'},
+          ),
+        );
+      },
     ),
     AiTool(
       name: 'list_processes',
@@ -434,6 +575,36 @@ String _segment(Map<String, dynamic> args, String key) {
     throw ArgumentError('参数 $key 含有非法字符');
   }
   return value;
+}
+
+Future<String?> _reviewLog(
+  BuildContext context,
+  ApiClient api, {
+  required String title,
+  required String path,
+  required Map<String, String> query,
+  required String contentKey,
+}) async {
+  final json = await api.getJson(path, query: query);
+  final map = json as Map<String, dynamic>? ?? const {};
+  final raw = map[contentKey];
+  final content = raw is List
+      ? raw.whereType<String>().join('\n')
+      : raw is String
+      ? raw
+      : const JsonEncoder.withIndent('  ').convert(json);
+  if (!context.mounted) return null;
+  return Navigator.of(context).push<String>(
+    MaterialPageRoute(
+      builder: (_) => LogReviewPage(title: title, content: content),
+    ),
+  );
+}
+
+int _clampLines(Map<String, dynamic> args, int fallback) {
+  final value = args['lines'];
+  final parsed = value is num ? value.toInt() : fallback;
+  return parsed.clamp(1, 500);
 }
 
 String _enum(Map<String, dynamic> args, String key, List<String> allowed) {
