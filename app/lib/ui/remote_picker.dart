@@ -375,3 +375,73 @@ class _RemotePickerDialogState extends State<_RemotePickerDialog> {
     );
   }
 }
+
+/// A text field for a remote host path with a browse button that opens
+/// [showRemotePicker]. Use this instead of a bare TextField anywhere the user
+/// would otherwise have to remember a server-side path.
+class RemotePathField extends StatelessWidget {
+  const RemotePathField({
+    super.key,
+    required this.api,
+    required this.controller,
+    required this.label,
+    this.hintText,
+    this.helperText,
+    this.allowFiles = false,
+    this.enabled = true,
+    this.isDense = false,
+    this.onPicked,
+    this.initialPath,
+  });
+
+  final ApiClient api;
+  final TextEditingController controller;
+  final String label;
+  final String? hintText;
+  final String? helperText;
+
+  /// Allow confirming a file, not only a directory.
+  final bool allowFiles;
+  final bool enabled;
+  final bool isDense;
+  final ValueChanged<String>? onPicked;
+  final String? initialPath;
+
+  Future<void> _pick(BuildContext context) async {
+    final picked = await showRemotePicker(
+      context,
+      source: HostDirectorySource(api),
+      initialPath: (initialPath ?? controller.text).trim(),
+      allowFiles: allowFiles,
+      confirmLabel: allowFiles ? '选择' : '使用该目录',
+    );
+    if (picked == null) return;
+    controller.text = picked;
+    onPicked?.call(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      enabled: enabled,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hintText,
+        helperText: helperText,
+        isDense: isDense,
+        suffixIcon: IconButton(
+          tooltip: allowFiles ? '从远程主机选择文件' : '从远程主机选择目录',
+          visualDensity: VisualDensity.compact,
+          onPressed: enabled ? () => _pick(context) : null,
+          icon: Icon(
+            allowFiles
+                ? Icons.insert_drive_file_outlined
+                : Icons.folder_open_outlined,
+            size: 18,
+          ),
+        ),
+      ),
+    );
+  }
+}

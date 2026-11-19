@@ -7,6 +7,7 @@ import '../../ui/theme.dart';
 import '../../ui/layout.dart';
 import '../../ui/log_viewer.dart';
 import '../../ui/widgets.dart';
+import '../../ui/remote_picker.dart';
 import 'container_detail_page.dart';
 import 'container_files_dialog.dart';
 import 'container_terminal_dialog.dart';
@@ -598,6 +599,63 @@ class _ContainerEditorDialogState extends State<ContainerEditorDialog> {
     super.dispose();
   }
 
+  Future<void> _appendMount(String source) async {
+    final destination = await textInputDialog(
+      context,
+      title: '挂载到容器的哪个路径？',
+      label: '容器内路径',
+      initial: '/data',
+    );
+    if (destination == null || destination.trim().isEmpty) return;
+    final line = '$source:${destination.trim()}';
+    setState(() {
+      _mounts.text = _mounts.text.trim().isEmpty
+          ? line
+          : '${_mounts.text.trim()}\n$line';
+    });
+  }
+
+  Future<void> _addHostDirectoryMount() async {
+    final picked = await showRemotePicker(
+      context,
+      source: HostDirectorySource(widget.api),
+      confirmLabel: '使用该目录',
+    );
+    if (picked == null || !mounted) return;
+    await _appendMount(picked);
+  }
+
+  Future<void> _addVolumeMount() async {
+    try {
+      final json = await widget.api.getJson('/api/v1/docker/volumes');
+      final map = json as Map<String, dynamic>? ?? const {};
+      final nodes = ((map['volumes'] as List<dynamic>?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(
+            (entry) => RemotePickerNode(
+              name: entry['name'] as String? ?? '',
+              path: entry['name'] as String? ?? '',
+              subtitle: entry['mountpoint'] as String? ?? '',
+            ),
+          )
+          .toList();
+      if (!mounted) return;
+      if (nodes.isEmpty) {
+        setState(() => _error = '还没有存储卷，请先在存储卷页面创建');
+        return;
+      }
+      final picked = await showRemotePicker(
+        context,
+        source: TreePickerSource(title: '选择存储卷', nodes: nodes),
+        confirmLabel: '使用该卷',
+      );
+      if (picked == null || !mounted) return;
+      await _appendMount(picked);
+    } catch (error) {
+      if (mounted) setState(() => _error = describeError(error));
+    }
+  }
+
   Future<void> _submit() async {
     if (_name.text.trim().isEmpty || _image.text.trim().isEmpty) {
       setState(() => _error = '名称和镜像不能为空');
@@ -743,6 +801,23 @@ class _ContainerEditorDialogState extends State<ContainerEditorDialog> {
                 decoration: const InputDecoration(
                   labelText: '挂载（每行 /host:/container 或 volume:/container）',
                 ),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  TextButton.icon(
+                    onPressed: _addHostDirectoryMount,
+                    icon: const Icon(Icons.folder_open_outlined, size: 15),
+                    label: const Text('选择主机目录'),
+                  ),
+                  TextButton.icon(
+                    onPressed: _addVolumeMount,
+                    icon: const Icon(Icons.save_outlined, size: 15),
+                    label: const Text('选择存储卷'),
+                  ),
+                ],
               ),
               const SizedBox(height: 10),
               FormRow(

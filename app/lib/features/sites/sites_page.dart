@@ -5,6 +5,7 @@ import '../../core/models/site.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/layout.dart';
+import '../../ui/remote_picker.dart';
 import '../../ui/log_viewer.dart';
 import '../../ui/widgets.dart';
 import 'site_detail_page.dart';
@@ -115,9 +116,11 @@ class _SitesPageState extends State<SitesPage> {
                 ),
                 const SizedBox(height: 12),
                 if (kind == 'static' || kind == 'subsite')
-                  TextField(
+                  RemotePathField(
+                    api: _api,
                     controller: rootController,
-                    decoration: const InputDecoration(labelText: '站点根目录'),
+                    label: '站点根目录',
+                    hintText: '/var/www/example',
                   ),
                 if (kind == 'reverse_proxy' || kind == 'tcp_proxy' || kind == 'udp_proxy')
                   TextField(

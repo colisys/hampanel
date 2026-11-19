@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../core/models/file_entry.dart';
 import '../../ui/collapsible.dart';
 import '../../ui/layout.dart';
+import '../../ui/remote_picker.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 
@@ -620,9 +621,10 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
             ),
           ),
           const SizedBox(height: 10),
-          TextField(
+          RemotePathField(
+            api: widget.api,
             controller: _c('engine.image_copy_tmp_dir'),
-            decoration: const InputDecoration(labelText: '镜像复制临时目录'),
+            label: '镜像复制临时目录',
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
@@ -813,9 +815,10 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
                       value ?? 'slirp4netns',
                 ),
               ),
-              TextField(
+              RemotePathField(
+                api: widget.api,
                 controller: _c('network.network_config_dir'),
-                decoration: const InputDecoration(labelText: '网络配置目录'),
+                label: '网络配置目录',
               ),
             ],
           ),
@@ -854,35 +857,41 @@ class _PodmanSettingsPanelState extends State<PodmanSettingsPanel> {
                   () => _select['storage.driver'] = value ?? 'overlay',
                 ),
               ),
-              TextField(
+              RemotePathField(
+                api: widget.api,
                 controller: _c('storage.graphroot'),
-                decoration: const InputDecoration(labelText: 'Graph Root'),
+                label: 'Graph Root',
               ),
             ],
           ),
           const SizedBox(height: 10),
           FormRow(
             children: [
-              TextField(
+              RemotePathField(
+                api: widget.api,
                 controller: _c('storage.runroot'),
-                decoration: const InputDecoration(labelText: 'Run Root'),
+                label: 'Run Root',
               ),
-              TextField(
+              RemotePathField(
+                api: widget.api,
                 controller: _c('storage.rootless_storage_path'),
-                decoration: const InputDecoration(labelText: 'Rootless 存储路径'),
+                label: 'Rootless 存储路径',
               ),
-              TextField(
+              RemotePathField(
+                api: widget.api,
                 controller: _c('engine.volume_path'),
-                decoration: const InputDecoration(labelText: 'Volume 路径'),
+                label: 'Volume 路径',
               ),
             ],
           ),
           const SizedBox(height: 10),
           FormRow(
             children: [
-              TextField(
+              RemotePathField(
+                api: widget.api,
                 controller: _c('storage.options.mount_program'),
-                decoration: const InputDecoration(labelText: 'Mount Program'),
+                label: 'Mount Program',
+                allowFiles: true,
               ),
               TextField(
                 controller: _c('storage.options.overlay.mountopt'),

@@ -6,6 +6,7 @@ import '../../core/api_client.dart';
 import '../../core/models/docker.dart';
 import '../../core/session.dart';
 import '../../ui/layout.dart';
+import '../../ui/remote_picker.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import 'job_progress_dialog.dart';
@@ -219,7 +220,7 @@ class _ImagesSectionState extends State<ImagesSection> {
   Future<void> _build() async {
     final request = await showDialog<_BuildRequest>(
       context: context,
-      builder: (context) => const _BuildDialog(),
+      builder: (context) => _BuildDialog(api: _api),
     );
     if (request == null) return;
     try {
@@ -868,7 +869,9 @@ class _BuildRequest {
 }
 
 class _BuildDialog extends StatefulWidget {
-  const _BuildDialog();
+  const _BuildDialog({required this.api});
+
+  final ApiClient api;
 
   @override
   State<_BuildDialog> createState() => _BuildDialogState();
@@ -949,12 +952,11 @@ class _BuildDialogState extends State<_BuildDialog> {
                   ],
                 ),
               ] else if (_type == 'path') ...[
-                TextField(
+                RemotePathField(
+                  api: widget.api,
                   controller: _context,
-                  decoration: const InputDecoration(
-                    labelText: '服务器上的构建上下文目录',
-                    hintText: '/srv/app',
-                  ),
+                  label: '服务器上的构建上下文目录',
+                  hintText: '/srv/app',
                 ),
               ] else ...[
                 TextField(

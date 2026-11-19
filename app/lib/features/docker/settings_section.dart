@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../core/models/docker.dart';
 import '../../core/session.dart';
 import '../../ui/layout.dart';
+import '../../ui/remote_picker.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import 'podman_settings_panel.dart';
@@ -393,12 +394,14 @@ class _DockerSettingsSectionState extends State<DockerSettingsSection> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          TextField(
+                          RemotePathField(
+                            api: _api,
                             controller: _socket,
-                            decoration: const InputDecoration(
-                              labelText: 'Docker / Podman 连接地址（可选）',
-                              hintText: 'unix:///var/run/docker.sock',
-                            ),
+                            label: 'Docker / Podman 连接地址（可选）',
+                            hintText: 'unix:///var/run/docker.sock',
+                            allowFiles: true,
+                            initialPath: '/var/run',
+                            onPicked: (path) => _socket.text = 'unix://$path',
                           ),
                           const SizedBox(height: 6),
                           Text(

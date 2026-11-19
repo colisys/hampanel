@@ -6,6 +6,7 @@ import '../../core/api_client.dart';
 import '../../core/models/site.dart';
 import '../../ui/theme.dart';
 import '../../ui/layout.dart';
+import '../../ui/remote_picker.dart';
 import '../../ui/log_viewer.dart';
 import '../../ui/widgets.dart';
 
@@ -581,15 +582,25 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
                   _field(_listen, 'HTTP 监听端口', number: true),
                 ]),
                 _section('目录与日志', [
-                  _field(_root, '站点根目录', hint: '/var/www/example'),
+                  _pathField(_root, '站点根目录', hint: '/var/www/example'),
                   _gap(),
-                  _field(_runDir, '运行目录', hint: '默认与站点根目录相同'),
+                  _pathField(_runDir, '运行目录', hint: '默认与站点根目录相同'),
                   _gap(),
                   _field(_index, '默认文档', hint: 'index.html index.htm'),
                   _gap(),
-                  _field(_accessLog, '访问日志路径', hint: '留空使用全局日志'),
+                  _pathField(
+                    _accessLog,
+                    '访问日志路径',
+                    hint: '留空使用全局日志',
+                    allowFiles: true,
+                  ),
                   _gap(),
-                  _field(_errorLog, '错误日志路径', hint: '留空使用全局日志'),
+                  _pathField(
+                    _errorLog,
+                    '错误日志路径',
+                    hint: '留空使用全局日志',
+                    allowFiles: true,
+                  ),
                   _gap(),
                   _field(_bodySize, '请求体大小限制', hint: '如 16m'),
                 ]),
@@ -924,6 +935,21 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
           children: children,
         ),
       ),
+    );
+  }
+
+  Widget _pathField(
+    TextEditingController controller,
+    String label, {
+    String? hint,
+    bool allowFiles = false,
+  }) {
+    return RemotePathField(
+      api: widget.api,
+      controller: controller,
+      label: label,
+      hintText: hint,
+      allowFiles: allowFiles,
     );
   }
 
