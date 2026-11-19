@@ -7,6 +7,7 @@ pub const Meta = struct {
     size: u64,
     kind: []const u8,
     mode: []const u8,
+    mode_bits: u32,
     uid: u32,
     gid: u32,
     modified_ms: i64,
@@ -40,6 +41,7 @@ pub fn stat(allocator: std.mem.Allocator, path: []const u8) !Meta {
             try allocator.dupe(u8, "lrwxrwxrwx")
         else
             try allocator.dupe(u8, "-rw-rw-rw-"),
+        .mode_bits = if (is_dir) 0o777 else 0o666,
         .uid = 0,
         .gid = 0,
         .modified_ms = common.filetimeToMillis(data.ftLastWriteTime),

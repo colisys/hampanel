@@ -9,6 +9,7 @@ const http_response = @import("../http/response.zig");
 const log = @import("../log.zig");
 const redact = @import("../util/redact.zig");
 const accounts_util = @import("../util/accounts.zig");
+const exec = @import("shared").exec;
 
 const Entry = struct {
     name: []const u8,
@@ -367,6 +368,162 @@ pub fn upload(ctx: *context.Context) anyerror!void {
         ctx.req.body.len,
     });
     try ctx.json(.{ .path = path, .size = ctx.req.body.len });
+}
+
+/// File metadata for the permission editor. Runs `file(1)` to decide whether
+/// the target is text; an unknown/binary type makes `text` false.
+pub fn fileMeta(ctx: *context.Context) anyerror!void {
+    const path = try requirePath(ctx);
+    const a = ctx.arena;
+    const info = platform.files.stat(a, path) catch {
+        ctx.fail(404, "not_found", "file not found");
+        return;
+    };
+    const account_lookup = accounts_util.load(a) catch null;
+    var owner_buf: [24]u8 = undefined;
+    var group_buf: [24]u8 = undefined;
+    const owner = if (account_lookup) |acc|
+        (acc.user(info.uid) orelse std.fmt.bufPrint(&owner_buf, "{d}", .{info.uid}) catch "?")
+    else
+        std.fmt.bufPrint(&owner_buf, "{d}", .{info.uid}) catch "?";
+    const group = if (account_lookup) |acc|
+        (acc.group(info.gid) orelse std.fmt.bufPrint(&group_buf, "{d}", .{info.gid}) catch "?")
+    else
+        std.fmt.bufPrint(&group_buf, "{d}", .{info.gid}) catch "?";
+    const mime = fileMime(a, path) catch "";
+    const is_dir = std.mem.eql(u8, info.kind, "dir");
+    const text = is_dir or mime.len == 0 or isTextMime(mime);
+    try ctx.json(.{
+        .path = path,
+        .size = info.size,
+        .kind = info.kind,
+        .mode = info.mode,
+        .mode_bits = info.mode_bits,
+        .uid = info.uid,
+        .gid = info.gid,
+        .owner = owner,
+        .group = group,
+        .mime = mime,
+        .text = text,
+        .symlink = info.symlink,
+    });
+}
+
+pub fn fileAccounts(ctx: *context.Context) anyerror!void {
+    const a = ctx.arena;
+    const lookup = accounts_util.load(a) catch {
+        ctx.fail(500, "accounts_failed", "cannot read system accounts");
+        return;
+    };
+    const AccountEntry = struct {
+        id: u32,
+        name: []const u8,
+
+        fn lessThan(_: void, left: @This(), right: @This()) bool {
+            return left.id < right.id;
+        }
+    };
+    var users = std.array_list.Managed(AccountEntry).init(a);
+    var user_it = lookup.users.iterator();
+    while (user_it.next()) |entry| {
+        try users.append(.{ .id = entry.key_ptr.*, .name = entry.value_ptr.* });
+    }
+    var groups = std.array_list.Managed(AccountEntry).init(a);
+    var group_it = lookup.groups.iterator();
+    while (group_it.next()) |entry| {
+        try groups.append(.{ .id = entry.key_ptr.*, .name = entry.value_ptr.* });
+    }
+    std.mem.sort(AccountEntry, users.items, {}, struct {
+        fn lt(_: void, left: AccountEntry, right: AccountEntry) bool {
+            return left.id < right.id;
+        }
+    }.lt);
+    std.mem.sort(AccountEntry, groups.items, {}, struct {
+        fn lt(_: void, left: AccountEntry, right: AccountEntry) bool {
+            return left.id < right.id;
+        }
+    }.lt);
+    try ctx.json(.{ .users = users.items, .groups = groups.items });
+}
+
+pub fn permissions(ctx: *context.Context) anyerror!void {
+    const Body = struct {
+        path: []const u8,
+        mode: u32,
+        uid: ?u32 = null,
+        gid: ?u32 = null,
+    };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected path and mode");
+        return;
+    };
+    const path = resolvePath(ctx, body.path) catch return;
+    if (body.mode > 0o7777) {
+        ctx.fail(400, "bad_mode", "mode must fit in 0o7777");
+        return;
+    }
+    if (body.uid == null and body.gid == null and body.mode == 0) {
+        ctx.fail(400, "bad_request", "nothing to change");
+        return;
+    }
+    const current = platform.files.stat(ctx.arena, path) catch {
+        ctx.fail(404, "not_found", "file not found");
+        return;
+    };
+    const file = compat.openFileAbsolute(path, .{ .allow_directory = true }) catch {
+        ctx.fail(404, "not_found", "file not found");
+        return;
+    };
+    defer file.close();
+    file.chmod(body.mode) catch |err| {
+        ctx.fail(403, "chmod_failed", @errorName(err));
+        return;
+    };
+    // Only chown when the owner actually changes: a needless chown fails for
+    // non-root daemons and is a no-op on most files anyway.
+    const uid_changed = body.uid != null and body.uid.? != current.uid;
+    const gid_changed = body.gid != null and body.gid.? != current.gid;
+    if (uid_changed or gid_changed) {
+        const uid: ?std.Io.File.Uid = if (uid_changed) @intCast(body.uid.?) else null;
+        const gid: ?std.Io.File.Gid = if (gid_changed) @intCast(body.gid.?) else null;
+        file.chown(uid, gid) catch |err| {
+            ctx.fail(403, "chown_failed", @errorName(err));
+            return;
+        };
+    }
+    log.info("files: permissions mode={o} path updated", .{body.mode});
+    try ctx.json(.{
+        .ok = true,
+        .path = path,
+        .mode = body.mode,
+        .uid = body.uid,
+        .gid = body.gid,
+    });
+}
+
+fn fileMime(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
+    const result = exec.run(allocator, &.{ "file", "-b", "--mime-type", "--", path }, 4096) catch return "";
+    if (!result.ok()) return "";
+    return std.mem.trim(u8, result.stdout, " \r\n\t");
+}
+
+fn isTextMime(mime: []const u8) bool {
+    if (std.mem.startsWith(u8, mime, "text/")) return true;
+    const allowed = [_][]const u8{
+        "application/json",
+        "application/xml",
+        "application/javascript",
+        "application/x-shellscript",
+        "application/x-yaml",
+        "application/yaml",
+        "application/toml",
+        "application/x-empty",
+        "inode/x-empty",
+    };
+    for (allowed) |candidate| {
+        if (std.mem.eql(u8, mime, candidate)) return true;
+    }
+    return false;
 }
 
 fn requirePath(ctx: *context.Context) ![]const u8 {

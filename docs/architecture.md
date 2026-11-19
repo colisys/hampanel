@@ -122,6 +122,9 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 | GET | `/processes/:pid` | 进程详情（exe、cwd、UID/GID、线程、打开文件、监听端口） |
 | POST | `/processes/:pid/kill` | 发送 TERM / KILL 信号 |
 | GET | `/files?path=` | 目录列表 |
+| GET | `/files/meta?path=` | 文件元数据（`file(1)` 类型、权限位、属主） |
+| GET | `/files/accounts` | 系统用户与用户组 |
+| POST | `/files/permissions` | 修改权限 / 属主（仅文本文件） |
 | GET | `/files/content?path=` | 读取文本文件 |
 | PUT | `/files/content` | 写入文件 |
 | POST | `/files/mkdir` | 新建目录 |

@@ -11,6 +11,7 @@ import '../../ui/code_editor.dart';
 import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
+import 'file_permissions_dialog.dart';
 import '../recycle/recycle_page.dart';
 import '../store/deploy_dialog.dart';
 
@@ -161,6 +162,37 @@ class _FilesPageState extends State<FilesPage> {
         'recursive': false,
       });
       await _load(_path);
+    } catch (error) {
+      _toast(describeError(error));
+    }
+  }
+
+  Future<void> _permissions(FileEntry entry) async {
+    final api = _api;
+    try {
+      final json = await api.getJson(
+        '/api/v1/files/meta',
+        query: {'path': entry.path},
+      );
+      final meta = json as Map<String, dynamic>? ?? const {};
+      if (meta['text'] != true) {
+        _toast('暂不支持编辑二进制文件');
+        return;
+      }
+      if (!mounted) return;
+      final changed = await showDialog<bool>(
+        context: context,
+        builder: (_) => FilePermissionsDialog(
+          api: api,
+          path: entry.path,
+          name: entry.name,
+          meta: meta,
+        ),
+      );
+      if (changed == true) {
+        _toast('权限已更新');
+        await _load(_path);
+      }
     } catch (error) {
       _toast(describeError(error));
     }
@@ -647,6 +679,8 @@ class _FilesPageState extends State<FilesPage> {
             _edit(entry);
           case 'versions':
             _versions(entry);
+          case 'permissions':
+            _permissions(entry);
           case 'rename':
             _rename(entry);
           case 'download':
@@ -659,6 +693,7 @@ class _FilesPageState extends State<FilesPage> {
         if (!entry.isDir) const PopupMenuItem(value: 'edit', child: Text('编辑')),
         if (!entry.isDir)
           const PopupMenuItem(value: 'versions', child: Text('历史版本')),
+        const PopupMenuItem(value: 'permissions', child: Text('权限')),
         const PopupMenuItem(value: 'rename', child: Text('重命名')),
         if (!entry.isDir)
           const PopupMenuItem(value: 'download', child: Text('下载')),

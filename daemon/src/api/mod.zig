@@ -77,6 +77,9 @@ pub const routes = [_]router.Route{
     .{ .method = .POST, .pattern = "/api/v1/processes/:pid/kill", .handler = processes.terminate },
 
     .{ .method = .GET, .pattern = "/api/v1/files", .handler = files.list },
+    .{ .method = .GET, .pattern = "/api/v1/files/meta", .handler = files.fileMeta },
+    .{ .method = .GET, .pattern = "/api/v1/files/accounts", .handler = files.fileAccounts },
+    .{ .method = .POST, .pattern = "/api/v1/files/permissions", .handler = files.permissions },
     .{ .method = .GET, .pattern = "/api/v1/files/content", .handler = files.content },
     .{ .method = .PUT, .pattern = "/api/v1/files/content", .handler = files.write },
     .{ .method = .POST, .pattern = "/api/v1/files/mkdir", .handler = files.mkdir },
