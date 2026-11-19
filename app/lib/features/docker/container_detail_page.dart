@@ -5,7 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/api_client.dart';
 import '../../core/models/docker.dart';
 import '../../ui/layout.dart';
-import '../../ui/log_viewer.dart';
+import '../../ui/log_page.dart';
 import '../../ui/remote_picker.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
@@ -264,22 +264,24 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
   }
 
   Future<void> _logs() async {
-    try {
-      final json = await _api.getJson(
-        '/api/v1/docker/containers/${widget.containerId}/logs',
-        query: const {'lines': '500'},
-      );
-      final map = json as Map<String, dynamic>;
-      if (!mounted) return;
-      await showLogViewerDialog(
-        context,
-        title: '${_detail?.name ?? widget.containerId} 日志',
-        content: map['output'] as String? ?? '',
-        emptyMessage: '暂无日志',
-      );
-    } catch (error) {
-      _toast(describeError(error));
-    }
+    final api = _api;
+    final name = _detail?.name ?? widget.containerId;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LogPage(
+          title: '$name 日志',
+          emptyMessage: '暂无日志',
+          load: (lines) async {
+            final json = await api.getJson(
+              '/api/v1/docker/containers/${widget.containerId}/logs',
+              query: {'lines': '$lines'},
+            );
+            final map = json as Map<String, dynamic>? ?? const {};
+            return LogPageData(content: map['output'] as String? ?? '');
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _terminal() async {

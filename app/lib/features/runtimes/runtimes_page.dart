@@ -7,7 +7,7 @@ import '../../core/models/runtime_env.dart';
 import '../../core/session.dart';
 import '../../ui/code_editor.dart';
 import '../../ui/layout.dart';
-import '../../ui/log_viewer.dart';
+import '../../ui/log_page.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../store/deploy_dialog.dart';
@@ -164,21 +164,22 @@ class _RuntimesPageState extends State<RuntimesPage> {
   }
 
   Future<void> _logs(RuntimeEnvironment env) async {
-    try {
-      final json = await _api.getJson(
-        '/api/v1/runtimes/${env.id}/logs',
-        query: {'lines': '300'},
-      );
-      final map = json as Map<String, dynamic>;
-      if (!mounted) return;
-      await showLogViewerDialog(
-        context,
-        title: '${env.name} 日志',
-        content: map['output'] as String? ?? '',
-      );
-    } catch (error) {
-      _toast(describeError(error));
-    }
+    final api = _api;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LogPage(
+          title: '${env.name} 日志',
+          load: (lines) async {
+            final json = await api.getJson(
+              '/api/v1/runtimes/${env.id}/logs',
+              query: {'lines': '$lines'},
+            );
+            final map = json as Map<String, dynamic>? ?? const {};
+            return LogPageData(content: map['output'] as String? ?? '');
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _configs(RuntimeEnvironment env) async {

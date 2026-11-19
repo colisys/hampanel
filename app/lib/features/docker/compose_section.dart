@@ -5,7 +5,7 @@ import '../../core/models/docker.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/layout.dart';
-import '../../ui/log_viewer.dart';
+import '../../ui/log_page.dart';
 import '../../ui/widgets.dart';
 import 'job_progress_dialog.dart';
 
@@ -177,22 +177,23 @@ class _ComposeSectionState extends State<ComposeSection> {
   }
 
   Future<void> _logs(DockerComposeProject project) async {
-    try {
-      final json = await _api.getJson(
-        '/api/v1/docker/compose/${project.name}/logs',
-        query: const {'lines': '500'},
-      );
-      final map = json as Map<String, dynamic>? ?? const {};
-      if (!mounted) return;
-      await showLogViewerDialog(
-        context,
-        title: '${project.name} 日志',
-        content: map['output'] as String? ?? '',
-        emptyMessage: '暂无日志',
-      );
-    } catch (error) {
-      _toast(describeError(error));
-    }
+    final api = _api;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LogPage(
+          title: '${project.name} 日志',
+          emptyMessage: '暂无日志',
+          load: (lines) async {
+            final json = await api.getJson(
+              '/api/v1/docker/compose/${project.name}/logs',
+              query: {'lines': '$lines'},
+            );
+            final map = json as Map<String, dynamic>? ?? const {};
+            return LogPageData(content: map['output'] as String? ?? '');
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _delete(DockerComposeProject project) async {

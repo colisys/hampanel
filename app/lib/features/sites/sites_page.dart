@@ -6,7 +6,7 @@ import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/layout.dart';
 import '../../ui/remote_picker.dart';
-import '../../ui/log_viewer.dart';
+import '../../ui/log_page.dart';
 import '../../ui/widgets.dart';
 import 'site_detail_page.dart';
 
@@ -269,26 +269,27 @@ class _SitesPageState extends State<SitesPage> {
 
   Future<void> _logs(Site site) async {
     final api = _api;
-    try {
-      final json = await api.getJson(
-        '/api/v1/sites/${site.name}/logs',
-        query: const {'kind': 'access', 'lines': '500'},
-      );
-      if (!mounted) return;
-      final map = json as Map<String, dynamic>? ?? const {};
-      final lines = ((map['lines'] as List<dynamic>?) ?? const [])
-          .whereType<String>()
-          .join('\n');
-      await showLogViewerDialog(
-        context,
-        title: '访问日志 · ${site.name}',
-        content: lines,
-        path: map['path'] as String?,
-        emptyMessage: '暂无日志',
-      );
-    } catch (error) {
-      if (mounted) _toast(describeError(error));
-    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LogPage(
+          title: '访问日志 · ${site.name}',
+          emptyMessage: '暂无日志',
+          load: (lines) async {
+            final json = await api.getJson(
+              '/api/v1/sites/${site.name}/logs',
+              query: {'kind': 'access', 'lines': '$lines'},
+            );
+            final map = json as Map<String, dynamic>? ?? const {};
+            return LogPageData(
+              content: ((map['lines'] as List<dynamic>?) ?? const [])
+                  .whereType<String>()
+                  .join('\n'),
+              path: map['path'] as String?,
+            );
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _reload() async {

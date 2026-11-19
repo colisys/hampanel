@@ -4,7 +4,7 @@ import '../../core/api_client.dart';
 import '../../core/models/ssh_logs.dart';
 import '../../core/models/ssh_status.dart';
 import '../../core/session.dart';
-import '../../ui/log_viewer.dart';
+import '../../ui/log_page.dart';
 import '../../ui/theme.dart';
 import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
@@ -35,12 +35,8 @@ class _SshPageState extends State<SshPage> {
   bool _busy = false;
 
   SshLoggingStatus? _logging;
-  SshLogs? _sshLogs;
-  bool _logsLoading = false;
-  String? _logsError;
   String _logMode = 'syslog';
   String _logSource = 'journal';
-  int _logLines = 200;
 
   ApiClient get _api => PanelScope.of(context).api;
 
@@ -271,38 +267,37 @@ class _SshPageState extends State<SshPage> {
         _logging = logging;
         _logMode = logging.mode;
         _logSource = source;
-        _logsError = null;
       });
-      await _loadLogs();
     } catch (error) {
       if (!mounted) return;
-      setState(() => _logsError = describeError(error));
+      _toast(describeError(error));
     }
   }
 
-  Future<void> _loadLogs() async {
-    setState(() {
-      _logsLoading = true;
-      _logsError = null;
-    });
-    try {
-      final json = await _api.getJson(
-        '/api/v1/ssh/logs',
-        query: {'source': _logSource, 'lines': '$_logLines'},
-      );
-      final logs = SshLogs.fromJson(json as Map<String, dynamic>);
-      if (!mounted) return;
-      setState(() {
-        _sshLogs = logs;
-        _logsLoading = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _logsError = describeError(error);
-        _logsLoading = false;
-      });
-    }
+  Future<void> _openLogs() async {
+    final api = _api;
+    final source = _logSource;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LogPage(
+          title: 'SSH 日志',
+          emptyMessage: '暂无日志。',
+          load: (lines) async {
+            final json = await api.getJson(
+              '/api/v1/ssh/logs',
+              query: {'source': source, 'lines': '$lines'},
+            );
+            final logs = SshLogs.fromJson(json as Map<String, dynamic>);
+            return LogPageData(
+              content: logs.content,
+              path: logs.path,
+              truncated: logs.truncated,
+              emptyMessage: '暂无日志。',
+            );
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _applyLogMode() async {
@@ -431,31 +426,10 @@ class _SshPageState extends State<SshPage> {
     }
     return PanelCard(
       title: 'SSH 日志',
-      trailing: Wrap(
-        spacing: 8,
-        children: [
-          DropdownButton<int>(
-            value: _logLines,
-            underline: const SizedBox.shrink(),
-            items: const [
-              DropdownMenuItem(value: 100, child: Text('100 行')),
-              DropdownMenuItem(value: 200, child: Text('200 行')),
-              DropdownMenuItem(value: 300, child: Text('300 行')),
-              DropdownMenuItem(value: 1000, child: Text('1000 行')),
-              DropdownMenuItem(value: 2000, child: Text('2000 行')),
-            ],
-            onChanged: (value) {
-              if (value == null) return;
-              setState(() => _logLines = value);
-              _loadLogs();
-            },
-          ),
-          OutlinedButton.icon(
-            onPressed: _logsLoading ? null : _loadLogs,
-            icon: const Icon(Icons.refresh, size: 16),
-            label: const Text('刷新'),
-          ),
-        ],
+      trailing: FilledButton.icon(
+        onPressed: _openLogs,
+        icon: const Icon(Icons.article_outlined, size: 16),
+        label: const Text('打开日志'),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -486,36 +460,13 @@ class _SshPageState extends State<SshPage> {
               onChanged: (value) {
                 if (value == null) return;
                 setState(() => _logSource = value);
-                _loadLogs();
               },
             ),
           ),
-          if (_sshLogs != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                '${_sshLogs!.path}${_sshLogs!.truncated ? '（仅显示尾部）' : ''}',
-                style: monospace.copyWith(fontSize: 11, color: hampanelMuted),
-              ),
-            ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 380,
-            child: _logsLoading
-                ? const LoadingView()
-                : _logsError != null
-                ? SingleChildScrollView(
-                    child: Text(
-                      _logsError!,
-                      style: TextStyle(fontSize: 12, color: hampanelDanger),
-                    ),
-                  )
-                : LogViewer(
-                    content: _sshLogs?.content ?? '',
-                    path: _sshLogs?.path,
-                    truncated: _sshLogs?.truncated ?? false,
-                    emptyMessage: '暂无日志。',
-                  ),
+          const SizedBox(height: 8),
+          Text(
+            '行数、日志级别与时间范围在日志页的「高级筛选」中设置。',
+            style: TextStyle(fontSize: 11, color: hampanelMuted),
           ),
         ],
       ),

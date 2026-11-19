@@ -7,6 +7,7 @@ import '../../core/api_client.dart';
 import '../../core/format.dart';
 import '../../core/session.dart';
 import '../../core/task_center.dart';
+import '../../ui/log_page.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 
@@ -62,9 +63,14 @@ class _TaskCard extends StatelessWidget {
     return PanelCard(
       padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
       child: InkWell(
-        onTap: () => showDialog<void>(
-          context: context,
-          builder: (_) => _TaskDetailDialog(center: center, task: task),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => LogPage(
+              title: task.title.isEmpty ? task.kind : task.title,
+              emptyMessage: '等待输出…',
+              stream: () => _taskOutputStream(center, task.id),
+            ),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,184 +123,35 @@ class _TaskCard extends StatelessWidget {
   }
 }
 
-class _TaskDetailDialog extends StatefulWidget {
-  const _TaskDetailDialog({required this.center, required this.task});
-
-  final TaskCenter center;
-  final TaskSummary task;
-
-  @override
-  State<_TaskDetailDialog> createState() => _TaskDetailDialogState();
-}
-
-class _TaskDetailDialogState extends State<_TaskDetailDialog> {
-  final StringBuffer _output = StringBuffer();
-  final ScrollController _scroll = ScrollController();
-  StreamSubscription<String>? _subscription;
-  late String _status = widget.task.status;
-  late String _phase = widget.task.phase;
-  String _error = '';
-  bool _done = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _open();
-  }
-
-  Future<void> _open() async {
-    try {
-      final response = await widget.center.api.openEventStream('/api/v1/tasks/${widget.task.id}/events');
-      String? event;
-      final data = StringBuffer();
-      _subscription = response.transform(utf8.decoder).transform(const LineSplitter()).listen(
-        (line) {
-          if (line.isEmpty) {
-            if (event != null) _handle(event!, data.toString());
-            event = null;
-            data.clear();
-            return;
+/// Converts the task SSE stream into plain output chunks for [LogPage].
+Stream<String> _taskOutputStream(TaskCenter center, String id) async* {
+  final response = await center.api.openEventStream('/api/v1/tasks/$id/events');
+  String? event;
+  final data = StringBuffer();
+  await for (final line
+      in response.transform(utf8.decoder).transform(const LineSplitter())) {
+    if (line.isEmpty) {
+      if (event == 'output' && data.isNotEmpty) {
+        try {
+          final json = jsonDecode(data.toString());
+          if (json is Map<String, dynamic>) {
+            final bytes = base64Decode(json['data'] as String? ?? '');
+            final text = utf8.decode(bytes, allowMalformed: true);
+            if (text.isNotEmpty) yield text;
           }
-          if (line.startsWith('event:')) {
-            event = line.substring(6).trim();
-          } else if (line.startsWith('data:')) {
-            if (data.isNotEmpty) data.write('\n');
-            data.write(line.substring(5).trim());
-          }
-        },
-        onError: (_) {},
-      );
-    } catch (error) {
-      if (mounted) setState(() => _error = describeError(error));
-    }
-  }
-
-  void _handle(String event, String data) {
-    if (!mounted || data.isEmpty) return;
-    final json = jsonDecode(data);
-    if (json is! Map<String, dynamic>) return;
-    if (event == 'output') {
-      try {
-        final bytes = base64Decode(json['data'] as String? ?? '');
-        _append(utf8.decode(bytes, allowMalformed: true));
-      } on FormatException {
-        // ignore malformed output frame
+        } catch (_) {
+          // ignore malformed frames
+        }
       }
-      return;
+      event = null;
+      data.clear();
+      continue;
     }
-    if (event == 'status') {
-      setState(() {
-        _status = json['status'] as String? ?? _status;
-        _phase = json['phase'] as String? ?? _phase;
-        _error = json['error'] as String? ?? '';
-        _done = !(_status == 'queued' || _status == 'running' || _status == 'canceling');
-      });
+    if (line.startsWith('event:')) {
+      event = line.substring(6).trim();
+    } else if (line.startsWith('data:')) {
+      if (data.isNotEmpty) data.write('\n');
+      data.write(line.substring(5).trim());
     }
-    if (event == 'reset') {
-      _output.clear();
-      setState(() {});
-      return;
-    }
-    if (event == 'gone') setState(() => _done = true);
-  }
-
-  void _append(String text) {
-    _output.write(text);
-    if (_output.length > 512 * 1024) {
-      final value = _output.toString();
-      _output
-        ..clear()
-        ..write(value.substring(value.length - 384 * 1024));
-    }
-    setState(() {});
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
-    });
-  }
-
-  @override
-  void dispose() {
-    _subscription?.cancel();
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final label = switch (_status) {
-      'succeeded' => '已完成',
-      'failed' => '失败',
-      'canceled' => '已取消',
-      'interrupted' => '已中断',
-      'running' => '运行中',
-      'queued' => '排队中',
-      _ => _status,
-    };
-    return AlertDialog(
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              widget.task.title.isEmpty ? widget.task.kind : widget.task.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 8),
-          StatusPill(text: label, good: _status == 'succeeded'),
-        ],
-      ),
-      content: DialogBody(
-        maxWidth: 760,
-        maxHeight: 560,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '${widget.task.kind}${_phase.isEmpty ? '' : ' · $_phase'}',
-              style: TextStyle(fontSize: 11, color: hampanelMuted),
-            ),
-            if (_error.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(_error, style: TextStyle(fontSize: 11, color: hampanelDanger)),
-            ],
-            const SizedBox(height: 10),
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                color: hampanelInk,
-                child: SingleChildScrollView(
-                  controller: _scroll,
-                  child: SelectableText(
-                    _output.isEmpty ? '等待输出…' : _output.toString(),
-                    style: TextStyle(
-                      fontFamily: 'FiraCode',
-                      fontFamilyFallback: ['DejaVu Sans Mono', 'monospace'],
-                      fontSize: 12,
-                      height: 1.45,
-                      color: hampanelSurface,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        if (!_done)
-          TextButton(
-            onPressed: () async {
-              try {
-                await widget.center.cancel(widget.task.id);
-              } catch (error) {
-                if (context.mounted) showAppSnackBar(context, SnackBar(content: Text(describeError(error))));
-              }
-            },
-            child: const Text('取消任务'),
-          ),
-        FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('关闭')),
-      ],
-    );
   }
 }

@@ -4,7 +4,47 @@ import 'package:material_ui/material_ui.dart';
 import '../core/format.dart';
 import '../core/log_parse.dart';
 import 'theme.dart';
-import 'widgets.dart';
+
+/// Shared filter state so a page can put severity, date and query controls in
+/// its own advanced-filter dialog while [LogViewer] renders the result.
+class LogFilterController extends ChangeNotifier {
+  String query = '';
+  Set<LogSeverity> severities = LogSeverity.values.toSet();
+  DateTimeRange? range;
+
+  bool get isDefault =>
+      query.trim().isEmpty &&
+      severities.length == LogSeverity.values.length &&
+      range == null;
+
+  int get activeCount =>
+      (query.trim().isEmpty ? 0 : 1) +
+      (severities.length == LogSeverity.values.length ? 0 : 1) +
+      (range == null ? 0 : 1);
+
+  void setQuery(String value) {
+    if (query == value) return;
+    query = value;
+    notifyListeners();
+  }
+
+  void setSeverities(Set<LogSeverity> value) {
+    severities = {...value};
+    notifyListeners();
+  }
+
+  void setRange(DateTimeRange? value) {
+    range = value;
+    notifyListeners();
+  }
+
+  void reset() {
+    query = '';
+    severities = LogSeverity.values.toSet();
+    range = null;
+    notifyListeners();
+  }
+}
 
 class LogViewer extends StatefulWidget {
   const LogViewer({
@@ -13,12 +53,27 @@ class LogViewer extends StatefulWidget {
     this.path,
     this.truncated = false,
     this.emptyMessage = '暂无日志内容',
+    this.controller,
+    this.compactFilters = false,
+    this.onAdvancedFilter,
+    this.onCountChanged,
   });
 
   final String content;
   final String? path;
   final bool truncated;
   final String emptyMessage;
+
+  /// Optional shared filter state. When omitted the viewer owns one.
+  final LogFilterController? controller;
+
+  /// Hides the severity/date controls behind [onAdvancedFilter] and leaves only
+  /// the search field in the inline bar.
+  final bool compactFilters;
+  final VoidCallback? onAdvancedFilter;
+
+  /// Reports the filtered and total line counts after a rebuild.
+  final void Function(int visible, int total)? onCountChanged;
 
   @override
   State<LogViewer> createState() => _LogViewerState();
@@ -27,14 +82,27 @@ class LogViewer extends StatefulWidget {
 class _LogViewerState extends State<LogViewer> {
   final _queryController = TextEditingController();
   List<LogLine> _lines = const [];
-  final Set<LogSeverity> _severities = LogSeverity.values.toSet();
-  DateTimeRange? _range;
-  String _query = '';
+  late final LogFilterController _filter =
+      widget.controller ?? LogFilterController();
+  int _lastVisible = -1;
+  int _lastTotal = -1;
+
+  LogFilterController get _activeFilter => widget.controller ?? _filter;
 
   @override
   void initState() {
     super.initState();
     _lines = LogParser.parse(widget.content);
+    _queryController.text = _activeFilter.query;
+    _activeFilter.addListener(_onFilterChanged);
+  }
+
+  void _onFilterChanged() {
+    if (!mounted) return;
+    if (_queryController.text != _activeFilter.query) {
+      _queryController.text = _activeFilter.query;
+    }
+    setState(() {});
   }
 
   @override
@@ -43,16 +111,22 @@ class _LogViewerState extends State<LogViewer> {
     if (oldWidget.content != widget.content) {
       _lines = LogParser.parse(widget.content);
     }
+    if (oldWidget.controller != widget.controller) {
+      (oldWidget.controller ?? _filter).removeListener(_onFilterChanged);
+      (widget.controller ?? _filter).addListener(_onFilterChanged);
+    }
   }
 
   @override
   void dispose() {
+    _activeFilter.removeListener(_onFilterChanged);
+    if (widget.controller == null) _filter.dispose();
     _queryController.dispose();
     super.dispose();
   }
 
   List<LogLine> get _visible {
-    final query = _query.trim().toLowerCase();
+    final query = _activeFilter.query.trim().toLowerCase();
     return [
       for (final line in _lines)
         if (_matches(line, query)) line,
@@ -60,11 +134,11 @@ class _LogViewerState extends State<LogViewer> {
   }
 
   bool _matches(LogLine line, String query) {
-    if (!_severities.contains(line.severity)) return false;
+    if (!_activeFilter.severities.contains(line.severity)) return false;
     if (query.isNotEmpty && !line.raw.toLowerCase().contains(query)) {
       return false;
     }
-    final range = _range;
+    final range = _activeFilter.range;
     if (range != null) {
       final timestamp = line.timestamp;
       if (timestamp == null) return false;
@@ -89,13 +163,13 @@ class _LogViewerState extends State<LogViewer> {
       context: context,
       firstDate: DateTime(now.year - 3),
       lastDate: DateTime(now.year + 1, 12, 31),
-      initialDateRange: _range,
+      initialDateRange: _activeFilter.range,
       helpText: '选择日志时间范围',
       saveText: '应用',
       locale: const Locale('zh', 'CN'),
     );
     if (picked == null || !mounted) return;
-    setState(() => _range = picked);
+    _activeFilter.setRange(picked);
   }
 
   void _copyVisible() {
@@ -120,7 +194,7 @@ class _LogViewerState extends State<LogViewer> {
   }
 
   Widget _severityChip(LogSeverity severity) {
-    final selected = _severities.contains(severity);
+    final selected = _activeFilter.severities.contains(severity);
     final color = _severityColor(severity);
     return FilterChip(
       label: Text(severity.label),
@@ -141,20 +215,48 @@ class _LogViewerState extends State<LogViewer> {
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(3)),
       onSelected: (value) {
-        setState(() {
-          if (value) {
-            _severities.add(severity);
-          } else {
-            _severities.remove(severity);
-          }
-        });
+        final next = {..._activeFilter.severities};
+        if (value) {
+          next.add(severity);
+        } else {
+          next.remove(severity);
+        }
+        _activeFilter.setSeverities(next);
       },
+    );
+  }
+
+  Widget _searchField() {
+    return SizedBox(
+      height: 34,
+      child: TextField(
+        controller: _queryController,
+        onChanged: _activeFilter.setQuery,
+        style: const TextStyle(fontSize: 12),
+        decoration: const InputDecoration(
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          prefixIcon: Icon(Icons.search, size: 18),
+          labelText: '筛选内容',
+          border: OutlineInputBorder(),
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final visible = _visible;
+    if (visible.length != _lastVisible || _lines.length != _lastTotal) {
+      _lastVisible = visible.length;
+      _lastTotal = _lines.length;
+      final report = widget.onCountChanged;
+      if (report != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) report(visible.length, _lines.length);
+        });
+      }
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -164,69 +266,75 @@ class _LogViewerState extends State<LogViewer> {
             color: hampanelSurface,
             border: Border.all(color: hampanelBorder),
           ),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: 240,
-                height: 34,
-                child: TextField(
-                  controller: _queryController,
-                  onChanged: (value) => setState(() => _query = value),
-                  style: const TextStyle(fontSize: 12),
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
+          child: widget.compactFilters
+              ? Row(
+                  children: [
+                    Expanded(child: _searchField()),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: widget.onAdvancedFilter,
+                      icon: const Icon(Icons.tune, size: 16),
+                      label: Text(
+                        _activeFilter.activeCount == 0
+                            ? '高级筛选'
+                            : '高级筛选 · ${_activeFilter.activeCount}',
+                      ),
                     ),
-                    prefixIcon: Icon(Icons.search, size: 18),
-                    labelText: '筛选内容',
-                    border: OutlineInputBorder(),
-                  ),
+                    IconButton(
+                      tooltip: '复制当前筛选结果',
+                      onPressed: visible.isEmpty ? null : _copyVisible,
+                      icon: const Icon(Icons.copy_all_outlined, size: 17),
+                    ),
+                    if (widget.truncated)
+                      Text(
+                        '已截断',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: hampanelWarning,
+                        ),
+                      ),
+                  ],
+                )
+              : Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(width: 240, child: _searchField()),
+                    for (final severity in LogSeverity.values)
+                      _severityChip(severity),
+                    OutlinedButton.icon(
+                      onPressed: _pickRange,
+                      icon: const Icon(Icons.date_range, size: 16),
+                      label: Text(
+                        _activeFilter.range == null
+                            ? '时间范围'
+                            : '${formatTimestamp(_activeFilter.range!.start.toIso8601String()).substring(0, 10)}'
+                                  ' ~ '
+                                  '${formatTimestamp(_activeFilter.range!.end.toIso8601String()).substring(0, 10)}',
+                      ),
+                    ),
+                    if (_activeFilter.range != null)
+                      IconButton(
+                        tooltip: '清除时间范围',
+                        onPressed: () => _activeFilter.setRange(null),
+                        icon: const Icon(Icons.close, size: 16),
+                      ),
+                    IconButton(
+                      tooltip: '复制当前筛选结果',
+                      onPressed: visible.isEmpty ? null : _copyVisible,
+                      icon: const Icon(Icons.copy_all_outlined, size: 17),
+                    ),
+                    if (widget.truncated)
+                      Text(
+                        '已截断',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: hampanelWarning,
+                        ),
+                      ),
+                  ],
                 ),
-              ),
-              for (final severity in LogSeverity.values)
-                _severityChip(severity),
-              OutlinedButton.icon(
-                onPressed: _pickRange,
-                icon: const Icon(Icons.date_range, size: 16),
-                label: Text(
-                  _range == null
-                      ? '时间范围'
-                      : '${formatTimestamp(_range!.start.toIso8601String()).substring(0, 10)}'
-                            ' ~ '
-                            '${formatTimestamp(_range!.end.toIso8601String()).substring(0, 10)}',
-                ),
-              ),
-              if (_range != null)
-                IconButton(
-                  tooltip: '清除时间范围',
-                  onPressed: () => setState(() => _range = null),
-                  icon: const Icon(Icons.close, size: 16),
-                ),
-              Text(
-                '${visible.length}/${_lines.length} 行',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: hampanelMuted,
-                  fontFamily: monospace.fontFamily,
-                ),
-              ),
-              IconButton(
-                tooltip: '复制当前筛选结果',
-                onPressed: visible.isEmpty ? null : _copyVisible,
-                icon: const Icon(Icons.copy_all_outlined, size: 17),
-              ),
-              if (widget.truncated)
-                Text(
-                  '已截断',
-                  style: TextStyle(fontSize: 10.5, color: hampanelWarning),
-                ),
-            ],
-          ),
         ),
         if (widget.path != null)
           Padding(
@@ -262,7 +370,7 @@ class _LogViewerState extends State<LogViewer> {
                       itemBuilder: (context, index) => _LogLineRow(
                         line: visible[index],
                         number: visible[index].number,
-                        query: _query,
+                        query: _activeFilter.query,
                         color: _severityColor(visible[index].severity),
                       ),
                     ),
@@ -366,37 +474,4 @@ class _LogLineRow extends StatelessWidget {
       if (index >= text.length) return spans;
     }
   }
-}
-
-
-Future<void> showLogViewerDialog(
-  BuildContext context, {
-  required String title,
-  required String content,
-  String? path,
-  bool truncated = false,
-  String emptyMessage = '暂无日志',
-}) {
-  return showDialog<void>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: Text(title),
-      content: DialogBody(
-        maxWidth: 980,
-        maxHeight: 620,
-        child: LogViewer(
-          content: content,
-          path: path,
-          truncated: truncated,
-          emptyMessage: emptyMessage,
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('关闭'),
-        ),
-      ],
-    ),
-  );
 }

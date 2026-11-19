@@ -7,7 +7,7 @@ import '../../core/models/waf_status.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/layout.dart';
-import '../../ui/log_viewer.dart';
+import '../../ui/log_page.dart';
 import '../../ui/widgets.dart';
 import '../store/deploy_dialog.dart';
 
@@ -234,28 +234,31 @@ class _WafPageState extends State<WafPage>
   }
 
   Future<void> _showLogs([String source = 'access']) async {
-    try {
-      final json = await _api.getJson(
-        '/api/v1/waf/logs',
-        query: {'lines': '500', 'source': source},
-      );
-      final map = json as Map<String, dynamic>? ?? const {};
-      if (!mounted) return;
-      await showLogViewerDialog(
-        context,
-        title: source == 'risk'
-            ? 'WAF 风险日志'
-            : source == 'audit'
-            ? 'Coraza 规则审计'
-            : 'WAF 访问日志',
-        content: map['content'] as String? ?? '',
-        path: map['path'] as String?,
-        truncated: map['truncated'] == true,
-      );
-    } catch (error) {
-      if (!mounted) return;
-      _toast(describeError(error));
-    }
+    final api = _api;
+    final title = source == 'risk'
+        ? 'WAF 风险日志'
+        : source == 'audit'
+        ? 'Coraza 规则审计'
+        : 'WAF 访问日志';
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LogPage(
+          title: title,
+          load: (lines) async {
+            final json = await api.getJson(
+              '/api/v1/waf/logs',
+              query: {'lines': '$lines', 'source': source},
+            );
+            final map = json as Map<String, dynamic>? ?? const {};
+            return LogPageData(
+              content: map['content'] as String? ?? '',
+              path: map['path'] as String?,
+              truncated: map['truncated'] == true,
+            );
+          },
+        ),
+      ),
+    );
   }
 
   Future<void> _saveKey() async {
