@@ -609,18 +609,6 @@ class _SoftwarePageState extends State<SoftwarePage>
         if (!wide) ban,
       ],
     );
-    final chips = Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: [
-        for (final ip in jail.bannedIps.take(10))
-          InputChip(
-            label: Text(ip, style: monospace.copyWith(fontSize: 11)),
-            onDeleted: () => _unban(jail, ip),
-            deleteIcon: const Icon(Icons.close, size: 14),
-          ),
-      ],
-    );
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
@@ -650,11 +638,9 @@ class _SoftwarePageState extends State<SoftwarePage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 name,
-                if (jail.bannedIps.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  chips,
-                  if (jail.bannedIps.length > 10 && all != null)
-                    Align(alignment: Alignment.centerLeft, child: all),
+                if (all != null) ...[
+                  const SizedBox(height: 6),
+                  Align(alignment: Alignment.centerLeft, child: all),
                 ],
               ],
             ),
