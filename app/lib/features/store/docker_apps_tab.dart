@@ -8,7 +8,7 @@ import '../../core/models/store_app.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
 import '../../ui/layout.dart';
-import '../../ui/log_viewer.dart';
+import '../../ui/log_page.dart';
 import '../../ui/widgets.dart';
 import 'deploy_dialog.dart';
 
@@ -136,21 +136,22 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
     }
 
     if (action == 'logs') {
-      try {
-        final json = await _api.getJson(
-          '/api/v1/store/apps/${app.slug}/logs',
-          query: {'lines': '300'},
-        );
-        final map = json as Map<String, dynamic>;
-        if (!mounted) return;
-        await showLogViewerDialog(
-          context,
-          title: '${app.name} 日志',
-          content: map['output'] as String? ?? '',
-        );
-      } catch (error) {
-        _toast(describeError(error));
-      }
+      final api = _api;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => LogPage(
+            title: '${app.name} 日志',
+            load: (lines) async {
+              final json = await api.getJson(
+                '/api/v1/store/apps/${app.slug}/logs',
+                query: {'lines': '$lines'},
+              );
+              final map = json as Map<String, dynamic>? ?? const {};
+              return LogPageData(content: map['output'] as String? ?? '');
+            },
+          ),
+        ),
+      );
       return;
     }
 
@@ -264,8 +265,12 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
                             ),
                           ),
                           StatusPill(
-                            text: app.installed ? '已部署' : '未部署',
-                            good: app.installed,
+                            text: !app.installed
+                                ? '未部署'
+                                : app.running
+                                ? '运行中'
+                                : '已停止',
+                            good: app.running,
                           ),
                         ],
                       ),
@@ -293,17 +298,16 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
                               ),
                               label: const Text('部署'),
                             )
-                          else ...[
+                          else if (app.running)
+                            OutlinedButton(
+                              onPressed: () => _action(app, 'stop'),
+                              child: const Text('停止'),
+                            )
+                          else
                             OutlinedButton(
                               onPressed: () => _action(app, 'start'),
                               child: const Text('启动'),
                             ),
-                            const SizedBox(width: 6),
-                            OutlinedButton(
-                              onPressed: () => _action(app, 'stop'),
-                              child: const Text('停止'),
-                            ),
-                          ],
                           const Spacer(),
                           PopupMenuButton<String>(
                             tooltip: '更多',

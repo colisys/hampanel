@@ -33,6 +33,7 @@ class StoreApp {
     required this.category,
     required this.icon,
     required this.installed,
+    this.running = false,
     required this.params,
   });
 
@@ -42,6 +43,7 @@ class StoreApp {
   final String category;
   final String icon;
   final bool installed;
+  final bool running;
   final List<StoreParam> params;
 
   factory StoreApp.fromJson(Map<String, dynamic> json) => StoreApp(
@@ -51,6 +53,7 @@ class StoreApp {
     category: json['category'] as String? ?? '',
     icon: json['icon'] as String? ?? '',
     installed: json['installed'] as bool? ?? false,
+    running: json['running'] as bool? ?? false,
     params: ((json['params'] as List<dynamic>?) ?? const [])
         .whereType<Map<String, dynamic>>()
         .map(StoreParam.fromJson)
