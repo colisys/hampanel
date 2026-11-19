@@ -535,15 +535,39 @@ pub fn dockerSettingsSave(ctx: *context.Context) anyerror!void {
 pub fn engineRestart(ctx: *context.Context) anyerror!void {
     const socket = engine_mod.socketFromDb(ctx.arena, ctx.app.db);
     const engine = engine_mod.detect(ctx.arena, socket) catch |err| {
-        ctx.fail(501, "unsupported", @errorName(err));
+        const unavailable = err == error.EngineUnavailable;
+        ctx.fail(if (unavailable) 503 else 501, if (unavailable) "engine_unavailable" else "invalid_engine", restartErrorText(err));
         return;
     };
     const result = engine_mod.restart(ctx.arena, engine, socket) catch |err| {
-        ctx.fail(501, "unsupported", @errorName(err));
+        ctx.fail(if (err == error.UnsupportedPlatform) 501 else 409, restartErrorCode(err), restartErrorText(err));
         return;
     };
     if (!result.ok()) ctx.response.status = 502;
     try ctx.json(.{ .ok = result.ok(), .output = if (result.stderr.len > 0) result.stderr else result.stdout });
+}
+
+fn restartErrorCode(err: anyerror) []const u8 {
+    return switch (err) {
+        error.UnsupportedPlatform => "unsupported",
+        error.UnsupportedEndpoint => "engine_endpoint_not_local",
+        error.UnknownEndpoint => "engine_endpoint_unknown",
+        error.UnsupportedRootless => "engine_rootless",
+        error.UnsupportedServiceManager => "service_manager_unavailable",
+        else => "restart_failed",
+    };
+}
+
+fn restartErrorText(err: anyerror) []const u8 {
+    return switch (err) {
+        error.UnsupportedPlatform => "当前操作系统不支持重启容器引擎",
+        error.UnsupportedEndpoint => "容器引擎不在本机，无法由本机服务管理器重启",
+        error.UnknownEndpoint => "无法确定容器引擎的本地端点",
+        error.UnsupportedRootless => "检测到 rootless 容器引擎，请用该用户自己的 systemd 管理",
+        error.UnsupportedServiceManager => "未找到 podman.service / docker.service，无法重启",
+        error.EngineUnavailable => "未检测到 Docker 或 Podman",
+        else => "重启容器引擎失败",
+    };
 }
 
 fn requireId(ctx: *context.Context) ?[]const u8 {

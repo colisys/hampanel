@@ -115,35 +115,83 @@ pub fn run(
     });
 }
 
+pub const default_podman_endpoint = "unix:///run/podman/podman.sock";
+
 pub fn restartSupported(a: std.mem.Allocator, engine: Engine, socket: []const u8) !void {
     const os = @import("builtin").os.tag;
     if (os != .linux and os != .windows) return error.UnsupportedPlatform;
     var endpoint = socket;
     if (endpoint.len == 0) endpoint = compat.getEnv(if (engine.podman) "CONTAINER_HOST" else "DOCKER_HOST") orelse "";
-    if (endpoint.len == 0 and !engine.podman) {
-        const probe = try exec.run(a, &.{ "docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}" }, 4096);
-        if (!probe.ok()) return error.UnknownEndpoint;
-        endpoint = std.mem.trim(u8, probe.stdout, " \r\n\t");
-    }
-    if (!localServiceEndpoint(engine.podman, os == .windows, endpoint)) return error.UnsupportedEndpoint;
-    const info = try run(a, engine, endpoint, &.{ engine.name, "info", "--format", if (engine.podman) "{{.Host.Security.Rootless}}" else "{{json .SecurityOptions}}" }, .{});
-    if (!info.ok()) return error.UnknownRootlessState;
-    const security = std.mem.trim(u8, info.stdout, " \r\n\t");
-    if (engine.podman) {
-        if (!std.mem.eql(u8, security, "false")) return error.UnsupportedRootless;
-    } else {
-        const value = std.json.parseFromSliceLeaky(std.json.Value, a, security, .{}) catch return error.UnknownRootlessState;
-        if (value != .array) return error.UnknownRootlessState;
-        for (value.array.items) |item| {
-            if (item != .string) return error.UnknownRootlessState;
-            if (containsIgnoreCase(item.string, "rootless")) return error.UnsupportedRootless;
+    if (endpoint.len == 0) {
+        if (engine.podman) {
+            // Podman has no `context` equivalent, so fall back to the rootful
+            // socket instead of failing with an unknown endpoint.
+            endpoint = defaultEndpoint(true);
+        } else {
+            const probe = exec.run(a, &.{ "docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}" }, 4096) catch
+                return error.UnknownEndpoint;
+            if (!probe.ok()) return error.UnknownEndpoint;
+            endpoint = std.mem.trim(u8, probe.stdout, " \r\n\t");
         }
     }
-    const service = if (os == .windows)
-        try exec.run(a, &.{ "powershell.exe", "-NoProfile", "-Command", "Get-Service docker -ErrorAction Stop | Out-Null" }, 4096)
-    else
-        try exec.run(a, &.{ "systemctl", "show", "--property=LoadState", "--value", if (engine.podman) "podman.service" else "docker.service" }, 4096);
-    if (!service.ok() or (os != .windows and !std.mem.eql(u8, std.mem.trim(u8, service.stdout, " \r\n\t"), "loaded"))) return error.UnsupportedServiceManager;
+    if (!localServiceEndpoint(engine.podman, os == .windows, endpoint)) return error.UnsupportedEndpoint;
+
+    // Restarting is the recovery path for a stopped or wedged engine, so a
+    // failed probe must not block it. Only a *successful* report of a rootless
+    // engine is rejected, because that runtime is not managed by the system
+    // unit we would restart.
+    if (run(a, engine, endpoint, &.{ engine.name, "info", "--format", if (engine.podman) "{{.Host.Security.Rootless}}" else "{{json .SecurityOptions}}" }, .{})) |info| {
+        if (info.ok()) {
+            const security = std.mem.trim(u8, info.stdout, " \r\n\t");
+            if (engine.podman) {
+                if (!std.mem.eql(u8, security, "false")) return error.UnsupportedRootless;
+            } else if (std.json.parseFromSliceLeaky(std.json.Value, a, security, .{})) |value| {
+                if (value == .array) {
+                    for (value.array.items) |item| {
+                        if (item != .string) continue;
+                        if (containsIgnoreCase(item.string, "rootless")) return error.UnsupportedRootless;
+                    }
+                }
+            } else |_| {}
+        }
+    } else |_| {}
+
+    if (os == .windows) {
+        const service = exec.run(a, &.{ "powershell.exe", "-NoProfile", "-Command", "Get-Service docker -ErrorAction Stop | Out-Null" }, 4096) catch
+            return error.UnsupportedServiceManager;
+        if (!service.ok()) return error.UnsupportedServiceManager;
+        return;
+    }
+    _ = try loadedUnit(a, unitCandidates(engine.podman)) orelse return error.UnsupportedServiceManager;
+}
+
+/// Podman exposes no `context` equivalent, so an unset endpoint means the
+/// rootful socket. Docker is resolved through its CLI context elsewhere.
+pub fn defaultEndpoint(podman: bool) []const u8 {
+    return if (podman) default_podman_endpoint else "";
+}
+
+const docker_units = [_][]const u8{"docker.service"};
+/// Rootful Podman is usually socket activated, so `podman.service` may not
+/// exist at all on a healthy host. Restarting through the socket unit starts
+/// the service behind it.
+const podman_units = [_][]const u8{ "podman.service", "podman.socket" };
+
+pub fn unitCandidates(podman: bool) []const []const u8 {
+    return if (podman) &podman_units else &docker_units;
+}
+
+/// Returns the first loaded unit, or null when the service manager has none.
+pub fn loadedUnit(a: std.mem.Allocator, candidates: []const []const u8) !?[]const u8 {
+    const os = @import("builtin").os.tag;
+    if (os == .windows) return if (candidates.len > 0) candidates[0] else null;
+    for (candidates) |unit| {
+        const result = exec.run(a, &.{ "systemctl", "show", "--property=LoadState", "--value", unit }, 4096) catch
+            return error.UnsupportedServiceManager;
+        if (!result.ok()) continue;
+        if (std.mem.eql(u8, std.mem.trim(u8, result.stdout, " \r\n\t"), "loaded")) return unit;
+    }
+    return null;
 }
 
 pub fn localServiceEndpoint(podman: bool, windows: bool, endpoint: []const u8) bool {
@@ -154,10 +202,23 @@ pub fn localServiceEndpoint(podman: bool, windows: bool, endpoint: []const u8) b
 
 pub fn restart(a: std.mem.Allocator, engine: Engine, socket: []const u8) !exec.Result {
     try restartSupported(a, engine, socket);
-    return if (@import("builtin").os.tag == .windows)
-        exec.run(a, &.{ "powershell.exe", "-NoProfile", "-Command", "Restart-Service docker -ErrorAction Stop" }, 1024 * 1024)
-    else
-        exec.run(a, &.{ "systemctl", "restart", if (engine.podman) "podman.service" else "docker.service" }, 1024 * 1024);
+    if (@import("builtin").os.tag == .windows) {
+        return exec.run(a, &.{ "powershell.exe", "-NoProfile", "-Command", "Restart-Service docker -ErrorAction Stop" }, 1024 * 1024);
+    }
+    const unit = try loadedUnit(a, unitCandidates(engine.podman)) orelse return error.UnsupportedServiceManager;
+    return exec.run(a, &.{ "systemctl", "restart", unit }, 1024 * 1024);
+}
+
+test "podman prefers the service unit and falls back to the socket" {
+    try std.testing.expectEqualStrings("podman.service", unitCandidates(true)[0]);
+    try std.testing.expectEqualStrings("podman.socket", unitCandidates(true)[1]);
+    try std.testing.expectEqualStrings("docker.service", unitCandidates(false)[0]);
+}
+
+test "podman restart falls back to the rootful socket" {
+    try std.testing.expectEqualStrings(default_podman_endpoint, defaultEndpoint(true));
+    try std.testing.expectEqualStrings("", defaultEndpoint(false));
+    try std.testing.expect(localServiceEndpoint(true, false, defaultEndpoint(true)));
 }
 
 test "restart rejects remote rootless and unknown endpoints" {
