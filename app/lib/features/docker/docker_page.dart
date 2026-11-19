@@ -18,7 +18,11 @@ import 'volumes_section.dart';
 
 
 class DockerPage extends StatefulWidget {
-  const DockerPage({super.key});
+  const DockerPage({super.key, this.active = true});
+
+  /// IndexedStack keeps this page alive, so the shell tells us when it becomes
+  /// the visible tab and we refresh the current section.
+  final bool active;
 
   @override
   State<DockerPage> createState() => _DockerPageState();
@@ -31,6 +35,7 @@ class _DockerPageState extends State<DockerPage> {
   bool _installing = false;
   String? _engine;
   String? _error;
+  int _refreshEpoch = 0;
 
   List<String> get _sectionLabels => [
     '概览',
@@ -51,6 +56,15 @@ class _DockerPageState extends State<DockerPage> {
   void initState() {
     super.initState();
     _checkConnection();
+  }
+
+  @override
+  void didUpdateWidget(covariant DockerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.active && widget.active) {
+      setState(() => _refreshEpoch++);
+      _checkConnection();
+    }
   }
 
   Future<void> _checkConnection() async {
@@ -224,21 +238,33 @@ class _DockerPageState extends State<DockerPage> {
   Widget _buildSection() {
     switch (_selected) {
       case 0:
-        return _OverviewSection(engine: _engine);
+        return _OverviewSection(
+          engine: _engine,
+          refreshEpoch: _refreshEpoch,
+        );
       case 1:
-        return ContainersSection(engine: _engine);
+        return ContainersSection(
+          engine: _engine,
+          refreshEpoch: _refreshEpoch,
+        );
       case 2:
-        return const ComposeSection();
+        return ComposeSection(refreshEpoch: _refreshEpoch);
       case 3:
-        return const ImagesSection();
+        return ImagesSection(refreshEpoch: _refreshEpoch);
       case 4:
-        return const NetworksSection();
+        return NetworksSection(refreshEpoch: _refreshEpoch);
       case 5:
-        return const VolumesSection();
+        return VolumesSection(refreshEpoch: _refreshEpoch);
       case 6:
-        return RegistriesSection(engine: _engine);
+        return RegistriesSection(
+          engine: _engine,
+          refreshEpoch: _refreshEpoch,
+        );
       case 7:
-        return DockerSettingsSection(engine: _engine);
+        return DockerSettingsSection(
+          engine: _engine,
+          refreshEpoch: _refreshEpoch,
+        );
       default:
         return _PlaceholderSection(
           title: _sectionLabels[_selected],
@@ -249,9 +275,10 @@ class _DockerPageState extends State<DockerPage> {
 }
 
 class _OverviewSection extends StatefulWidget {
-  const _OverviewSection({this.engine});
+  const _OverviewSection({this.engine, this.refreshEpoch = 0});
 
   final String? engine;
+  final int refreshEpoch;
 
   @override
   State<_OverviewSection> createState() => _OverviewSectionState();
@@ -261,6 +288,12 @@ class _OverviewSectionState extends State<_OverviewSection> {
   DockerOverview? _overview;
   String? _error;
   bool _loading = true;
+
+  @override
+  void didUpdateWidget(covariant _OverviewSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
+  }
 
   ApiClient get _api => PanelScope.of(context).api;
 

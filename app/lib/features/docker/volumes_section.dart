@@ -8,13 +8,21 @@ import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 
 class VolumesSection extends StatefulWidget {
-  const VolumesSection({super.key});
+  const VolumesSection({super.key, this.refreshEpoch = 0});
+
+  final int refreshEpoch;
 
   @override
   State<VolumesSection> createState() => _VolumesSectionState();
 }
 
 class _VolumesSectionState extends State<VolumesSection> {
+
+  @override
+  void didUpdateWidget(covariant VolumesSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
+  }
   List<DockerVolume> _volumes = const [];
   bool _loading = true;
   String? _error;

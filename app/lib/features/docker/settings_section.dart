@@ -10,15 +10,23 @@ import '../../ui/widgets.dart';
 import 'podman_settings_panel.dart';
 
 class DockerSettingsSection extends StatefulWidget {
-  const DockerSettingsSection({super.key, this.engine});
+  const DockerSettingsSection({super.key, this.engine, this.refreshEpoch = 0});
 
   final String? engine;
+  final int refreshEpoch;
+
 
   @override
   State<DockerSettingsSection> createState() => _DockerSettingsSectionState();
 }
 
 class _DockerSettingsSectionState extends State<DockerSettingsSection> {
+
+  @override
+  void didUpdateWidget(covariant DockerSettingsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
+  }
   final _mirrors = TextEditingController();
   final _insecure = TextEditingController();
   final _cidr = TextEditingController();

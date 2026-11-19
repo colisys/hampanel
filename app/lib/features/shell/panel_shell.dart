@@ -143,7 +143,11 @@ class _PanelShellState extends State<PanelShell> {
       (_, _) => const ServicesPage(),
     ),
     _Destination('网站', Icons.public_outlined, (_, _) => const SitesPage()),
-    _Destination('容器', Icons.widgets_outlined, (_, _) => const DockerPage()),
+    _Destination(
+      '容器',
+      Icons.widgets_outlined,
+      (_, active) => DockerPage(active: active),
+    ),
     _Destination(
       '应用商店',
       Icons.storefront_outlined,

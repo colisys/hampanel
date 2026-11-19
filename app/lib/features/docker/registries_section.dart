@@ -8,15 +8,23 @@ import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 
 class RegistriesSection extends StatefulWidget {
-  const RegistriesSection({super.key, this.engine});
+  const RegistriesSection({super.key, this.engine, this.refreshEpoch = 0});
 
   final String? engine;
+  final int refreshEpoch;
+
 
   @override
   State<RegistriesSection> createState() => _RegistriesSectionState();
 }
 
 class _RegistriesSectionState extends State<RegistriesSection> {
+
+  @override
+  void didUpdateWidget(covariant RegistriesSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
+  }
   List<DockerRegistry> _registries = const [];
   bool _loading = true;
   String? _error;

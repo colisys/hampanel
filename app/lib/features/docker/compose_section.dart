@@ -10,13 +10,21 @@ import '../../ui/widgets.dart';
 import 'job_progress_dialog.dart';
 
 class ComposeSection extends StatefulWidget {
-  const ComposeSection({super.key});
+  const ComposeSection({super.key, this.refreshEpoch = 0});
+
+  final int refreshEpoch;
 
   @override
   State<ComposeSection> createState() => _ComposeSectionState();
 }
 
 class _ComposeSectionState extends State<ComposeSection> {
+
+  @override
+  void didUpdateWidget(covariant ComposeSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
+  }
   List<DockerComposeProject> _projects = const [];
   bool _loading = true;
   String? _error;

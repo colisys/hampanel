@@ -13,15 +13,23 @@ import 'container_files_dialog.dart';
 import 'container_terminal_dialog.dart';
 
 class ContainersSection extends StatefulWidget {
-  const ContainersSection({super.key, this.engine});
+  const ContainersSection({super.key, this.engine, this.refreshEpoch = 0});
 
   final String? engine;
+  final int refreshEpoch;
+
 
   @override
   State<ContainersSection> createState() => _ContainersSectionState();
 }
 
 class _ContainersSectionState extends State<ContainersSection> {
+
+  @override
+  void didUpdateWidget(covariant ContainersSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
+  }
   List<DockerContainer> _containers = const [];
   bool _loading = true;
   String? _error;

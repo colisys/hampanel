@@ -8,13 +8,21 @@ import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
 
 class NetworksSection extends StatefulWidget {
-  const NetworksSection({super.key});
+  const NetworksSection({super.key, this.refreshEpoch = 0});
+
+  final int refreshEpoch;
 
   @override
   State<NetworksSection> createState() => _NetworksSectionState();
 }
 
 class _NetworksSectionState extends State<NetworksSection> {
+
+  @override
+  void didUpdateWidget(covariant NetworksSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
+  }
   List<DockerNetwork> _networks = const [];
   bool _loading = true;
   String? _error;

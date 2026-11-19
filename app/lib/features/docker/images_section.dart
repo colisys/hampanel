@@ -12,13 +12,21 @@ import '../../ui/widgets.dart';
 import 'job_progress_dialog.dart';
 
 class ImagesSection extends StatefulWidget {
-  const ImagesSection({super.key});
+  const ImagesSection({super.key, this.refreshEpoch = 0});
+
+  final int refreshEpoch;
 
   @override
   State<ImagesSection> createState() => _ImagesSectionState();
 }
 
 class _ImagesSectionState extends State<ImagesSection> {
+
+  @override
+  void didUpdateWidget(covariant ImagesSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
+  }
   List<DockerImage> _images = const [];
   List<DockerRegistry> _registries = const [];
   bool _loading = true;
