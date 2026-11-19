@@ -7,6 +7,7 @@ import '../../ui/theme.dart';
 import '../../ui/layout.dart';
 import '../../ui/log_viewer.dart';
 import '../../ui/widgets.dart';
+import 'container_detail_page.dart';
 import 'container_files_dialog.dart';
 import 'container_terminal_dialog.dart';
 
@@ -96,26 +97,17 @@ class _ContainersSectionState extends State<ContainersSection> {
     }
   }
 
-  Future<void> _edit(DockerContainer container) async {
-    try {
-      final json = await _api.getJson(
-        '/api/v1/docker/containers/${container.id}',
-      );
-      final detail = DockerContainerDetail.fromJson(
-        json as Map<String, dynamic>,
-      );
-      if (!mounted) return;
-      final changed = await showDialog<bool>(
-        context: context,
-        builder: (context) => ContainerEditorDialog(api: _api, detail: detail),
-      );
-      if (changed == true) {
-        _toast('容器已重建');
-        await _load();
-      }
-    } catch (error) {
-      _toast(describeError(error));
-    }
+  Future<void> _openDetail(DockerContainer container) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ContainerDetailPage(
+          api: _api,
+          containerId: container.id,
+          initial: container,
+        ),
+      ),
+    );
+    if (mounted) await _load();
   }
 
   Future<void> _note(DockerContainer container) async {
@@ -241,11 +233,11 @@ class _ContainersSectionState extends State<ContainersSection> {
                     final container = _containers[index];
                     return _ContainerCard(
                       container: container,
+                      onOpen: () => _openDetail(container),
                       onAction: (action) => _action(container, action),
                       onLogs: () => _logs(container),
                       onTerminal: () => _terminal(container),
                       onFiles: () => _files(container),
-                      onEdit: () => _edit(container),
                       onCommit: () => _commit(container),
                       onNote: () => _note(container),
                     );
@@ -260,21 +252,21 @@ class _ContainersSectionState extends State<ContainersSection> {
 class _ContainerCard extends StatelessWidget {
   const _ContainerCard({
     required this.container,
+    required this.onOpen,
     required this.onAction,
     required this.onLogs,
     required this.onTerminal,
     required this.onFiles,
-    required this.onEdit,
     required this.onCommit,
     required this.onNote,
   });
 
   final DockerContainer container;
+  final VoidCallback onOpen;
   final ValueChanged<String> onAction;
   final VoidCallback onLogs;
   final VoidCallback onTerminal;
   final VoidCallback onFiles;
-  final VoidCallback onEdit;
   final VoidCallback onCommit;
   final VoidCallback onNote;
 
@@ -282,7 +274,10 @@ class _ContainerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final running = container.running;
     return Card(
-      child: Padding(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -333,52 +328,6 @@ class _ContainerCard extends StatelessWidget {
                   ),
                 ),
                 StatusPill(text: container.state, good: running),
-                const SizedBox(width: 4),
-                IconButton(
-                  tooltip: '终端',
-                  onPressed: running ? onTerminal : null,
-                  icon: const Icon(Icons.terminal, size: 17),
-                ),
-                IconButton(
-                  tooltip: '日志',
-                  onPressed: onLogs,
-                  icon: const Icon(Icons.receipt_long_outlined, size: 17),
-                ),
-                IconButton(
-                  tooltip: '文件',
-                  onPressed: running ? onFiles : null,
-                  icon: const Icon(Icons.folder_open_outlined, size: 17),
-                ),
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_horiz, size: 18),
-                  onSelected: (value) {
-                    switch (value) {
-                      case 'edit':
-                        onEdit();
-                      case 'commit':
-                        onCommit();
-                      case 'note':
-                        onNote();
-                      default:
-                        onAction(value);
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    if (!running)
-                      const PopupMenuItem(value: 'start', child: Text('启动')),
-                    if (running)
-                      const PopupMenuItem(value: 'stop', child: Text('停止')),
-                    if (running)
-                      const PopupMenuItem(value: 'pause', child: Text('暂停')),
-                    if (!running)
-                      const PopupMenuItem(value: 'unpause', child: Text('恢复')),
-                    const PopupMenuItem(value: 'restart', child: Text('重启')),
-                    const PopupMenuItem(value: 'edit', child: Text('编辑配置')),
-                    const PopupMenuItem(value: 'commit', child: Text('导出镜像')),
-                    const PopupMenuItem(value: 'note', child: Text('备注')),
-                    const PopupMenuItem(value: 'rm', child: Text('删除')),
-                  ],
-                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -404,6 +353,129 @@ class _ContainerCard extends StatelessWidget {
                 ),
               ),
             ],
+            // Actions live at the end of the card so the title row stays
+            // readable on phones.
+            const SizedBox(height: 10),
+            Divider(height: 1, color: hampanelBorder),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: onOpen,
+                    borderRadius: BorderRadius.circular(2),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.open_in_new,
+                            size: 14,
+                            color: hampanelMuted,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '详情',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: hampanelMuted,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                _CardAction(
+                  icon: Icons.terminal,
+                  label: '终端',
+                  onPressed: running ? onTerminal : null,
+                ),
+                _CardAction(
+                  icon: Icons.receipt_long_outlined,
+                  label: '日志',
+                  onPressed: onLogs,
+                ),
+                _CardAction(
+                  icon: Icons.folder_open_outlined,
+                  label: '文件',
+                  onPressed: running ? onFiles : null,
+                ),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_horiz, size: 18),
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'edit':
+                        onOpen();
+                      case 'commit':
+                        onCommit();
+                      case 'note':
+                        onNote();
+                      default:
+                        onAction(value);
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    if (!running)
+                      const PopupMenuItem(value: 'start', child: Text('启动')),
+                    if (running)
+                      const PopupMenuItem(value: 'stop', child: Text('停止')),
+                    if (running)
+                      const PopupMenuItem(value: 'pause', child: Text('暂停')),
+                    if (!running)
+                      const PopupMenuItem(value: 'unpause', child: Text('恢复')),
+                    const PopupMenuItem(value: 'restart', child: Text('重启')),
+                    const PopupMenuItem(value: 'edit', child: Text('详情与配置')),
+                    const PopupMenuItem(value: 'commit', child: Text('导出镜像')),
+                    const PopupMenuItem(value: 'note', child: Text('备注')),
+                    const PopupMenuItem(value: 'rm', child: Text('删除')),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      ),
+    );
+  }
+}
+
+class _CardAction extends StatelessWidget {
+  const _CardAction({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(2),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: enabled ? hampanelInk : hampanelMuted,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                color: enabled ? hampanelInk : hampanelMuted,
+              ),
+            ),
           ],
         ),
       ),

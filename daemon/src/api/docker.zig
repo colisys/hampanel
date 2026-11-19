@@ -21,6 +21,7 @@ fn unavailable(ctx: *context.Context) void {
 const Network = struct {
     name: []const u8,
     ip: []const u8,
+    mac: []const u8,
 };
 
 const PortMap = struct {
@@ -426,6 +427,14 @@ const Detail = struct {
     note: []const u8,
     command: []const []const u8,
     entrypoint: []const []const u8,
+    hostname: []const u8,
+    domainname: []const u8,
+    user: []const u8,
+    tty: bool,
+    stdin_open: bool,
+    privileged: bool,
+    dns: []const []const u8,
+    add_hosts: []const []const u8,
 };
 
 pub fn detail(ctx: *context.Context) anyerror!void {
@@ -650,6 +659,16 @@ const CreateBody = struct {
     labels: []const []const u8 = &.{},
     cpus: ?f64 = null,
     memory: ?u64 = null,
+    hostname: []const u8 = "",
+    domainname: []const u8 = "",
+    user: []const u8 = "",
+    tty: bool = false,
+    stdin_open: bool = false,
+    privileged: bool = false,
+    dns: []const []const u8 = &.{},
+    add_hosts: []const []const u8 = &.{},
+    ip: []const u8 = "",
+    mac_address: []const u8 = "",
 };
 
 fn parseCreateBody(ctx: *context.Context) ?CreateBody {
@@ -715,7 +734,71 @@ fn parseCreateBody(ctx: *context.Context) ?CreateBody {
         ctx.fail(400, "bad_entrypoint", "entrypoint is too long");
         return null;
     }
+    if (body.hostname.len > 0 and !validate.isHostname(body.hostname)) {
+        ctx.fail(400, "bad_hostname", "invalid hostname");
+        return null;
+    }
+    if (body.domainname.len > 0 and !validate.isHostname(body.domainname)) {
+        ctx.fail(400, "bad_domain", "invalid domain name");
+        return null;
+    }
+    if (body.user.len > 0 and !validUser(body.user)) {
+        ctx.fail(400, "bad_user", "invalid user spec");
+        return null;
+    }
+    if (body.ip.len > 0 and !isIpLiteral(body.ip)) {
+        ctx.fail(400, "bad_ip", "invalid IP address");
+        return null;
+    }
+    if (body.mac_address.len > 0 and !validMac(body.mac_address)) {
+        ctx.fail(400, "bad_mac", "invalid MAC address");
+        return null;
+    }
+    for (body.dns) |entry| {
+        if (!isIpLiteral(entry)) {
+            ctx.fail(400, "bad_dns", "invalid DNS server address");
+            return null;
+        }
+    }
+    for (body.add_hosts) |entry| {
+        const split = std.mem.indexOfScalar(u8, entry, '=') orelse
+            std.mem.indexOfScalar(u8, entry, ':') orelse {
+            ctx.fail(400, "bad_host_mapping", "host mappings must be HOST:IP");
+            return null;
+        };
+        const host = entry[0..split];
+        const address = entry[split + 1 ..];
+        if (host.len == 0 or !validate.isHostname(host) or !isIpLiteral(address)) {
+            ctx.fail(400, "bad_host_mapping", "host mappings must be HOST:IP");
+            return null;
+        }
+    }
     return body;
+}
+
+fn validUser(value: []const u8) bool {
+    if (value.len == 0 or value.len > 64) return false;
+    for (value) |ch| {
+        if (!std.ascii.isAlphanumeric(ch) and ch != '.' and ch != '_' and ch != '-' and ch != ':') return false;
+    }
+    return true;
+}
+
+/// Accepts plain IPv4/IPv6 literals; CIDR notation is not valid for --ip/--dns.
+fn isIpLiteral(value: []const u8) bool {
+    return validate.isIpOrCidr(value) and std.mem.indexOfScalar(u8, value, '/') == null;
+}
+
+fn validMac(value: []const u8) bool {
+    if (value.len != 17) return false;
+    for (value, 0..) |ch, index| {
+        if (index % 3 == 2) {
+            if (ch != ':') return false;
+        } else if (!std.ascii.isHex(ch)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 fn buildRunArgv(
@@ -735,6 +818,37 @@ fn buildRunArgv(
         try argv.append("--network");
         try argv.append(body.network);
     }
+    if (body.hostname.len > 0) {
+        try argv.append("--hostname");
+        try argv.append(body.hostname);
+    }
+    if (body.domainname.len > 0) {
+        try argv.append("--domainname");
+        try argv.append(body.domainname);
+    }
+    if (body.user.len > 0) {
+        try argv.append("--user");
+        try argv.append(body.user);
+    }
+    for (body.dns) |entry| {
+        try argv.append("--dns");
+        try argv.append(entry);
+    }
+    for (body.add_hosts) |entry| {
+        try argv.append("--add-host");
+        try argv.append(entry);
+    }
+    if (body.ip.len > 0) {
+        try argv.append("--ip");
+        try argv.append(body.ip);
+    }
+    if (body.mac_address.len > 0) {
+        try argv.append("--mac-address");
+        try argv.append(body.mac_address);
+    }
+    if (body.tty) try argv.append("-t");
+    if (body.stdin_open) try argv.append("-i");
+    if (body.privileged) try argv.append("--privileged");
     if (body.entrypoint.len > 0) {
         try argv.append("--entrypoint");
         try argv.append(body.entrypoint);
@@ -881,7 +995,8 @@ fn enrich(allocator: std.mem.Allocator, item: *Container, value: std.json.Value)
                     var iterator = networks.object.iterator();
                     while (iterator.next()) |entry| {
                         const ip = if (entry.value_ptr.* == .object) stringField(entry.value_ptr.*, "IPAddress") else "";
-                        try list.append(.{ .name = entry.key_ptr.*, .ip = ip });
+                        const mac = if (entry.value_ptr.* == .object) stringField(entry.value_ptr.*, "MacAddress") else "";
+                        try list.append(.{ .name = entry.key_ptr.*, .ip = ip, .mac = mac });
                     }
                     item.networks = list.items;
                 }
@@ -965,6 +1080,20 @@ fn detailFrom(
             }
         }
     }
+    var hostname: []const u8 = "";
+    var domainname: []const u8 = "";
+    var user: []const u8 = "";
+    var tty = false;
+    var stdin_open = false;
+    if (value.object.get("Config")) |config| {
+        if (config == .object) {
+            hostname = stringField(config, "Hostname");
+            domainname = stringField(config, "Domainname");
+            user = stringField(config, "User");
+            tty = if (config.object.get("Tty")) |flag| flag == .bool and flag.bool else false;
+            stdin_open = if (config.object.get("OpenStdin")) |flag| flag == .bool and flag.bool else false;
+        }
+    }
     var labels = std.array_list.Managed([]const u8).init(allocator);
     if (value.object.get("Config")) |config| {
         if (config == .object) {
@@ -1001,9 +1130,27 @@ fn detailFrom(
     var network_mode: []const u8 = "";
     var cpus: ?f64 = null;
     var memory: ?u64 = null;
+    var privileged = false;
+    var dns = std.array_list.Managed([]const u8).init(allocator);
+    var add_hosts = std.array_list.Managed([]const u8).init(allocator);
     if (value.object.get("HostConfig")) |host| {
         if (host == .object) {
             network_mode = stringField(host, "NetworkMode");
+            privileged = if (host.object.get("Privileged")) |flag| flag == .bool and flag.bool else false;
+            if (host.object.get("Dns")) |entries| {
+                if (entries == .array) {
+                    for (entries.array.items) |entry| {
+                        if (entry == .string) try dns.append(entry.string);
+                    }
+                }
+            }
+            if (host.object.get("ExtraHosts")) |entries| {
+                if (entries == .array) {
+                    for (entries.array.items) |entry| {
+                        if (entry == .string) try add_hosts.append(entry.string);
+                    }
+                }
+            }
             if (host.object.get("RestartPolicy")) |policy| {
                 if (policy == .object) {
                     const name = stringField(policy, "Name");
@@ -1045,6 +1192,14 @@ fn detailFrom(
         .note = note,
         .command = command.items,
         .entrypoint = entrypoint.items,
+        .hostname = hostname,
+        .domainname = domainname,
+        .user = user,
+        .tty = tty,
+        .stdin_open = stdin_open,
+        .privileged = privileged,
+        .dns = dns.items,
+        .add_hosts = add_hosts.items,
     };
 }
 

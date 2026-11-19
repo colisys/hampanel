@@ -27,10 +27,15 @@ class DockerPort {
 }
 
 class DockerNetworkInfo {
-  const DockerNetworkInfo({required this.name, required this.ip});
+  const DockerNetworkInfo({
+    required this.name,
+    required this.ip,
+    this.mac = '',
+  });
 
   final String name;
   final String ip;
+  final String mac;
 
   String get label => ip.isEmpty ? name : '$name · $ip';
 
@@ -38,6 +43,7 @@ class DockerNetworkInfo {
       DockerNetworkInfo(
         name: json['name'] as String? ?? '',
         ip: json['ip'] as String? ?? '',
+        mac: json['mac'] as String? ?? '',
       );
 }
 
@@ -219,6 +225,14 @@ class DockerContainerDetail {
     required this.entrypoint,
     this.cpus,
     this.memory,
+    this.hostname = '',
+    this.domainname = '',
+    this.user = '',
+    this.tty = false,
+    this.stdinOpen = false,
+    this.privileged = false,
+    this.dns = const [],
+    this.addHosts = const [],
   });
 
   final String id;
@@ -243,6 +257,14 @@ class DockerContainerDetail {
   final List<String> entrypoint;
   final double? cpus;
   final int? memory;
+  final String hostname;
+  final String domainname;
+  final String user;
+  final bool tty;
+  final bool stdinOpen;
+  final bool privileged;
+  final List<String> dns;
+  final List<String> addHosts;
 
   factory DockerContainerDetail.fromJson(Map<String, dynamic> json) =>
       DockerContainerDetail(
@@ -285,6 +307,18 @@ class DockerContainerDetail {
             .toList(),
         cpus: (json['cpus'] as num?)?.toDouble(),
         memory: (json['memory'] as num?)?.toInt(),
+        hostname: json['hostname'] as String? ?? '',
+        domainname: json['domainname'] as String? ?? '',
+        user: json['user'] as String? ?? '',
+        tty: json['tty'] as bool? ?? false,
+        stdinOpen: json['stdin_open'] as bool? ?? false,
+        privileged: json['privileged'] as bool? ?? false,
+        dns: ((json['dns'] as List<dynamic>?) ?? const [])
+            .whereType<String>()
+            .toList(),
+        addHosts: ((json['add_hosts'] as List<dynamic>?) ?? const [])
+            .whereType<String>()
+            .toList(),
       );
 }
 
