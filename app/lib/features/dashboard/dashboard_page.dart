@@ -451,22 +451,40 @@ class _DashboardPageState extends State<DashboardPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        disk.mount,
-                        style: monospace.copyWith(
-                          fontSize: 13,
-                          color: hampanelInk,
+                      // The mount and device paths wrap instead of pushing the
+                      // capacity block out of the card on narrow screens.
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              disk.mount,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: monospace.copyWith(
+                                fontSize: 13,
+                                color: hampanelInk,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              disk.filesystem,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: hampanelMuted,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        disk.filesystem,
-                        style: TextStyle(fontSize: 10.5, color: hampanelMuted),
-                      ),
-                      const Spacer(),
+                      const SizedBox(width: 10),
                       Text(
                         '${formatBytes(disk.usedBytes)} / ${formatBytes(disk.totalBytes)} · ${formatPercent(disk.percent)}',
+                        textAlign: TextAlign.right,
                         style: TextStyle(fontSize: 11, color: hampanelMuted),
                       ),
                     ],
