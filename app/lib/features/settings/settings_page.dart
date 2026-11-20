@@ -746,7 +746,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                             .where(
                                               (tool) =>
                                                   !tool.mutating &&
-                                                  tool.name != 'add_cron_job',
+                                                  !tool.highRisk,
                                             )
                                             .toList(),
                                       ),
@@ -756,7 +756,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                             .where(
                                               (tool) =>
                                                   tool.mutating &&
-                                                  tool.name != 'add_cron_job',
+                                                  !tool.highRisk,
                                             )
                                             .toList(),
                                       ),
@@ -764,8 +764,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                         '高风险工具（默认关闭）',
                                         _aiTools
                                             .where(
-                                              (tool) =>
-                                                  tool.name == 'add_cron_job',
+                                              (tool) => tool.highRisk,
                                             )
                                             .toList(),
                                       ),
@@ -1027,7 +1026,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 tool.name,
                 style: TextStyle(
                   fontSize: 12.5,
-                  color: tool.name == 'add_cron_job' ? hampanelDanger : null,
+                  color: tool.highRisk ? hampanelDanger : null,
                 ),
               ),
               subtitle: Text(
