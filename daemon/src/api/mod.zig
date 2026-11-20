@@ -8,6 +8,7 @@ const tasks = @import("tasks.zig");
 const metrics = @import("metrics.zig");
 const processes = @import("processes.zig");
 const files = @import("files.zig");
+const security = @import("security.zig");
 const terminal = @import("terminal.zig");
 const services = @import("services.zig");
 const sites = @import("sites.zig");
@@ -97,6 +98,8 @@ pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/processes/:pid", .handler = processes.detail },
     .{ .method = .POST, .pattern = "/api/v1/processes/:pid/kill", .handler = processes.terminate },
 
+    .{ .method = .GET, .pattern = "/api/v1/security/overview", .handler = security.overview },
+    .{ .method = .GET, .pattern = "/api/v1/security/capabilities", .handler = security.capabilities },
     .{ .method = .GET, .pattern = "/api/v1/files", .handler = files.list },
     .{ .method = .GET, .pattern = "/api/v1/files/meta", .handler = files.fileMeta },
     .{ .method = .GET, .pattern = "/api/v1/files/accounts", .handler = files.fileAccounts },

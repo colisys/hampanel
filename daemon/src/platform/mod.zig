@@ -22,6 +22,7 @@ pub const ssh = backend.ssh;
 pub const software = backend.software;
 pub const fail2ban = backend.fail2ban;
 pub const waf = backend.waf;
+pub const security = backend.security;
 pub const terminal = backend.terminal;
 pub const host_settings = backend.host_settings;
 

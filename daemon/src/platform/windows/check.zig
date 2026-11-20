@@ -73,5 +73,8 @@ comptime {
     _ = &backend.waf.stop;
     _ = &backend.waf.logs;
 
+    _ = &backend.security.scanStatus;
+    _ = &backend.security.recordBan;
+
     _ = &service.run;
 }

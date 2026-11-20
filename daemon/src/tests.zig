@@ -38,6 +38,14 @@ test {
     _ = @import("api/mod.zig");
     _ = @import("store/catalog.zig");
     _ = @import("store/apps.zig");
+    if (@import("builtin").os.tag == .linux) {
+        const security = @import("platform/mod.zig").security;
+        _ = &security.scanStatus;
+        _ = &security.recordBan;
+        _ = &security.exists;
+        _ = &security.readBanned;
+        _ = &security.writeFile;
+    }
     _ = @import("tasks.zig");
     _ = @import("task_handlers.zig");
     _ = @import("api/tasks.zig");
@@ -535,4 +543,48 @@ test "generated caddy config is accepted by caddy validate" {
     }
     try std.testing.expect(result.ok());
     std.debug.print("caddy validate accepted generated site config\n", .{});
+}
+
+test "security scan status reports missing capabilities without panicking" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(dir);
+
+    const security = @import("platform/mod.zig").security;
+    const status = try security.scanStatus(allocator, dir);
+    try std.testing.expect(!status.scanner_installed);
+    try std.testing.expect(status.hits.len == 0);
+    defer {
+        for (status.hits) |hit| {
+            allocator.free(hit.source);
+            allocator.free(hit.target);
+        }
+        allocator.free(status.hits);
+        for (status.banned) |entry| allocator.free(entry);
+        allocator.free(status.banned);
+    }
+}
+
+test "security recording a ban is idempotent" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(dir);
+
+    const security = @import("platform/mod.zig").security;
+    try std.testing.expect(try security.recordBan(allocator, dir, "203.0.113.7"));
+    try std.testing.expect(!(try security.recordBan(allocator, dir, "203.0.113.7")));
+    try std.testing.expect(try security.recordBan(allocator, dir, "198.51.100.9"));
+
+    const path = try compat.path.join(allocator, &.{ dir, "security", "scan-banned.txt" });
+    defer allocator.free(path);
+    const banned = try security.readBanned(allocator, path);
+    defer {
+        for (banned) |entry| allocator.free(entry);
+        allocator.free(banned);
+    }
+    try std.testing.expectEqual(@as(usize, 2), banned.len);
 }

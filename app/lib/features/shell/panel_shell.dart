@@ -14,7 +14,6 @@ import '../dashboard/dashboard_page.dart';
 import '../docker/docker_page.dart';
 import '../databases/databases_page.dart';
 import '../files/files_page.dart';
-import '../firewall/firewall_page.dart';
 import '../graphql/graphql_page.dart';
 import '../logs/logs_page.dart';
 import '../processes/processes_page.dart';
@@ -22,13 +21,12 @@ import '../services/services_page.dart';
 import '../settings/settings_page.dart';
 import '../sites/sites_page.dart';
 import '../software/software_page.dart';
-import '../ssh/ssh_page.dart';
+import '../security/security_center_page.dart';
 import '../store/store_page.dart';
 import '../tasks/task_list_page.dart';
 import '../runtimes/runtimes_page.dart';
 import '../terminal/terminal_page.dart';
 import '../tunnels/tunnels_page.dart';
-import '../waf/waf_page.dart';
 
 class _Destination {
   const _Destination(this.label, this.icon, this.builder);
@@ -165,9 +163,11 @@ class _PanelShellState extends State<PanelShell> {
       Icons.inventory_2_outlined,
       (_, _) => const SoftwarePage(),
     ),
-    _Destination('SSH', Icons.vpn_key_outlined, (_, _) => const SshPage()),
-    _Destination('WAF', Icons.security_outlined, (_, _) => const WafPage()),
-    _Destination('防火墙', Icons.shield_outlined, (_, _) => const FirewallPage()),
+    _Destination(
+      '安全中心',
+      Icons.security_outlined,
+      (_, _) => const SecurityCenterPage(),
+    ),
     _Destination('计划任务', Icons.schedule_outlined, (_, _) => const CronPage()),
     _Destination('日志', Icons.receipt_long_outlined, (_, _) => const LogsPage()),
     _Destination('设置', Icons.tune_outlined, (_, _) => const SettingsPage()),

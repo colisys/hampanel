@@ -15,3 +15,4 @@ pub const ssh = @import("ssh.zig");
 pub const software = @import("software.zig");
 pub const fail2ban = @import("fail2ban.zig");
 pub const waf = @import("waf.zig");
+pub const security = @import("security.zig");
