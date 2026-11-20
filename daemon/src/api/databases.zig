@@ -28,11 +28,22 @@ fn body(ctx: *Ctx, comptime T: type) !T {
     return ctx.requireJson(T) catch error.BadInput;
 }
 fn rows(ctx: *Ctx, i: db.Instance, schema: ?S, sql: S) ![]const S {
-    const text = try db.run(ctx.arena, ctx.app.db, i, schema, sql, .query, null);
+    const text = try run(ctx, i, schema, sql, .query, null);
+    if (i.engine == .mongo) return std.json.parseFromSliceLeaky([]const S, ctx.arena, std.mem.trim(u8, text, " \r\n"), .{}) catch error.ClientFailed;
+    return split(ctx, text);
+}
+fn split(ctx: *Ctx, text: S) ![]const S {
     var list = std.array_list.Managed(S).init(ctx.arena);
     var lines = std.mem.tokenizeScalar(u8, text, '\n');
     while (lines.next()) |line| try list.append(std.mem.trimEnd(u8, line, "\r"));
     return list.items;
+}
+fn tmpDir(ctx: *Ctx) !S {
+    return compat.path.join(ctx.arena, &.{ ctx.app.config.data_dir, "database-backups", ".tmp" });
+}
+fn run(ctx: *Ctx, i: db.Instance, schema: ?S, script: S, action: db.Action, file: ?compat.File) !S {
+    const payload = if (i.engine == .mongo and action == .query) try db.mongoScript(ctx.arena, i, script) else script;
+    return db.run(ctx.arena, ctx.app.db, i, schema, payload, action, file, try tmpDir(ctx));
 }
 fn literal(a: std.mem.Allocator, password: S) !S {
     if (password.len == 0 or password.len > 256) return error.BadInput;
@@ -67,13 +78,24 @@ fn dispatch(ctx: *Ctx, op: Op) !void {
     var i = old.?;
     if (i.engine == .redis) return error.SqlUnsupported;
     const pg = i.engine == .postgres;
-    if (op == .overview) return ctx.json(.{ .databases = try rows(ctx, i, null, if (pg) "SELECT datname FROM pg_database ORDER BY 1" else "SHOW DATABASES"), .users = try rows(ctx, i, null, if (pg) "SELECT rolname FROM pg_roles ORDER BY 1" else "SELECT CONCAT(User,'@',Host) FROM mysql.user ORDER BY 1") });
+    const mongo = i.engine == .mongo;
+    if (op == .overview) return ctx.json(.{
+        .databases = try rows(ctx, i, null, if (mongo) "return client.getDB('admin').runCommand({listDatabases: 1}).databases.map(d => d.name);" else if (pg) "SELECT datname FROM pg_database ORDER BY 1" else "SHOW DATABASES"),
+        .users = try rows(ctx, i, null, if (mongo) "return client.getDB('admin').runCommand({usersInfo: {forAllDBs: true}}).users.map(u => u.user + '@' + u.db);" else if (pg) "SELECT rolname FROM pg_roles ORDER BY 1" else "SELECT CONCAT(User,'@',Host) FROM mysql.user ORDER BY 1"),
+    });
     if (op == .password or op == .user) {
         const b = try body(ctx, struct { name: S = "", password: S });
-        const pw = try literal(a, b.password);
         if (op == .user and !db.isIdentifier(b.name)) return error.BadInput;
-        const sql = if (pg) try std.fmt.allocPrint(a, "SET standard_conforming_strings=on;\n{s} \"{s}\" WITH LOGIN PASSWORD '{s}';", .{ if (op == .user) "CREATE ROLE" else "ALTER ROLE", if (op == .user) b.name else i.user, pw }) else if (op == .user) try std.fmt.allocPrint(a, "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nCREATE USER '{s}'@'%' IDENTIFIED BY '{s}';", .{ b.name, pw }) else try std.fmt.allocPrint(a, "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nALTER USER CURRENT_USER() IDENTIFIED BY '{s}';", .{pw});
-        _ = try db.run(a, store, i, null, sql, .query, null);
+        const sql = if (mongo) blk: {
+            if (b.password.len == 0 or b.password.len > 256 or std.mem.indexOfScalar(u8, b.password, 0) != null) return error.BadInput;
+            const pw = try std.json.Stringify.valueAlloc(a, b.password, .{});
+            const username = try std.json.Stringify.valueAlloc(a, if (op == .user) b.name else i.user, .{});
+            break :blk if (op == .user) try std.fmt.allocPrint(a, "client.getDB('admin').createUser({{user: {s}, pwd: {s}, roles: [{{role: 'readWriteAnyDatabase', db: 'admin'}}]}}); return [];", .{ username, pw }) else try std.fmt.allocPrint(a, "client.getDB('admin').changeUserPassword({s}, {s}); return [];", .{ username, pw });
+        } else blk: {
+            const pw = try literal(a, b.password);
+            break :blk if (pg) try std.fmt.allocPrint(a, "SET standard_conforming_strings=on;\n{s} \"{s}\" WITH LOGIN PASSWORD '{s}';", .{ if (op == .user) "CREATE ROLE" else "ALTER ROLE", if (op == .user) b.name else i.user, pw }) else if (op == .user) try std.fmt.allocPrint(a, "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nCREATE USER '{s}'@'%' IDENTIFIED BY '{s}';", .{ b.name, pw }) else try std.fmt.allocPrint(a, "SET SESSION sql_mode='NO_BACKSLASH_ESCAPES';\nALTER USER CURRENT_USER() IDENTIFIED BY '{s}';", .{pw});
+        };
+        _ = try run(ctx, i, null, sql, .query, null);
         if (op == .password) {
             i.password = b.password;
             try db.upsert(a, &cat, i);
@@ -83,12 +105,15 @@ fn dispatch(ctx: *Ctx, op: Op) !void {
     }
     const name = if (op == .create) (try body(ctx, struct { name: S })).name else if (ctx.param("name")) |raw| try @import("../util/url.zig").decode(a, raw) else "";
     if (op != .backups and op != .download and !db.isDatabaseName(name)) return error.BadInput;
-    if (op == .tables) return ctx.json(.{ .tables = try rows(ctx, i, name, if (pg) "SELECT schemaname || '.' || tablename FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') ORDER BY 1" else "SHOW TABLES") });
-    if (db.protected(name)) return error.BadInput;
+    if (op == .tables) return ctx.json(.{ .tables = try rows(ctx, i, name, if (mongo) try std.fmt.allocPrint(a, "return client.getDB({s}).getCollectionNames();", .{try std.json.Stringify.valueAlloc(a, name, .{})}) else if (pg) "SELECT schemaname || '.' || tablename FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') ORDER BY 1" else "SHOW TABLES") });
+    if (db.protected(name) or (mongo and (eq(u8, name, "admin") or eq(u8, name, "local") or eq(u8, name, "config")))) return error.BadInput;
     if (op == .create or op == .drop) {
         if (op == .drop and !eq(u8, name, (try ctx.query("confirm")) orelse "")) return error.BadInput;
-        const q: u8 = if (pg) '"' else '`';
-        _ = try db.run(a, store, i, null, try std.fmt.allocPrint(a, "{s} DATABASE {c}{s}{c};", .{ if (op == .drop) "DROP" else "CREATE", q, name, q }), .query, null);
+        const sql = if (mongo) try std.fmt.allocPrint(a, "client.getDB({s}).{s}; return [];", .{ try std.json.Stringify.valueAlloc(a, name, .{}), if (op == .create) "createCollection('hampanel_init')" else "dropDatabase()" }) else blk: {
+            const q: u8 = if (pg) '"' else '`';
+            break :blk try std.fmt.allocPrint(a, "{s} DATABASE {c}{s}{c};", .{ if (op == .drop) "DROP" else "CREATE", q, name, q });
+        };
+        _ = try run(ctx, i, null, sql, .query, null);
         return ctx.empty(204);
     }
     const key = try std.fmt.allocPrint(a, "databases.backups.{s}", .{id});
@@ -97,13 +122,13 @@ fn dispatch(ctx: *Ctx, op: Op) !void {
     if (op == .backups) return ctx.json(.{ .items = items });
     const dir = try compat.path.join(a, &.{ ctx.app.config.data_dir, "database-backups", id });
     if (op == .backup) {
-        const filename = try std.fmt.allocPrint(a, "{s}.{s}", .{ try db.token(a), if (pg) "dump" else "sql" });
+        const filename = try std.fmt.allocPrint(a, "{s}.{s}", .{ try db.token(a), if (mongo) "archive" else if (pg) "dump" else "sql" });
         const path = try compat.path.join(a, &.{ dir, filename });
         try compat.cwd().makePath(dir);
         const file = try compat.createFileAbsolute(path, .{ .mode = 0o600, .exclusive = true });
         errdefer compat.deleteFileAbsolute(path) catch {};
         defer file.close();
-        _ = try db.run(a, store, i, name, "", .backup, file);
+        _ = try run(ctx, i, name, "", .backup, file);
         var updated = std.array_list.Managed(db.Backup).init(a);
         try updated.append(.{ .name = filename, .database = name, .created_at = compat.milliTimestamp(), .size = (try file.stat()).size });
         try updated.appendSlice(items);
@@ -117,7 +142,7 @@ fn dispatch(ctx: *Ctx, op: Op) !void {
     };
     for (items) |item| {
         if (!eq(u8, item.name, requested) or (op == .restore and !eq(u8, item.database, name))) continue;
-        if (op == .restore and !std.mem.endsWith(u8, item.name, if (pg) ".dump" else ".sql")) return error.BadInput;
+        if (op == .restore and !std.mem.endsWith(u8, item.name, if (mongo) ".archive" else if (pg) ".dump" else ".sql")) return error.BadInput;
         const path = try compat.path.join(a, &.{ dir, item.name });
         if (op == .download) {
             ctx.response = .{ .file_path = path, .content_type = "application/octet-stream" };
@@ -125,7 +150,7 @@ fn dispatch(ctx: *Ctx, op: Op) !void {
         }
         const file = try compat.openFileAbsolute(path, .{});
         defer file.close();
-        _ = try db.run(a, store, i, name, "", .restore, file);
+        _ = try run(ctx, i, name, "", .restore, file);
         return ctx.empty(204);
     }
     return error.NotFound;
@@ -164,6 +189,15 @@ test "instance CRUD hides and preserves the credential and rejects destructive r
     ctx.req.body = "{\"name\":\"cache\",\"engine\":\"redis\",\"mode\":\"host\"}";
     try dispatch(&ctx, .update);
     try std.testing.expectError(error.SqlUnsupported, dispatch(&ctx, .overview));
+    ctx.req.body = "{\"name\":\"document\",\"engine\":\"mongo\",\"mode\":\"host\",\"password\":\"mongo-secret\"}";
+    try dispatch(&ctx, .update);
+    const mongo = db.find(try db.load(a, &store), id).?;
+    try std.testing.expectEqual(@as(u16, 27017), mongo.port);
+    try std.testing.expectEqualStrings("admin", mongo.user);
+    try dispatch(&ctx, .list);
+    try std.testing.expect(std.mem.indexOf(u8, ctx.response.body, "mongo-secret") == null);
+    ctx.req.query = "confirm=other";
+    try std.testing.expectError(error.BadInput, dispatch(&ctx, .drop));
     try dispatch(&ctx, .remove);
     try std.testing.expect(db.find(try db.load(a, &store), id) == null);
 }

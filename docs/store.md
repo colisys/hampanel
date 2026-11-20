@@ -14,6 +14,8 @@
 | redis | Redis 7 Alpine（密码保护） | 端口、密码（留空自动生成） |
 | postgres | PostgreSQL 16 Alpine | 端口、用户、数据库、密码 |
 | mariadb | MariaDB 11 | 端口、数据库、root 密码 |
+| mongo | MongoDB 7 | 端口、管理员用户、密码 |
+| hasura | Hasura GraphQL Engine | 本机 API 端口、管理员密钥、数据库密码 |
 | minio | MinIO 对象存储 | API 端口、控制台端口、账号、密码 |
 | gitea | Gitea | Web 端口、SSH 端口 |
 | uptime-kuma | Uptime Kuma | 端口 |

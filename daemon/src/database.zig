@@ -10,6 +10,7 @@ pub const Engine = enum {
     mysql,
     mariadb,
     postgres,
+    mongo,
     redis,
 
     pub fn label(self: Engine) []const u8 {
@@ -17,8 +18,13 @@ pub const Engine = enum {
             .mysql => "MySQL",
             .mariadb => "MariaDB",
             .postgres => "PostgreSQL",
+            .mongo => "MongoDB",
             .redis => "Redis",
         };
+    }
+
+    pub fn isManaged(self: Engine) bool {
+        return self != .redis;
     }
 
     pub fn fromString(value: []const u8) ?Engine {
@@ -175,6 +181,7 @@ pub fn defaultPort(engine: Engine) u16 {
     return switch (engine) {
         .mysql, .mariadb => 3306,
         .postgres => 5432,
+        .mongo => 27017,
         .redis => 6379,
     };
 }
@@ -183,6 +190,7 @@ pub fn defaultUser(engine: Engine) []const u8 {
     return switch (engine) {
         .mysql, .mariadb => "root",
         .postgres => "postgres",
+        .mongo => "admin",
         .redis => "",
     };
 }
@@ -201,9 +209,10 @@ pub fn token(a: std.mem.Allocator) ![]const u8 {
     return a.dupe(u8, &std.fmt.bytesToHex(random, .lower));
 }
 
-pub fn run(a: std.mem.Allocator, database: *db.Db, i: Instance, schema: ?[]const u8, sql: []const u8, action: Action, file: ?compat.File) ![]const u8 {
-    if (i.engine == .redis) return error.SqlUnsupported;
+pub fn run(a: std.mem.Allocator, database: *db.Db, i: Instance, schema: ?[]const u8, sql: []const u8, action: Action, file: ?compat.File, tmp_dir: []const u8) ![]const u8 {
+    if (!i.engine.isManaged()) return error.SqlUnsupported;
     if (validate(i) != null or (schema != null and !isDatabaseName(schema.?))) return error.InvalidInstance;
+    if (i.engine == .mongo) return runMongo(a, i, schema, sql, action, file, tmp_dir);
     const pg = i.engine == .postgres;
     const secret = if (pg) "PGPASSWORD" else "MYSQL_PWD";
     var env = try compat.cloneEnv(a);
@@ -225,6 +234,7 @@ pub fn run(a: std.mem.Allocator, database: *db.Db, i: Instance, schema: ?[]const
         },
         .mysql => if (action == .backup) "mysqldump" else "mysql",
         .mariadb => if (action == .backup) "mariadb-dump" else "mariadb",
+        .mongo => unreachable,
     };
     try argv.append(exe);
     if (!pg) try argv.append("--no-defaults");
@@ -262,6 +272,102 @@ test "database operation guards" {
     for ([_][]const u8{ "-a", "a/b", "a'", "a`", "x=1", "." }) |name| try std.testing.expect(!isDatabaseName(name));
     try std.testing.expect(protected("MySQL"));
     try std.testing.expect(isDatabaseName("example-db"));
+}
+
+pub const mongo_secret = "HAMPANEL_MONGO_PASSWORD";
+
+pub fn mongoUri(a: std.mem.Allocator, i: Instance) ![]const u8 {
+    return std.fmt.allocPrint(a, "mongodb://{s}:{d}/", .{ i.host, i.port });
+}
+
+pub fn mongoArgv(a: std.mem.Allocator, i: Instance, action: Action, config_path: []const u8, schema: ?[]const u8) ![]const []const u8 {
+    if (i.engine != .mongo or validate(i) != null) return error.InvalidInstance;
+    var argv = std.array_list.Managed([]const u8).init(a);
+    switch (action) {
+        .query => try argv.appendSlice(&.{ "mongosh", "--quiet", "--norc", "--nodb", "--file", "/dev/stdin" }),
+        .backup, .restore => {
+            try argv.append(if (action == .backup) "mongodump" else "mongorestore");
+            if (action == .backup) try argv.appendSlice(&.{ "--archive", "--gzip" }) else try argv.appendSlice(&.{ "--archive=/dev/stdin", "--gzip", "--drop" });
+            try argv.appendSlice(&.{ "--config", config_path, "--username", i.user, "--authenticationDatabase", "admin" });
+            if (action == .backup) if (schema) |name| try argv.appendSlice(&.{ "--db", name });
+            if (action == .restore) if (schema) |name| try argv.append(try std.fmt.allocPrint(a, "--nsInclude={s}.*", .{name}));
+        },
+    }
+    return argv.items;
+}
+
+fn mongoConfig(a: std.mem.Allocator, i: Instance) ![]const u8 {
+    const uri = try mongoUri(a, i);
+    const password = try std.json.Stringify.valueAlloc(a, i.password, .{});
+    return std.fmt.allocPrint(a, "uri: {s}\npassword: {s}\n", .{ uri, password });
+}
+
+pub fn mongoScript(a: std.mem.Allocator, i: Instance, body: []const u8) ![]const u8 {
+    const uri = try mongoUri(a, i);
+    const user = try std.json.Stringify.valueAlloc(a, i.user, .{});
+    const address = try std.json.Stringify.valueAlloc(a, uri, .{});
+    return std.fmt.allocPrint(a,
+        \\const address = {s};
+        \\const user = {s};
+        \\const password = process.env.{s};
+        \\const uri = address.replace("mongodb://", "mongodb://" + encodeURIComponent(user) + ":" + encodeURIComponent(password) + "@");
+        \\const client = new Mongo(uri + "admin?authSource=admin");
+        \\const out = (() => {{
+        \\{s}
+        \\}})();
+        \\print(JSON.stringify(out));
+        \\
+    , .{ address, user, mongo_secret, body });
+}
+
+fn runMongo(a: std.mem.Allocator, i: Instance, schema: ?[]const u8, script: []const u8, action: Action, file: ?compat.File, tmp_dir: []const u8) ![]const u8 {
+    var env = try compat.cloneEnv(a);
+    defer env.deinit();
+    var config_path: ?[]const u8 = null;
+    defer if (config_path) |path| compat.deleteFileAbsolute(path) catch {};
+    var argv: []const []const u8 = undefined;
+    if (action == .query) {
+        try env.put(mongo_secret, i.password);
+        argv = try mongoArgv(a, i, .query, "", schema);
+    } else {
+        try compat.cwd().makePath(tmp_dir);
+        const path = try compat.path.join(a, &.{ tmp_dir, try std.fmt.allocPrint(a, "mongo-{s}.yml", .{try token(a)}) });
+        {
+            const config = try compat.createFileAbsolute(path, .{ .mode = 0o600, .exclusive = true });
+            defer config.close();
+            try config.writeAll(try mongoConfig(a, i));
+        }
+        config_path = path;
+        argv = try mongoArgv(a, i, action, path, schema);
+    }
+    if (action == .query) {
+        const result = try exec.runWith(a, argv, .{ .environ_map = &env, .stdin = script });
+        if (!result.ok()) return error.ClientFailed;
+        return result.stdout;
+    }
+    const io = compat.io();
+    var child = try std.process.spawn(io, .{ .argv = argv, .environ_map = &env, .stdin = if (action == .restore) .{ .file = file.?.inner } else .ignore, .stdout = if (action == .backup) .{ .file = file.?.inner } else .ignore, .stderr = .ignore });
+    defer child.kill(io);
+    const term = try child.wait(io);
+    if (term != .exited or term.exited != 0) return error.ClientFailed;
+    return "";
+}
+
+test "MongoDB connection options keep credentials off argv" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const i: Instance = .{ .id = "m", .name = "MongoDB", .engine = .mongo, .mode = .host, .host = "localhost", .port = defaultPort(.mongo), .user = defaultUser(.mongo), .password = "secret-value" };
+    try std.testing.expectEqualStrings("mongodb://localhost:27017/", try mongoUri(a, i));
+    const script = try mongoScript(a, i, "return []; ");
+    try std.testing.expect(std.mem.indexOf(u8, script, "secret-value") == null);
+    try std.testing.expect(std.mem.indexOf(u8, script, "encodeURIComponent(password)") != null);
+    const argv = try mongoArgv(a, i, .backup, "/secure/config.yml", "sample");
+    const joined = try std.mem.join(a, " ", argv);
+    try std.testing.expect(std.mem.indexOf(u8, joined, "secret-value") == null);
+    try std.testing.expect(std.mem.indexOf(u8, joined, "--db sample") != null);
+    try std.testing.expect(std.mem.indexOf(u8, try std.mem.join(a, " ", try mongoArgv(a, i, .restore, "/secure/config.yml", "sample")), "--nsInclude=sample.*") != null);
+    try std.testing.expectEqualStrings("mongosh --quiet --norc --nodb --file /dev/stdin", try std.mem.join(a, " ", try mongoArgv(a, i, .query, "", null)));
 }
 
 pub fn redisArgv(a: std.mem.Allocator, i: Instance, runtime: ?engine_mod.Engine) ![]const []const u8 {

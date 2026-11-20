@@ -267,8 +267,9 @@ class _DatabasesPageState extends State<DatabasesPage> {
           action('删除数据库', () => destructive()),
         ],
       ),
-      heading('表'),
-      if ((data['tables'] as List).isEmpty) const Text('暂无表'),
+      heading(instance?['engine'] == 'mongo' ? '集合' : '表'),
+      if ((data['tables'] as List).isEmpty)
+        Text(instance?['engine'] == 'mongo' ? '暂无集合' : '暂无表'),
       for (final table in data['tables'] as List) ListTile(title: Text(table)),
       heading('备份'),
       if (backups.isEmpty) const Text('此数据库暂无备份'),

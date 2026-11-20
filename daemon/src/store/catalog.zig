@@ -89,6 +89,19 @@ pub const apps = [_]App{
         },
     },
     .{
+        .slug = "mongo",
+        .name = "MongoDB",
+        .description = "文档型数据库，初始化管理员账号并持久化数据。",
+        .category = "数据库",
+        .icon = "database",
+        .compose = @embedFile("catalog/mongo.yml"),
+        .params = &.{
+            .{ .key = "port", .label = "服务端口", .kind = .port, .default = "27017" },
+            .{ .key = "user", .label = "管理员用户", .default = "admin" },
+            .{ .key = "password", .label = "管理员密码", .kind = .password, .secret = true },
+        },
+    },
+    .{
         .slug = "minio",
         .name = "MinIO",
         .description = "S3 兼容对象存储，包含 API 与 Web 控制台。",

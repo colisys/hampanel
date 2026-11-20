@@ -5,6 +5,7 @@ const engineLabels = {
   'redis': 'Redis',
   'mariadb': 'MariaDB',
   'postgres': 'PostgreSQL',
+  'mongo': 'MongoDB',
 };
 const modeLabels = {'host': '主机', 'container': 'Docker / Podman 容器'};
 const fieldLabels = {
@@ -59,11 +60,13 @@ Future<Map<String, dynamic>?> databaseDialog(
                   values['port'] = switch (v) {
                     'postgres' => 5432,
                     'redis' => 6379,
+                    'mongo' => 27017,
                     _ => 3306,
                   };
                   values['user'] = switch (v) {
                     'postgres' => 'postgres',
                     'redis' => '',
+                    'mongo' => 'admin',
                     _ => 'root',
                   };
                 }
