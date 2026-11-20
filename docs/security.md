@@ -91,3 +91,32 @@ Hampanel 管理端与受控端之间是双向 TLS（mTLS）：客户端校验服
   人类可读摘要写入输出流。
 
 边界：探测会暴露面板自身 IP，只能对授权目标使用；被动情报是第三方数据，仅作参考。
+
+## 文件防篡改
+
+用 `chattr +i` 实现：带不可变属性的路径即使 root 也无法改写、重命名或删除，
+只有清除属性后才能维护。
+
+- 目录自动递归（`chattr -R +i`）。只给目录本体加 `+i` 仍可在其中新建与重写文件，
+  实测只有这样才真正阻断。
+- 受保护路径记入 `<data>/security/tamper-manifest.txt`。daemon 启动时会逐条检查，
+  属性丢失则重新应用并记录 `tamper: re-applied immutable flag on N path(s)`；
+  重挂载、镜像重建或 fsck 都可能静默清除属性，静默失去保护正是该功能要避免的。
+- 保护前先确认路径存在，避免清单记录一个不存在的目标。
+- `chattr`/`lsattr` 缺失时状态如实上报，入口禁用。
+
+接口：`GET/POST /api/v1/security/tamper`，`POST /api/v1/security/tamper/remove`。
+
+## SELinux
+
+按能力上报，不假定存在：
+
+- `present` 取决于 `/sys/fs/selinux`。宿主使用 AppArmor（如 Ubuntu 默认）时该目录
+  不存在，页面只显示"未启用"而不会给出无法生效的开关。
+- 运行模式读自 `/sys/fs/selinux/enforce`，开机配置读自 `/etc/selinux/config`
+  （忽略注释行）。`enforcing`/`permissive` 经 `setenforce` 立即生效；
+  `disabled` 只能写配置，响应带 `reboot_required`，因为内核无法在运行时关闭。
+- 布尔开关来自 `getsebool -a`，写入用 `setsebool -P`，且只接受策略实际声明的名字，
+  避免拼写错误或注入内容进入命令。
+
+接口：`GET /api/v1/security/selinux`，`POST /api/v1/security/selinux/{mode,boolean}`。

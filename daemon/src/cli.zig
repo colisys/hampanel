@@ -546,6 +546,14 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
             log.warn("scan sensor not resumed: {s}", .{@errorName(err)});
         }
     }
+    {
+        const tamper = @import("platform/mod.zig").tamper;
+        if (tamper.restoreAll(allocator, cfg.data_dir)) |restored| {
+            if (restored > 0) log.info("tamper: re-applied immutable flag on {d} path(s)", .{restored});
+        } else |err| {
+            log.warn("tamper restore failed: {s}", .{@errorName(err)});
+        }
+    }
 
     if (opts.service) {
         if (builtin.os.tag != .windows) {

@@ -151,7 +151,7 @@ class _TamperPageState extends State<TamperPage> {
                   child: Text(
                     status?['message'] as String? ??
                         (ready
-                            ? 'chattr 可用：受保护路径即使 root 也无法改写。'
+                            ? 'chattr 可用：受保护路径即使 root 也无法改写；目录会递归保护，重启后自动恢复。'
                             : '缺少 chattr/lsattr，无法进行不可变保护。'),
                     style: TextStyle(
                       fontSize: 11.5,

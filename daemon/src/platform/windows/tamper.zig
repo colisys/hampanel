@@ -21,6 +21,12 @@ pub const Outcome = struct {
     output: []const u8,
 };
 
+pub fn restoreAll(allocator: std.mem.Allocator, data_dir: []const u8) !usize {
+    _ = allocator;
+    _ = data_dir;
+    return 0;
+}
+
 pub fn status(allocator: std.mem.Allocator, data_dir: []const u8) !Status {
     _ = allocator;
     _ = data_dir;

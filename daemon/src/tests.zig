@@ -840,3 +840,76 @@ test "selinux reports absence instead of pretending" {
         try std.testing.expect(status.enforcing != null);
     }
 }
+
+test "tamper manifest round trip and restore" {
+    const tamper = @import("platform/mod.zig").tamper;
+    if (@import("builtin").os.tag != .linux) return;
+    if (!execCommandExists("chattr")) return;
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(dir);
+
+    // A file under the temp dir: protecting it must apply +i and record it.
+    const target = try compat.path.join(allocator, &.{ dir, "protected.txt" });
+    defer allocator.free(target);
+    {
+        var file = try compat.createFileAbsolute(target, .{ .truncate = true, .mode = 0o600 });
+        defer file.close();
+        try file.writeAll("sensitive\n");
+    }
+
+    const applied = try tamper.protect(allocator, dir, target);
+    defer allocator.free(applied.output);
+    try std.testing.expect(applied.ok);
+
+    const status = try tamper.status(allocator, dir);
+    defer freeTamperStatus(allocator, status);
+    try std.testing.expectEqual(@as(usize, 1), status.entries.len);
+    try std.testing.expect(status.entries[0].immutable);
+
+    // Protection must actually prevent writes, not merely be recorded.
+    try std.testing.expect(!canAppendAsRoot(allocator, target));
+
+    // A second protect call is idempotent, not a duplicate manifest line.
+    const again = try tamper.protect(allocator, dir, target);
+    defer allocator.free(again.output);
+    const after = try tamper.status(allocator, dir);
+    defer freeTamperStatus(allocator, after);
+    try std.testing.expectEqual(@as(usize, 1), after.entries.len);
+
+    // Clear the attribute, then simulate the flag being lost (e.g. a remount)
+    // and confirm startup restore re-applies it.
+    const cleared = try tamper.unprotect(allocator, dir, target);
+    defer allocator.free(cleared.output);
+    try std.testing.expect(cleared.ok);
+    const restored = try tamper.restoreAll(allocator, dir);
+    try std.testing.expectEqual(@as(usize, 1), restored);
+
+    const final = try tamper.status(allocator, dir);
+    defer freeTamperStatus(allocator, final);
+    try std.testing.expect(final.entries[0].immutable);
+
+    const final_clear = try tamper.unprotect(allocator, dir, target);
+    defer allocator.free(final_clear.output);
+}
+
+fn freeTamperStatus(allocator: std.mem.Allocator, status: anytype) void {
+    for (status.entries) |entry| {
+        allocator.free(entry.path);
+        allocator.free(entry.attributes);
+    }
+    allocator.free(status.entries);
+}
+
+fn canAppendAsRoot(allocator: std.mem.Allocator, path: []const u8) bool {
+    const exec = @import("shared").exec;
+    const result = exec.run(allocator, &.{ "sh", "-c", "echo x >> \"$1\"", "sh", path }, 64 * 1024) catch
+        return false;
+    return result.ok();
+}
+
+fn execCommandExists(name: []const u8) bool {
+    return @import("shared").exec.commandExists(std.testing.allocator, name);
+}

@@ -70,7 +70,17 @@ pub fn status(allocator: std.mem.Allocator, data_dir: []const u8) !Status {
 
 pub fn protect(allocator: std.mem.Allocator, data_dir: []const u8, path: []const u8) !Outcome {
     if (!exec.commandExists(allocator, "chattr")) return error.ChattrUnavailable;
-    const result = exec.run(allocator, &.{ "chattr", "+i", path }, 256 * 1024) catch
+    // A directory needs -R: attaching +i to the directory alone still allows
+    // creating and rewriting entries inside it, and only the recursive form
+    // stops new files from appearing under a protected path.
+    var argv = std.array_list.Managed([]const u8).init(allocator);
+    defer argv.deinit();
+    try argv.append("chattr");
+    if (try isDirectory(allocator, path)) try argv.append("-R");
+    try argv.append("+i");
+    try argv.append(path);
+
+    const result = exec.run(allocator, argv.items, 256 * 1024) catch
         return error.ChattrUnavailable;
     if (!result.ok()) return .{ .ok = false, .output = textOf(result) };
 
@@ -81,11 +91,54 @@ pub fn protect(allocator: std.mem.Allocator, data_dir: []const u8, path: []const
 
 pub fn unprotect(allocator: std.mem.Allocator, data_dir: []const u8, path: []const u8) !Outcome {
     if (!exec.commandExists(allocator, "chattr")) return error.ChattrUnavailable;
-    const result = exec.run(allocator, &.{ "chattr", "-i", path }, 256 * 1024) catch
+    var argv = std.array_list.Managed([]const u8).init(allocator);
+    defer argv.deinit();
+    try argv.append("chattr");
+    if (try isDirectory(allocator, path)) try argv.append("-R");
+    try argv.append("-i");
+    try argv.append(path);
+
+    const result = exec.run(allocator, argv.items, 256 * 1024) catch
         return error.ChattrUnavailable;
     if (!result.ok()) return .{ .ok = false, .output = textOf(result) };
     try removeFromManifest(allocator, data_dir, path);
     return .{ .ok = true, .output = "" };
+}
+
+/// Re-applies every manifest entry after a reboot: +i survives on most
+/// filesystems, but a mount, image rebuild or fsck can drop it, and silent loss
+/// of protection is exactly what this feature exists to prevent.
+pub fn restoreAll(allocator: std.mem.Allocator, data_dir: []const u8) !usize {
+    const manifest = try manifestPath(allocator, data_dir);
+    defer allocator.free(manifest);
+    const raw = compat.cwd().readFileAlloc(allocator, manifest, 1024 * 1024) catch return 0;
+    defer allocator.free(raw);
+
+    var restored: usize = 0;
+    var lines = std.mem.splitScalar(u8, raw, '\n');
+    while (lines.next()) |line| {
+        const path = std.mem.trim(u8, line, " \r\t");
+        if (path.len == 0 or !exists(path)) continue;
+        const attributes = readAttributes(allocator, path) catch "";
+        defer allocator.free(attributes);
+        if (std.mem.indexOfScalar(u8, attributes, 'i') != null) continue;
+        var argv = std.array_list.Managed([]const u8).init(allocator);
+        defer argv.deinit();
+        try argv.append("chattr");
+        if (try isDirectory(allocator, path)) try argv.append("-R");
+        try argv.append("+i");
+        try argv.append(path);
+        const result = exec.run(allocator, argv.items, 256 * 1024) catch continue;
+        if (result.ok()) restored += 1;
+    }
+    return restored;
+}
+
+fn isDirectory(allocator: std.mem.Allocator, path: []const u8) !bool {
+    _ = allocator;
+    var dir = std.Io.Dir.openDirAbsolute(compat.io(), path, .{ .iterate = false }) catch return false;
+    dir.close(compat.io());
+    return true;
 }
 
 fn exists(path: []const u8) bool {
