@@ -58,6 +58,7 @@ test {
         _ = &selinux.setBoolean;
         _ = &selinux.parseBooleans;
         _ = &selinux.parseConfigValue;
+        _ = &selinux.ftypeFlag;
         _ = &security.scanStatus;
     }
     _ = @import("tasks.zig");
@@ -830,6 +831,15 @@ test "selinux parses config and booleans" {
     try std.testing.expect(selinux.validBooleanName("httpd_can_network_connect"));
     try std.testing.expect(!selinux.validBooleanName("httpd; rm -rf /"));
     try std.testing.expect(!selinux.validBooleanName("UpperCase"));
+
+    // `semanage fcontext -f` only takes a/f/d/c/b/s/l/p, while `-l` prints the
+    // verbose names; passing the list output straight through was rejected by
+    // the real tool ("invalid choice: 'all files'").
+    try std.testing.expectEqualStrings("a", selinux.ftypeFlag("all files").?);
+    try std.testing.expectEqualStrings("f", selinux.ftypeFlag("regular file").?);
+    try std.testing.expectEqualStrings("d", selinux.ftypeFlag("d").?);
+    try std.testing.expect(selinux.ftypeFlag("all files; rm -rf /") == null);
+    try std.testing.expect(selinux.ftypeFlag("bogus") == null);
 }
 
 test "selinux reports absence instead of pretending" {
@@ -1175,7 +1185,8 @@ test "selinux parses policy contexts, ports and modules" {
     if (@import("builtin").os.tag != .linux) return;
     const allocator = std.testing.allocator;
 
-    // Exactly what `semanage fcontext -C -n` prints for local customisations.
+    // Exactly what `semanage fcontext -C -l` prints for local customisations,
+    // copied from a real SELinux host.
     const context_output =
         \\/var/www(/.*)?         all files          system_u:object_r:httpd_sys_content_t:s0
         \\/srv/app(/.*)?         all files          system_u:object_r:container_file_t:s0

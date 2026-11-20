@@ -137,7 +137,9 @@ pub fn status(allocator: std.mem.Allocator) !Status {
     };
 }
 
-/// `semanage fcontext -C -n` lists only local customisations:
+/// `semanage fcontext -C -l` lists only local customisations. (-n alone is not
+/// a listing flag; with -C it is rejected as "one of the arguments
+/// -a/-d/-m/-l/-E/-D is required", which is what made the list look empty.)
 ///   /var/www(/.*)?  all files  system_u:object_r:httpd_sys_content_t:s0
 pub fn parseContexts(allocator: std.mem.Allocator, output: []const u8) ![]const Context {
     var list = std.array_list.Managed(Context).init(allocator);
@@ -278,7 +280,8 @@ pub fn validModuleName(name: []const u8) bool {
     return true;
 }
 
-/// AVC denials as printed by `ausearch -m AVC -ts recent`. Only the fields the
+/// AVC denials as printed by `ausearch -if /var/log/audit/audit.log -m AVC,USER_AVC`.
+/// Only the fields the
 /// panel shows are extracted; the raw line stays in the log for detail.
 pub fn parseDenials(allocator: std.mem.Allocator, output: []const u8) ![]const Denial {
     var list = std.array_list.Managed(Denial).init(allocator);
@@ -355,7 +358,7 @@ fn permissionOf(text: []const u8) ?[]const u8 {
 }
 
 fn listContexts(allocator: std.mem.Allocator) ![]const Context {
-    const result = exec.run(allocator, &.{ "semanage", "fcontext", "-C", "-n" }, 2 * 1024 * 1024) catch
+    const result = exec.run(allocator, &.{ "semanage", "fcontext", "-C", "-l" }, 2 * 1024 * 1024) catch
         return &.{};
     defer {
         allocator.free(result.stdout);
@@ -391,8 +394,14 @@ fn listModules(allocator: std.mem.Allocator) ![]const Module {
 
 fn listDenials(allocator: std.mem.Allocator, present: bool) ![]const Denial {
     if (!present) return &.{};
-    const result = exec.run(allocator, &.{ "ausearch", "-m", "AVC,USER_AVC", "-ts", "recent" }, 4 * 1024 * 1024) catch
-        return &.{};
+    // -ts recent relies on ausearch resolving the configured log file itself,
+    // which silently yields "<no matches>" on hosts where that path is not what
+    // ausearch expects.  Pointing it at the file directly is what actually works.
+    const result = exec.run(
+        allocator,
+        &.{ "ausearch", "-if", "/var/log/audit/audit.log", "-m", "AVC,USER_AVC" },
+        4 * 1024 * 1024,
+    ) catch return &.{};
     defer {
         allocator.free(result.stdout);
         allocator.free(result.stderr);
@@ -468,11 +477,7 @@ pub fn setContext(
     // on a host without SELinux, instead of hiding behind NotPresent.
     if (!validContextPath(spec.path)) return error.InvalidPath;
     if (!validTypeName(spec.kind)) return error.InvalidType;
-    if (!std.mem.eql(u8, spec.file_type, "file") and
-        !std.mem.eql(u8, spec.file_type, "directory") and
-        !std.mem.eql(u8, spec.file_type, "all") and
-        !std.mem.eql(u8, spec.file_type, "all files") and
-        !std.mem.eql(u8, spec.file_type, "regular file")) return error.InvalidType;
+    const ftype = ftypeFlag(spec.file_type) orelse return error.InvalidType;
     if (!exists("/sys/fs/selinux")) return error.NotPresent;
     if (!exec.commandExists(allocator, "semanage")) return error.ToolingUnavailable;
 
@@ -481,7 +486,7 @@ pub fn setContext(
     try argv.appendSlice(&.{ "semanage", "fcontext", if (remove) "-d" else "-a", "-t" });
     try argv.append(spec.kind);
     try argv.append("-f");
-    try argv.append(spec.file_type);
+    try argv.append(ftype);
     try argv.append(spec.path);
 
     const result = exec.run(allocator, argv.items, 1024 * 1024) catch
@@ -522,6 +527,28 @@ pub fn validContextPath(path: []const u8) bool {
     // Metacharacters that would change the meaning of the expression instead of
     // describing a path.
     return std.mem.indexOfAny(u8, path, " |;&$`\n\r") == null;
+}
+
+/// Maps a file-context spec's file type to the single-letter category that
+/// `semanage fcontext -f` actually accepts. `semanage fcontext -l` prints the
+/// verbose names ("all files", "regular file"), but -f rejects anything that is
+/// not one of a/f/d/c/b/s/l/p, so the two cannot be passed through verbatim.
+pub fn ftypeFlag(file_type: []const u8) ?[]const u8 {
+    if (file_type.len == 1 and std.mem.indexOfScalar(u8, "afdcbslp", file_type[0]) != null) {
+        return file_type;
+    }
+    const table = .{
+        .{ "all", "a" },      .{ "all files", "a" },
+        .{ "file", "f" },     .{ "regular file", "f" },
+        .{ "directory", "d" }, .{ "dir", "d" },
+        .{ "character", "c" }, .{ "character device", "c" },
+        .{ "block", "b" },     .{ "block device", "b" },
+        .{ "socket", "s" },    .{ "link", "l" }, .{ "pipe", "p" },
+    };
+    inline for (table) |pair| {
+        if (std.mem.eql(u8, file_type, pair[0])) return pair[1];
+    }
+    return null;
 }
 
 pub fn validTypeName(name: []const u8) bool {

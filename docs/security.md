@@ -232,3 +232,16 @@ syncookies、dmesg_restrict、kptr_restrict、sysrq、ASLR、protected_*）。�
 
 未启用 SELinux 的主机（如本机 Ubuntu + AppArmor）只显示"未启用"与开机配置，
 不提供无法生效的开关，也不会自动修改内核启动参数。
+
+SELinux 管理界面在真实主机上的验证要点（每一条都由运行时输出校准，不是推测）：
+
+- `semanage fcontext -f` 只接受 `a/f/d/c/b/s/l/p` 单字母，而 `-l` 打印的是
+  `all files` 这类词。两者必须做映射（`ftypeFlag`），直接透传会被工具拒绝。
+- 列本地定制要用 `semanage fcontext -C -l`；`-C -n` 是非法组合，会被当成
+  "缺少 -a/-d/-l"，结果看起来像"没有定制"。
+- `ausearch -ts recent` 在部分主机上不解析日志而返回 `<no matches>`。改为
+  `ausearch -if /var/log/audit/audit.log -m AVC,USER_AVC` 才能读到记录。
+- 首次启用 SELinux 的主机必须完整 relabel（`touch /.autorelabel` 并重启），
+  否则所有进程停在 `kernel_t`，既不产生有意义的 AVC，也没法验证域间行为。
+  重打标签后 `init` 为 `init_t`、新进程为 `unconfined_t`，AVC 才正常记录。
+- 输入校验先于能力检查：非法路径/类型/端口返回 400，主机不支持才 409。
