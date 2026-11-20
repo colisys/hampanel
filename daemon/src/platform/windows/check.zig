@@ -74,7 +74,11 @@ comptime {
     _ = &backend.waf.logs;
 
     _ = &backend.security.scanStatus;
-    _ = &backend.security.recordBan;
+    _ = &backend.security.installScan;
+    _ = &backend.security.startScan;
+    _ = &backend.security.stopScan;
+    _ = &backend.security.ingest;
+    _ = &backend.security.unban;
     _ = &backend.tamper.status;
     _ = &backend.tamper.protect;
     _ = &backend.tamper.unprotect;

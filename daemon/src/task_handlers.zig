@@ -23,6 +23,7 @@ pub fn register(manager: *tasks.Manager) !void {
     try manager.register(.{ .kind = "sites.reload", .lock_key = "sites", .handler = sitesReload });
     try manager.register(.{ .kind = "host.change", .lock_key = "host", .handler = hostChange });
     try manager.register(.{ .kind = "update.apply", .lock_key = "update", .handler = updateApply });
+    try manager.register(.{ .kind = "security.probe", .lock_key = "security-probe", .handler = securityProbe });
 }
 
 fn stringParam(ctx: *tasks.Context, key: []const u8) ![]const u8 {
@@ -436,4 +437,87 @@ fn updateApply(ctx: *tasks.Context) !void {
         .{ outcome.updated, std.json.fmt(outcome.message, .{}) },
     );
     if (!outcome.updated) return error.UpdateFailed;
+}
+
+/// Active host probe. Scanning is slow (nmap may take minutes), so it is always
+/// a task; the report is written to the task result and the human summary to
+/// the output stream.
+fn securityProbe(ctx: *tasks.Context) !void {
+    const target = try stringParam(ctx, "target");
+    if (!platform_mod.hostprobe.isSafeTarget(target)) return error.InvalidTarget;
+    const intensity = try stringParam(ctx, "intensity");
+    if (intensity.len > 0 and !std.mem.eql(u8, intensity, "fast") and
+        !std.mem.eql(u8, intensity, "full")) return error.InvalidParams;
+
+    const os_detection = switch (ctx.params) {
+        .object => |object| blk: {
+            const value = object.get("os_detection") orelse break :blk true;
+            break :blk !(value == .bool and !value.bool);
+        },
+        else => true,
+    };
+
+    try ctx.setPhase("probing");
+    const report = platform_mod.hostprobe.probe(ctx.allocator, target, .{
+        .intensity = if (intensity.len == 0) "fast" else intensity,
+        .os_detection = os_detection,
+        .service_detection = true,
+    }) catch |err| {
+        // The two backends expose different error sets, so match on names.
+        const name = @errorName(err);
+        const reason: []const u8 = if (std.mem.eql(u8, name, "InvalidTarget"))
+            "目标非法（只接受 IPv4 或主机名）"
+        else if (std.mem.eql(u8, name, "Unsupported"))
+            "当前平台不支持主动探测"
+        else
+            name;
+        try ctx.write(try std.fmt.allocPrint(ctx.allocator, "探测失败：{s}\n", .{reason}));
+        return err;
+    };
+
+    var summary: std.Io.Writer.Allocating = .init(ctx.allocator);
+    const writer = &summary.writer;
+    try writer.print("目标 {s}\n", .{report.target});
+    if (report.os_guess.len > 0) {
+        try writer.print("系统猜测：{s}（{d}%）\n", .{ report.os_guess, report.os_accuracy });
+    } else if (report.nmap_available) {
+        try writer.print("系统猜测：无可靠结论\n", .{});
+    }
+    if (report.message.len > 0) try writer.print("{s}\n", .{report.message});
+    if (report.ports.len == 0) {
+        try writer.print("开放端口：无\n", .{});
+    } else {
+        try writer.print("开放端口（{d}）：\n", .{report.ports.len});
+        for (report.ports) |port| {
+            if (port.product.len > 0) {
+                try writer.print("  {d}/{s} {s} {s} {s}\n", .{ port.port, port.protocol, port.service, port.product, port.version });
+            } else {
+                try writer.print("  {d}/{s} {s}\n", .{ port.port, port.protocol, port.service });
+            }
+        }
+    }
+    if (report.intel) |intel| {
+        if (intel.tags.len > 0) {
+            try writer.print("被动标签：", .{});
+            for (intel.tags, 0..) |tag, index| {
+                if (index > 0) try writer.print(", ", .{});
+                try writer.print("{s}", .{tag});
+            }
+            try writer.print("\n", .{});
+        }
+        if (intel.vulns.len > 0) {
+            try writer.print("被动情报漏洞：{d} 项\n", .{intel.vulns.len});
+        }
+    }
+    try ctx.write(summary.written());
+
+    ctx.result = try std.json.Stringify.valueAlloc(ctx.allocator, .{
+        .target = report.target,
+        .os_guess = report.os_guess,
+        .os_accuracy = report.os_accuracy,
+        .ports = report.ports,
+        .hostnames = report.hostnames,
+        .intel = report.intel,
+        .nmap_available = report.nmap_available,
+    }, .{});
 }

@@ -531,12 +531,21 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
 
     task_manager.update_mutex = &app.update_mutex;
     task_manager.config = cfg;
+    defer _ = @import("platform/mod.zig").security.stopScan(allocator, app.config.data_dir) catch {};
     defer app.deinitUpdateConfig();
     defer app.stream_clients.deinit(allocator);
     defer app.task_limits.deinit(allocator);
 
     log.info("hampaneld {s} starting (GPL-3.0-or-later)", .{version.version});
     notify.startMonitor(&database);
+    {
+        const security = @import("platform/mod.zig").security;
+        if (security.resumeScan(allocator, cfg.data_dir)) |resumed| {
+            if (resumed) log.info("scan sensor resumed", .{});
+        } else |err| {
+            log.warn("scan sensor not resumed: {s}", .{@errorName(err)});
+        }
+    }
 
     if (opts.service) {
         if (builtin.os.tag != .windows) {

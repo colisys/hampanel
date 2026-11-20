@@ -127,6 +127,38 @@ pub fn remove(allocator: std.mem.Allocator, id: []const u8) !Outcome {
     return .{ .ok = result.ok(), .output = textOf(result) };
 }
 
+/// Denies everything from one address. Used by scan sensing and brute-force
+/// containment; IPv4 and IPv6 both go through the same `ufw` invocation because
+/// ufw already routes v6 to ufw6 when IPV6=yes.
+pub fn denySource(allocator: std.mem.Allocator, source: []const u8) !Outcome {
+    if (!validSource(source)) return error.InvalidSource;
+    // `ufw insert` rejects IPv6 targets ("invalid position"), so v6 rules are
+    // appended; v4 keeps the insert so a new ban outranks existing allows.
+    const is_v6 = std.mem.indexOfScalar(u8, source, ':') != null;
+    const argv: []const []const u8 = if (is_v6)
+        &.{ "ufw", "deny", "from", source }
+    else
+        &.{ "ufw", "insert", "1", "deny", "from", source };
+    const result = exec.run(allocator, argv, 1024 * 1024) catch
+        return error.UfwUnavailable;
+    return .{ .ok = result.ok(), .output = textOf(result) };
+}
+
+pub fn allowSource(allocator: std.mem.Allocator, source: []const u8) !Outcome {
+    if (!validSource(source)) return error.InvalidSource;
+    const result = exec.run(allocator, &.{ "ufw", "--force", "delete", "deny", "from", source }, 1024 * 1024) catch
+        return error.UfwUnavailable;
+    return .{ .ok = result.ok(), .output = textOf(result) };
+}
+
+/// Only literal addresses reach ufw: a hostname or a half-built string would be
+/// interpreted by ufw as something else entirely.
+fn validSource(source: []const u8) bool {
+    if (source.len == 0 or source.len > 45) return false;
+    _ = std.Io.net.IpAddress.parse(source, 0) catch return false;
+    return true;
+}
+
 fn textOf(result: exec.Result) []const u8 {
     if (result.stderr.len > 0) return result.stderr;
     return result.stdout;

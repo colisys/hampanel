@@ -23,7 +23,9 @@ pub const software = backend.software;
 pub const fail2ban = backend.fail2ban;
 pub const waf = backend.waf;
 pub const security = backend.security;
+pub const scansensor = if (@hasDecl(backend, "scansensor")) backend.scansensor else struct {};
 pub const tamper = backend.tamper;
+pub const hostprobe = backend.hostprobe;
 pub const terminal = backend.terminal;
 pub const host_settings = backend.host_settings;
 

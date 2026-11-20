@@ -104,6 +104,79 @@ pub fn unprotect(ctx: *context.Context) anyerror!void {
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
+/// Passive scan sensing: probe state, recent observations and bans.
+pub fn scan(ctx: *context.Context) anyerror!void {
+    const data_dir = ctx.app.config.data_dir;
+    const status = platform.security.scanStatus(ctx.arena, data_dir) catch |err| {
+        ctx.fail(500, "scan_failed", @errorName(err));
+        return;
+    };
+    try ctx.json(status);
+}
+
+pub fn installScan(ctx: *context.Context) anyerror!void {
+    const data_dir = ctx.app.config.data_dir;
+    platform.security.installScan(ctx.arena, data_dir) catch |err| {
+        ctx.fail(if (err == error.BpftraceUnavailable) 501 else 500, "scan_install_failed", @errorName(err));
+        return;
+    };
+    log.info("security: scan sensor installed", .{});
+    try ctx.json(.{ .ok = true });
+}
+
+pub fn startScan(ctx: *context.Context) anyerror!void {
+    const data_dir = ctx.app.config.data_dir;
+    platform.security.startScan(ctx.arena, data_dir) catch |err| {
+        const name = @errorName(err);
+        const code: u16 = if (std.mem.eql(u8, name, "BpftraceUnavailable")) 501 else if (std.mem.eql(u8, name, "AlreadyRunning")) 409 else 500;
+        ctx.fail(code, "scan_start_failed", name);
+        return;
+    };
+    log.info("security: scan sensor started", .{});
+    try ctx.json(.{ .ok = true });
+}
+
+pub fn stopScan(ctx: *context.Context) anyerror!void {
+    const data_dir = ctx.app.config.data_dir;
+    platform.security.stopScan(ctx.arena, data_dir) catch |err| {
+        ctx.fail(500, "scan_stop_failed", @errorName(err));
+        return;
+    };
+    log.info("security: scan sensor stopped", .{});
+    try ctx.json(.{ .ok = true });
+}
+
+/// Lifts one ban and removes the matching ufw rule.
+pub fn unban(ctx: *context.Context) anyerror!void {
+    const Body = struct { source: []const u8 };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected source");
+        return;
+    };
+    if (std.Io.net.IpAddress.parse(body.source, 0)) |_| {} else |_| {
+        ctx.fail(400, "bad_source", "source must be a literal address");
+        return;
+    }
+    const data_dir = ctx.app.config.data_dir;
+    platform.security.unban(ctx.arena, data_dir, body.source) catch |err| {
+        ctx.fail(500, "unban_failed", @errorName(err));
+        return;
+    };
+    log.info("security: unbanned source", .{});
+    try ctx.json(.{ .ok = true });
+}
+
+/// Active probe status: whether nmap exists and which passive source is used.
+pub fn probeStatus(ctx: *context.Context) anyerror!void {
+    const a = ctx.arena;
+    try ctx.json(.{
+        .nmap = commandExists(a, "nmap"),
+        .curl = commandExists(a, "curl"),
+        .intel_source = "Shodan InternetDB（免密钥）",
+        .linux_only = true,
+    });
+}
+
 /// Read-only capability report. Every entry states whether the host can run the
 /// feature instead of pretending it works.
 pub fn capabilities(ctx: *context.Context) anyerror!void {
@@ -149,6 +222,6 @@ fn commandExists(a: std.mem.Allocator, name: []const u8) bool {
 }
 
 fn effectiveRoot(a: std.mem.Allocator) bool {
-    const probe = exec.run(a, &.{ "id", "-u" }, 16) catch return false;
-    return probe.ok() and std.mem.eql(u8, std.mem.trim(u8, probe.stdout, " \r\n\t"), "0");
+    _ = a;
+    return platform.security.isRoot();
 }

@@ -41,10 +41,6 @@ test {
     if (@import("builtin").os.tag == .linux) {
         const security = @import("platform/mod.zig").security;
         _ = &security.scanStatus;
-        _ = &security.recordBan;
-        _ = &security.exists;
-        _ = &security.readBanned;
-        _ = &security.writeFile;
     }
     _ = @import("tasks.zig");
     _ = @import("task_handlers.zig");
@@ -565,36 +561,76 @@ test "security scan status reports missing capabilities without panicking" {
     try std.testing.expect(!status.scanner_installed);
     try std.testing.expect(status.hits.len == 0);
     defer {
-        for (status.hits) |hit| {
-            allocator.free(hit.source);
-            allocator.free(hit.target);
-        }
+        for (status.hits) |hit| allocator.free(hit.source);
         allocator.free(status.hits);
         for (status.banned) |entry| allocator.free(entry);
         allocator.free(status.banned);
     }
 }
 
-test "security recording a ban is idempotent" {
+test "scan sensor decodes probe keys for ipv4 and ipv6" {
+    const sensor = @import("platform/mod.zig").scansensor;
+    if (@import("builtin").os.tag != .linux) return;
+
     const allocator = std.testing.allocator;
-    var tmp = std.testing.tmpDir(.{});
-    defer tmp.cleanup();
-    const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
-    defer allocator.free(dir);
+    // 127.0.0.1 as a host-order word; the port field is byte-swapped, so a
+    // probe for port 22 arrives as 5632.
+    const v4 = try sensor.decodeKey(allocator, 4, "16777343,5632");
+    defer allocator.free(v4.source);
+    try std.testing.expectEqualStrings("127.0.0.1", v4.source);
+    try std.testing.expectEqual(@as(u16, 22), v4.port);
 
-    const security = @import("platform/mod.zig").security;
-    try std.testing.expect(try security.recordBan(allocator, dir, "203.0.113.7"));
-    try std.testing.expect(!(try security.recordBan(allocator, dir, "203.0.113.7")));
-    try std.testing.expect(try security.recordBan(allocator, dir, "198.51.100.9"));
+    // 2001:db8:c::2 as two 64-bit words, exactly as a real flush printed them.
+    const v6 = try sensor.decodeKey(allocator, 6, "13197227393312,144115188075855872,32000");
+    defer allocator.free(v6.source);
+    try std.testing.expectEqualStrings("2001:db8:c:0:0:0:0:2", v6.source);
+    try std.testing.expectEqual(@as(u16, 125), v6.port);
 
-    const path = try compat.path.join(allocator, &.{ dir, "security", "scan-banned.txt" });
-    defer allocator.free(path);
-    const banned = try security.readBanned(allocator, path);
+    try std.testing.expectError(error.BadKey, sensor.decodeKey(allocator, 4, "not-a-key"));
+    try std.testing.expectError(error.BadKey, sensor.decodeKey(allocator, 4, "1,2,3"));
+    try std.testing.expectError(error.BadKey, sensor.decodeKey(allocator, 4, "1,70000"));
+}
+
+test "scan sensor parses a flush and finds scanning sources" {
+    const sensor = @import("platform/mod.zig").scansensor;
+    if (@import("builtin").os.tag != .linux) return;
+
+    const allocator = std.testing.allocator;
+    const line =
+        \\{"type": "attached_probes", "count": 2, "data": {"probes": 2}}
+        \\{"type": "map", "data": {"@v4": {"16777343,22": 3, "16777343,80": 1, "16777343,443": 2}}}
+    ;
+    var list = std.array_list.Managed(sensor.Observation).init(allocator);
     defer {
-        for (banned) |entry| allocator.free(entry);
-        allocator.free(banned);
+        for (list.items) |item| allocator.free(item.source);
+        list.deinit();
     }
-    try std.testing.expectEqual(@as(usize, 2), banned.len);
+    var lines = std.mem.splitScalar(u8, line, '\n');
+    while (lines.next()) |entry| {
+        if (entry.len == 0) continue;
+        try sensor.parseFlush(allocator, &list, entry);
+    }
+    try std.testing.expectEqual(@as(usize, 3), list.items.len);
+
+    var found = std.array_list.Managed([]u8).init(allocator);
+    defer {
+        for (found.items) |entry| allocator.free(entry);
+        found.deinit();
+    }
+    // 127.0.0.1 touched 3 distinct ports; a threshold of 2 must flag it.
+    try sensor.suspects(allocator, list.items, 2, &found);
+    try std.testing.expectEqual(@as(usize, 1), found.items.len);
+    try std.testing.expectEqualStrings("127.0.0.1", found.items[0]);
+
+    // The same source repeated on one port is not a scan.
+    var repeated = std.array_list.Managed(sensor.Observation).init(allocator);
+    defer repeated.deinit();
+    try repeated.append(.{ .source = "198.51.100.4", .port = 22, .count = 9 });
+    try repeated.append(.{ .source = "198.51.100.4", .port = 22, .count = 4 });
+    var none = std.array_list.Managed([]u8).init(allocator);
+    defer none.deinit();
+    try sensor.suspects(allocator, repeated.items, 1, &none);
+    try std.testing.expectEqual(@as(usize, 0), none.items.len);
 }
 
 test "brute containment config maps seconds to gateway milliseconds" {
@@ -630,3 +666,64 @@ test "brute containment config maps seconds to gateway milliseconds" {
         try std.testing.expect(!disabled.enabled);
     }
 }
+
+test "host probe rejects targets that could escape the scan" {
+    const hostprobe = @import("platform/mod.zig").hostprobe;
+    if (@hasDecl(hostprobe, "isSafeTarget")) {
+        try std.testing.expect(hostprobe.isSafeTarget("192.0.2.10"));
+        try std.testing.expect(hostprobe.isSafeTarget("example.com"));
+        try std.testing.expect(!hostprobe.isSafeTarget(""));
+        try std.testing.expect(!hostprobe.isSafeTarget("-O"));
+        try std.testing.expect(!hostprobe.isSafeTarget("10.0.0.0/24"));
+        try std.testing.expect(!hostprobe.isSafeTarget("10.0.0.1,10.0.0.2"));
+        try std.testing.expect(!hostprobe.isSafeTarget("10.0.0.1; rm -rf /"));
+        try std.testing.expect(!hostprobe.isSafeTarget("host:80"));
+        try std.testing.expect(!hostprobe.isSafeTarget("a b"));
+        try std.testing.expect(!hostprobe.isSafeTarget("999.1.1.1"));
+    }
+}
+
+test "host probe parses nmap xml and skips closed ports" {
+    const hostprobe = @import("platform/mod.zig").hostprobe;
+    if (@hasDecl(hostprobe, "parseNmap")) {
+        const xml =
+            \\<nmaprun>
+            \\<host><hostnames><hostname name="edge.example.com" type="PTR"/></hostnames>
+            \\<ports>
+            \\<port protocol="tcp" portid="22"><state state="open" reason="syn-ack"/>
+            \\<service name="ssh" product="OpenSSH" version="9.6"/></port>
+            \\<port protocol="tcp" portid="23"><state state="closed"/></port>
+            \\</ports>
+            \\<os><osmatch name="Linux 5.0 - 6.2" accuracy="97"/></os></host>
+            \\</nmaprun>
+        ;
+        var ports = std.array_list.Managed(hostprobe.Port).init(std.testing.allocator);
+        defer ports.deinit();
+        var hostnames = std.array_list.Managed([]const u8).init(std.testing.allocator);
+        defer hostnames.deinit();
+        var os: hostprobe.OsGuess = .{};
+        try hostprobe.parseNmap(&ports, &hostnames, &os, xml);
+        try std.testing.expectEqual(@as(usize, 1), ports.items.len);
+        try std.testing.expectEqual(@as(u16, 22), ports.items[0].port);
+        try std.testing.expectEqualStrings("OpenSSH", ports.items[0].product);
+        try std.testing.expectEqual(@as(usize, 1), hostnames.items.len);
+        try std.testing.expectEqualStrings("edge.example.com", hostnames.items[0]);
+        try std.testing.expectEqualStrings("Linux 5.0 - 6.2", os.guess);
+        try std.testing.expectEqual(@as(u8, 97), os.accuracy);
+    }
+}
+
+test "host probe accepts and rejects IPv6 literals" {
+    const hostprobe = @import("platform/mod.zig").hostprobe;
+    if (@hasDecl(hostprobe, "isSafeTarget")) {
+        try std.testing.expect(hostprobe.isSafeTarget("2001:db8::1"));
+        try std.testing.expect(hostprobe.isSafeTarget("::1"));
+        try std.testing.expect(hostprobe.isSafeTarget("2001:0db8:0007:0000:0000:0000:0000:0002"));
+        // Zone ids and malformed groups must not reach nmap.
+        try std.testing.expect(!hostprobe.isSafeTarget("fe80::1%eth0"));
+        try std.testing.expect(!hostprobe.isSafeTarget("2001:db8:::1"));
+        try std.testing.expect(!hostprobe.isSafeTarget("2001:db8::1/64"));
+        try std.testing.expect(!hostprobe.isSafeTarget("2001:db8::1 -sV"));
+    }
+}
+
