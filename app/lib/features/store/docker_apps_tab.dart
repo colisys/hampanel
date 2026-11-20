@@ -23,6 +23,15 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
   List<StoreApp> _apps = const [];
   bool _loading = true;
   String? _error;
+  String? _category;
+  String _query = '';
+  final _search = TextEditingController();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   ApiClient get _api => PanelScope.of(context).api;
 
@@ -47,6 +56,7 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
       if (!mounted) return;
       setState(() {
         _apps = apps;
+        if (!apps.any((app) => app.category == _category)) _category = null;
         _loading = false;
       });
     } catch (error) {
@@ -71,29 +81,31 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
       );
       if (!mounted) return;
       _toast('已提交任务：${task.title}');
-      unawaited(center.waitFor(task.id).then((summary) async {
-        if (!mounted) return;
-        try {
-          final detail = await _api.getJson('/api/v1/tasks/${task.id}');
-          final map = detail as Map<String, dynamic>? ?? const {};
-          final output = map['output'] as String? ?? '';
-          final raw = map['result'] as String? ?? '';
-          List<dynamic> params = const [];
-          if (raw.isNotEmpty) {
-            final parsed = jsonDecode(raw);
-            if (parsed is Map<String, dynamic>) {
-              params = (parsed['params'] as List<dynamic>?) ?? const [];
-            }
-          }
+      unawaited(
+        center.waitFor(task.id).then((summary) async {
           if (!mounted) return;
-          if (summary?.status == 'succeeded') {
-            await showDeployedDialog(context, app.name, params, output);
-          } else {
-            await showOutputDialog(context, '部署失败', output);
-          }
-        } catch (_) {}
-        if (mounted) await _load();
-      }));
+          try {
+            final detail = await _api.getJson('/api/v1/tasks/${task.id}');
+            final map = detail as Map<String, dynamic>? ?? const {};
+            final output = map['output'] as String? ?? '';
+            final raw = map['result'] as String? ?? '';
+            List<dynamic> params = const [];
+            if (raw.isNotEmpty) {
+              final parsed = jsonDecode(raw);
+              if (parsed is Map<String, dynamic>) {
+                params = (parsed['params'] as List<dynamic>?) ?? const [];
+              }
+            }
+            if (!mounted) return;
+            if (summary?.status == 'succeeded') {
+              await showDeployedDialog(context, app.name, params, output);
+            } else {
+              await showOutputDialog(context, '部署失败', output);
+            }
+          } catch (_) {}
+          if (mounted) await _load();
+        }),
+      );
     } catch (error) {
       _toast(describeError(error));
     }
@@ -129,9 +141,11 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
       );
       if (!mounted) return;
       _toast('已提交任务：${task.title}');
-      unawaited(center.waitFor(task.id).then((_) {
-        if (mounted) _load();
-      }));
+      unawaited(
+        center.waitFor(task.id).then((_) {
+          if (mounted) _load();
+        }),
+      );
       return;
     }
 
@@ -173,9 +187,11 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
     );
     if (!mounted) return;
     _toast('已提交任务：${task.title}');
-    unawaited(center.waitFor(task.id).then((_) {
-      if (mounted) _load();
-    }));
+    unawaited(
+      center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }),
+    );
   }
 
   void _toast(String message) {
@@ -215,147 +231,222 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
       );
     }
 
+    final categories = _apps
+        .map((app) => app.category)
+        .where((value) => value.isNotEmpty)
+        .toSet()
+        .toList();
+    final query = _query.trim().toLowerCase();
+    final visibleApps = _apps.where((app) {
+      if (_category != null && app.category != _category) return false;
+      return query.isEmpty ||
+          '${app.name} ${app.slug} ${app.description} ${app.category}'
+              .toLowerCase()
+              .contains(query);
+    }).toList();
+
     return RefreshIndicator(
       onRefresh: _load,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final columns = (constraints.maxWidth / 360).floor().clamp(1, 3);
-          return GridView.builder(
-            padding: pageContentPadding(context, top: 8),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              mainAxisExtent: 226,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemCount: _apps.length,
-            itemBuilder: (context, index) {
-              final app = _apps[index];
-              return Card(
+          return CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: pageContentPadding(context, top: 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: hampanelAccent.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                            child: Icon(
-                              _icon(app.icon),
-                              size: 20,
-                              color: hampanelAccent,
-                            ),
-                          ),
-                          const SizedBox(width: 11),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  app.name,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                Text(
-                                  app.category,
-                                  style: TextStyle(
-                                    fontSize: 10.5,
-                                    color: hampanelMuted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          StatusPill(
-                            text: !app.installed
-                                ? '未部署'
-                                : app.running
-                                ? '运行中'
-                                : '已停止',
-                            good: app.running,
-                          ),
-                        ],
+                      TextField(
+                        controller: _search,
+                        decoration: const InputDecoration(
+                          labelText: '搜索应用',
+                          prefixIcon: Icon(Icons.search),
+                        ),
+                        onChanged: (value) => setState(() => _query = value),
                       ),
                       const SizedBox(height: 12),
-                      Expanded(
-                        child: Text(
-                          app.description,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            color: hampanelMuted,
-                            height: 1.5,
-                          ),
-                        ),
-                      ),
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
-                          if (!app.installed)
-                            FilledButton.icon(
-                              onPressed: () => _deploy(app),
-                              icon: const Icon(
-                                Icons.rocket_launch_outlined,
-                                size: 15,
-                              ),
-                              label: const Text('部署'),
-                            )
-                          else if (app.running)
-                            OutlinedButton(
-                              onPressed: () => _action(app, 'stop'),
-                              child: const Text('停止'),
-                            )
-                          else
-                            OutlinedButton(
-                              onPressed: () => _action(app, 'start'),
-                              child: const Text('启动'),
-                            ),
-                          const Spacer(),
-                          PopupMenuButton<String>(
-                            tooltip: '更多',
-                            icon: const Icon(Icons.more_horiz, size: 19),
-                            onSelected: (value) => _action(app, value),
-                            itemBuilder: (context) => [
-                              if (app.installed)
-                                const PopupMenuItem(
-                                  value: 'logs',
-                                  child: Text('查看日志'),
-                                ),
-                              if (app.installed && app.slug == 'nginx')
-                                const PopupMenuItem(
-                                  value: 'upgrade-nginx',
-                                  child: Text('升级旧版部署（保留端口）'),
-                                ),
-                              if (app.installed)
-                                const PopupMenuItem(
-                                  value: 'deploy',
-                                  child: Text('使用新参数重新部署'),
-                                ),
-                              const PopupMenuItem(
-                                value: 'remove',
-                                child: Text('卸载（保留数据）'),
-                              ),
-                              const PopupMenuItem(
-                                value: 'remove-volumes',
-                                child: Text('卸载并删除数据'),
-                              ),
-                            ],
+                          ChoiceChip(
+                            label: const Text('全部'),
+                            selected: _category == null,
+                            onSelected: (_) => setState(() => _category = null),
                           ),
+                          for (final category in categories)
+                            ChoiceChip(
+                              label: Text(category),
+                              selected: _category == category,
+                              onSelected: (_) =>
+                                  setState(() => _category = category),
+                            ),
                         ],
                       ),
                     ],
                   ),
                 ),
-              );
-            },
+              ),
+              if (visibleApps.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(
+                    child: TextButton(
+                      onPressed: () => setState(() {
+                        _category = null;
+                        _query = '';
+                        _search.clear();
+                      }),
+                      child: const Text('没有匹配的应用，清除筛选'),
+                    ),
+                  ),
+                ),
+              SliverPadding(
+                padding: pageContentPadding(context, top: 12),
+                sliver: SliverGrid.builder(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    mainAxisExtent: 226,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                  ),
+                  itemCount: visibleApps.length,
+                  itemBuilder: (context, index) {
+                    final app = visibleApps[index];
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: hampanelAccent.withValues(
+                                      alpha: 0.10,
+                                    ),
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                  child: Icon(
+                                    _icon(app.icon),
+                                    size: 20,
+                                    color: hampanelAccent,
+                                  ),
+                                ),
+                                const SizedBox(width: 11),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        app.name,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        app.category,
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          color: hampanelMuted,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                StatusPill(
+                                  text: !app.installed
+                                      ? '未部署'
+                                      : app.running
+                                      ? '运行中'
+                                      : '已停止',
+                                  good: app.running,
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Expanded(
+                              child: Text(
+                                app.description,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: hampanelMuted,
+                                  height: 1.5,
+                                ),
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                if (!app.installed)
+                                  FilledButton.icon(
+                                    onPressed: () => _deploy(app),
+                                    icon: const Icon(
+                                      Icons.rocket_launch_outlined,
+                                      size: 15,
+                                    ),
+                                    label: const Text('部署'),
+                                  )
+                                else if (app.running)
+                                  OutlinedButton(
+                                    onPressed: () => _action(app, 'stop'),
+                                    child: const Text('停止'),
+                                  )
+                                else
+                                  OutlinedButton(
+                                    onPressed: () => _action(app, 'start'),
+                                    child: const Text('启动'),
+                                  ),
+                                const Spacer(),
+                                PopupMenuButton<String>(
+                                  tooltip: '更多',
+                                  icon: const Icon(Icons.more_horiz, size: 19),
+                                  onSelected: (value) => _action(app, value),
+                                  itemBuilder: (context) => [
+                                    if (app.installed)
+                                      const PopupMenuItem(
+                                        value: 'logs',
+                                        child: Text('查看日志'),
+                                      ),
+                                    if (app.installed && app.slug == 'nginx')
+                                      const PopupMenuItem(
+                                        value: 'upgrade-nginx',
+                                        child: Text('升级旧版部署（保留端口）'),
+                                      ),
+                                    if (app.installed)
+                                      const PopupMenuItem(
+                                        value: 'deploy',
+                                        child: Text('使用新参数重新部署'),
+                                      ),
+                                    const PopupMenuItem(
+                                      value: 'remove',
+                                      child: Text('卸载（保留数据）'),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'remove-volumes',
+                                      child: Text('卸载并删除数据'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
           );
         },
       ),

@@ -1,0 +1,17 @@
+services:
+  caddy:
+    image: docker.io/library/caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "{{http_port}}:80"
+      - "{{https_port}}:443"
+      - "{{https_port}}:443/udp"
+    volumes:
+      - config:/config
+      - data:/data
+      - site:/usr/share/caddy
+
+volumes:
+  config:
+  data:
+  site:

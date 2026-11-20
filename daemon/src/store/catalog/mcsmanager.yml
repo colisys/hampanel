@@ -1,0 +1,28 @@
+services:
+  web:
+    image: docker.io/githubyumao/mcsmanager-web:latest
+    restart: unless-stopped
+    depends_on:
+      - daemon
+    ports:
+      - "{{web_port}}:23333"
+    volumes:
+      - web-data:/opt/mcsmanager/web/data
+      - web-logs:/opt/mcsmanager/web/logs
+      - web-uploads:/opt/mcsmanager/web/public/upload_files
+
+  daemon:
+    image: docker.io/githubyumao/mcsmanager-daemon:latest
+    restart: unless-stopped
+    ports:
+      - "{{daemon_port}}:24444"
+    volumes:
+      - daemon-data:/opt/mcsmanager/daemon/data
+      - daemon-logs:/opt/mcsmanager/daemon/logs
+
+volumes:
+  web-data:
+  web-logs:
+  web-uploads:
+  daemon-data:
+  daemon-logs:

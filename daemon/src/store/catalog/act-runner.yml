@@ -1,0 +1,14 @@
+services:
+  act-runner:
+    image: docker.io/gitea/act_runner:0.6.1
+    restart: unless-stopped
+    environment:
+      GITEA_INSTANCE_URL: 'http://{{instance_host}}:{{instance_port}}'
+      GITEA_RUNNER_REGISTRATION_TOKEN: '{{registration_token}}'
+      GITEA_RUNNER_LABELS: 'ubuntu-latest:docker://node:22-bookworm'
+    volumes:
+      - data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  data:

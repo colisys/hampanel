@@ -1,0 +1,13 @@
+services:
+  newapi:
+    image: docker.io/calciumion/new-api:v1.0.0-rc.51
+    restart: unless-stopped
+    environment:
+      SESSION_SECRET: "{{session_secret}}"
+    ports:
+      - "{{port}}:3000"
+    volumes:
+      - data:/data
+
+volumes:
+  data:

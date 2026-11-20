@@ -1,0 +1,15 @@
+services:
+  emqx:
+    image: docker.io/emqx/emqx:5.8.8
+    hostname: emqx
+    restart: unless-stopped
+    ports:
+      - "{{mqtt_port}}:1883"
+      - "{{dashboard_port}}:18083"
+    volumes:
+      - data:/opt/emqx/data
+      - log:/opt/emqx/log
+
+volumes:
+  data:
+  log:

@@ -1,0 +1,15 @@
+services:
+  easytier:
+    image: docker.io/easytier/easytier:v2.7.1
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    command:
+      - '--dhcp'
+      - '--network-name={{network_name}}'
+      - '--network-secret={{network_secret}}'
+      - '--peers=tcp://{{peer_host}}:{{peer_port}}'
+      - '--rpc-portal=127.0.0.1:15888'

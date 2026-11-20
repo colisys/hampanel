@@ -1,0 +1,11 @@
+services:
+  frps:
+    image: ghcr.io/fatedier/frps:v0.72.0
+    restart: unless-stopped
+    command:
+      - '--token={{token}}'
+      - '--allow-ports={{remote_port}}'
+      - '--tls-only'
+    ports:
+      - '{{server_port}}:7000/tcp'
+      - '{{remote_port}}:{{remote_port}}/tcp'

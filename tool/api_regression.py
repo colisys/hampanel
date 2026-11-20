@@ -167,6 +167,8 @@ try:
     test('GET','/files/content?path=/work/lifecycle/b',expected=404,scenario='missing')
     for suffix in ('/runtimes','/runtimes/catalog','/docker/settings','/sites','/processes','/logs/sources','/audit','/store/apps','/store/packages','/store/nix','/software','/recycle','/notifications'):
         test('GET',suffix)
+    expected_store_apps={'emqx','kafka','mcsmanager','vllm','frps','frpd','nacos','caddy','newapi','sub2api','comfyui','easytier','act-runner'}
+    test('GET','/store/apps',predicate=lambda d:expected_store_apps <= {app['slug'] for app in d['apps']} and all(app['category'] and app['params'] for app in d['apps'] if app['slug'] in expected_store_apps),scenario='new-apps-and-categories')
     task('runtime.create',{'name':'regression-runtime','runtime':'php'})
     runtime=test('GET','/runtimes',predicate=lambda d:any(e['name']=='regression-runtime' for e in d['environments']))
     env=next((e for e in runtime.get('environments',[]) if e['name']=='regression-runtime'),None)

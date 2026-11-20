@@ -112,6 +112,12 @@ pub fn deploy(
             try snippet.writeAll("include /etc/nginx/hampanel/*.conf;\n");
             try @import("../runtime/site_nginx_container.zig").prepare(allocator, data_dir);
         }
+        if (std.mem.eql(u8, app.slug, "comfyui")) {
+            const dockerfile = try compat.path.join(allocator, &.{ dir, "Dockerfile" });
+            var build_file = try compat.createFileAbsolute(dockerfile, .{ .truncate = true, .mode = 0o644 });
+            defer build_file.close();
+            try build_file.writeAll(@embedFile("catalog/comfyui.Dockerfile"));
+        }
     }
 
     var file = try compat.createFileAbsolute(path, .{ .truncate = true, .mode = 0o600 });

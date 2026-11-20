@@ -1,0 +1,20 @@
+services:
+  nacos:
+    image: docker.io/nacos/nacos-server:v2.5.1
+    restart: unless-stopped
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "true"
+      NACOS_AUTH_TOKEN: "{{auth_token}}"
+      NACOS_AUTH_IDENTITY_KEY: serverIdentity
+      NACOS_AUTH_IDENTITY_VALUE: "{{identity_value}}"
+    ports:
+      - "{{web_port}}:8848"
+      - "{{grpc_port}}:9848"
+    volumes:
+      - data:/home/nacos/data
+      - logs:/home/nacos/logs
+
+volumes:
+  data:
+  logs:

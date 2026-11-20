@@ -1,0 +1,13 @@
+services:
+  frpc:
+    image: ghcr.io/fatedier/frpc:v0.72.0
+    restart: unless-stopped
+    command:
+      - tcp
+      - '--server-addr={{server_addr}}'
+      - '--server-port={{server_port}}'
+      - '--token={{token}}'
+      - '--proxy-name=tcp-{{remote_port}}'
+      - '--remote-port={{remote_port}}'
+      - '--local-ip={{local_ip}}'
+      - '--local-port={{local_port}}'
