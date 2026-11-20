@@ -49,3 +49,45 @@ Hampanel 管理端与受控端之间是双向 TLS（mTLS）：客户端校验服
   主动中间人。首次凭据应通过可信渠道传递。
 - 没有硬件密钥或口令加密的私钥保护；桌面端依赖文件权限，移动端依赖应用沙箱。
 - 客户端不实现证书固定到具体公钥（SPKI）；当前固定的是 CA 与服务端证书指纹。
+
+## 安全中心
+
+安全中心聚合 SSH、WAF、防火墙、Fail2ban，并提供扫描感知、主机探测、蜜罐、
+文件防篡改与 SELinux 入口。能力检测如实上报：`/api/v1/security/capabilities`
+返回 eBPF、chattr、qemu、nft、ufw、SELinux 与是否 root，入口按结果禁用而不是
+点了才报错。
+
+## 扫描感知
+
+被动采集主机收到的半开连接（SYN），把"一个来源在窗口内触达了多少个不同端口"
+作为扫描信号，超阈值即拉黑。
+
+- 探针是 `bpftrace` 脚本（`<data>/security/scan-sensor.bt`），挂在
+  `tcp_v4_rcv` / `tcp_v6_rcv` 上，按 `(来源, 端口)` 聚合，每 5 秒输出一行 JSON。
+  选 bpftrace 而不是编译 libbpf 对象，是因为后者要求构建机内核头与运行内核一致。
+- 来源地址与端口在内核结构里都是网络序，按整数读出后 IPv6 的每个 16 位组与端口
+  都需要字节交换；两处都按真实探针输出校准过，不是推测。
+- 默认阈值：单来源 12 个不同端口。命中后写入
+  `<data>/security/scan-banned.txt` 并在 ufw 中添加拒绝规则。IPv4 用
+  `ufw insert 1`，让新规则优先于既有放行；`ufw insert` 对 IPv6 会报
+  “无效位置”，因此 v6 规则追加，同样会落到 `ufw6-user-input`。
+- 观测记录按位置追加：以写方式打开文件偏移从 0 开始，不加定位会覆盖最旧的记录。
+- 探针由 daemon 监管：逐行读取子进程输出，bpftrace 退出即重启；daemon 重启后
+  已安装的探针自动恢复；上一进程遗留的 bpftrace 会被替换而不是误判为运行中。
+
+接口：`GET /api/v1/security/scan`，`POST /api/v1/security/scan/{install,start,stop,unban}`。
+
+## 主机探测
+
+主动探测向目标发包，因此只接受字面 IPv4 / IPv6 或 RFC 1123 主机名；网段、列表、
+作用域 ID、前缀以及任何可能被读成 nmap 参数的值都被拒绝，nmap 始终以 argv
+调用，不经过 shell。
+
+- `nmap` 负责端口、服务与系统指纹；IPv6 目标自动加 `-6`。系统指纹需要 root，
+  且 IPv6 的指纹库覆盖很差，结论通常为空——这会在报告里如实写出。
+- Shodan InternetDB 作为免密钥被动情报补充；它没有 IPv6 索引，v6 目标只返回
+  主动扫描结果。
+- 扫描耗时以分钟计，因此注册为任务 `security.probe`，结果写入任务 `result`，
+  人类可读摘要写入输出流。
+
+边界：探测会暴露面板自身 IP，只能对授权目标使用；被动情报是第三方数据，仅作参考。

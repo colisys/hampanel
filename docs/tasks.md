@@ -40,6 +40,7 @@
 | `sites.reload` | 校验并重载 Nginx / Caddy | `sites` |
 | `host.change` | swap / swap-device / ntp / grub | `host` |
 | `update.apply` | 下载、校验、替换二进制并安排重启 | `update` |
+| `security.probe` | nmap 主动探测与被动情报 | `security-probe` |
 
 Docker 镜像与 compose 的 `up` / `pull` 仍走 `/docker/jobs` 的任务接口，不重复纳入任务核心。
 `/etc/hosts`、站点保存、服务配置、Docker compose 的 `down` / `restart`、更新检查属于秒级操作，保持同步。
