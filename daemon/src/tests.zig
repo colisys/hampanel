@@ -686,7 +686,7 @@ test "host probe rejects targets that could escape the scan" {
 test "host probe parses nmap xml and skips closed ports" {
     const hostprobe = @import("platform/mod.zig").hostprobe;
     if (@hasDecl(hostprobe, "parseNmap")) {
-        const xml =
+        const xml_owned = try std.testing.allocator.dupe(u8,
             \\<nmaprun>
             \\<host><hostnames><hostname name="edge.example.com" type="PTR"/></hostnames>
             \\<ports>
@@ -696,18 +696,35 @@ test "host probe parses nmap xml and skips closed ports" {
             \\</ports>
             \\<os><osmatch name="Linux 5.0 - 6.2" accuracy="97"/></os></host>
             \\</nmaprun>
-        ;
+        );
         var ports = std.array_list.Managed(hostprobe.Port).init(std.testing.allocator);
-        defer ports.deinit();
+        defer {
+            for (ports.items) |port| {
+                std.testing.allocator.free(port.protocol);
+                std.testing.allocator.free(port.state);
+                std.testing.allocator.free(port.service);
+                std.testing.allocator.free(port.product);
+                std.testing.allocator.free(port.version);
+            }
+            ports.deinit();
+        }
         var hostnames = std.array_list.Managed([]const u8).init(std.testing.allocator);
-        defer hostnames.deinit();
+        defer {
+            for (hostnames.items) |name| std.testing.allocator.free(name);
+            hostnames.deinit();
+        }
+
         var os: hostprobe.OsGuess = .{};
-        try hostprobe.parseNmap(&ports, &hostnames, &os, xml);
+        try hostprobe.parseNmap(std.testing.allocator, &ports, &hostnames, &os, xml_owned);
+        // The parser must own its strings: freeing the XML first proves the
+        // returned values do not point into it.
+        std.testing.allocator.free(xml_owned);
         try std.testing.expectEqual(@as(usize, 1), ports.items.len);
         try std.testing.expectEqual(@as(u16, 22), ports.items[0].port);
         try std.testing.expectEqualStrings("OpenSSH", ports.items[0].product);
         try std.testing.expectEqual(@as(usize, 1), hostnames.items.len);
         try std.testing.expectEqualStrings("edge.example.com", hostnames.items[0]);
+        defer std.testing.allocator.free(os.guess);
         try std.testing.expectEqualStrings("Linux 5.0 - 6.2", os.guess);
         try std.testing.expectEqual(@as(u8, 97), os.accuracy);
     }

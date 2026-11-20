@@ -133,7 +133,7 @@ pub fn probe(allocator: std.mem.Allocator, target: []const u8, options: Options)
     } else {
         if (runNmap(allocator, target, options)) |body| {
             var os: OsGuess = .{};
-            parseNmap(&ports, &hostnames, &os, body) catch {};
+            parseNmap(allocator, &ports, &hostnames, &os, body) catch {};
             os_guess = os.guess;
             os_accuracy = os.accuracy;
             allocator.free(body);
@@ -183,6 +183,7 @@ fn runNmap(allocator: std.mem.Allocator, target: []const u8, options: Options) !
 pub const OsGuess = struct { guess: []const u8 = "", accuracy: u8 = 0 };
 
 pub fn parseNmap(
+    allocator: std.mem.Allocator,
     ports: *std.array_list.Managed(Port),
     hostnames: *std.array_list.Managed([]const u8),
     last_os: *OsGuess,
@@ -198,13 +199,18 @@ pub fn parseNmap(
         const protocol = attr(chunk, "protocol") orelse continue;
         const state = tagAttr(chunk, "<state", "state") orelse continue;
         if (!std.mem.eql(u8, state, "open")) continue;
+        // Every string must be copied: the slices point into the nmap XML,
+        // which the caller frees as soon as parsing returns.
+        const service = attrIn(chunk, "<service", "name") orelse "";
+        const product = attrIn(chunk, "<service", "product") orelse "";
+        const version = attrIn(chunk, "<service", "version") orelse "";
         try ports.append(.{
             .port = std.fmt.parseInt(u16, number, 10) catch continue,
-            .protocol = protocol,
-            .state = state,
-            .service = attrIn(chunk, "<service", "name") orelse "",
-            .product = attrIn(chunk, "<service", "product") orelse "",
-            .version = attrIn(chunk, "<service", "version") orelse "",
+            .protocol = try allocator.dupe(u8, protocol),
+            .state = try allocator.dupe(u8, state),
+            .service = try allocator.dupe(u8, service),
+            .product = try allocator.dupe(u8, product),
+            .version = try allocator.dupe(u8, version),
         });
     }
 
@@ -214,7 +220,7 @@ pub fn parseNmap(
         const chunk = xml[start..end];
         cursor = end + 1;
         const name = attr(chunk, "name") orelse continue;
-        try hostnames.append(name);
+        try hostnames.append(try allocator.dupe(u8, name));
     }
 
     var os_guess: []const u8 = "";
@@ -222,7 +228,7 @@ pub fn parseNmap(
     if (std.mem.indexOf(u8, xml, "<osmatch ")) |start| {
         const end = std.mem.indexOfPos(u8, xml, start, ">") orelse xml.len;
         const chunk = xml[start..end];
-        os_guess = attr(chunk, "name") orelse "";
+        if (attr(chunk, "name")) |value| os_guess = try allocator.dupe(u8, value);
         os_accuracy = if (attr(chunk, "accuracy")) |value|
             std.fmt.parseInt(u8, value, 10) catch 0
         else

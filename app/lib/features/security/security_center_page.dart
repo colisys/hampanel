@@ -6,6 +6,7 @@ import '../../core/session.dart';
 import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
+import 'probe_page.dart';
 import '../cron/cron_page.dart';
 import '../firewall/firewall_page.dart';
 import '../ssh/ssh_page.dart';
@@ -156,6 +157,12 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
                           : 'eBPF 不可用，无法被动采集',
                       enabled: caps?.ebpf ?? false,
                       onTap: () => _open(const ScanPage()),
+                    ),
+                    _entry(
+                      icon: Icons.travel_explore_outlined,
+                      title: '主机探测',
+                      subtitle: 'nmap 主动扫描与被动情报',
+                      onTap: () => _open(const ProbePage()),
                     ),
                     _entry(
                       icon: Icons.hive_outlined,
