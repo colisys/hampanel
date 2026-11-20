@@ -18,18 +18,17 @@ class ContainersSection extends StatefulWidget {
   final String? engine;
   final int refreshEpoch;
 
-
   @override
   State<ContainersSection> createState() => _ContainersSectionState();
 }
 
 class _ContainersSectionState extends State<ContainersSection> {
-
   @override
   void didUpdateWidget(covariant ContainersSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
   }
+
   List<DockerContainer> _containers = const [];
   bool _loading = true;
   String? _error;
@@ -288,165 +287,147 @@ class _ContainerCard extends StatelessWidget {
       child: InkWell(
         onTap: onOpen,
         child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.inventory_2_outlined,
-                  size: 20,
-                  color: running ? hampanelAccent : hampanelMuted,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.inventory_2_outlined,
+                    size: 20,
+                    color: running ? hampanelAccent : hampanelMuted,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            Text(
                               container.name,
-                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 13.5,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                          ),
-                          if (container.composeProject.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Text(
-                              container.composeProject,
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                color: hampanelMuted,
+                            if (container.composeProject.isNotEmpty) ...[
+                              Text(
+                                container.composeProject,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  color: hampanelMuted,
+                                ),
                               ),
-                            ),
+                            ],
                           ],
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        container.image,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 11, color: hampanelMuted),
-                      ),
-                    ],
-                  ),
-                ),
-                StatusPill(text: container.state, good: running),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 18,
-              runSpacing: 8,
-              children: [
-                _Field(label: '网络 / IP', value: container.networkLabel),
-                _Field(label: '端口', value: container.portsLabel),
-                _Field(label: '资源', value: container.resourceLabel),
-                _Field(label: '运行时长', value: container.uptimeLabel),
-                _Field(label: '创建时间', value: container.createdLabel),
-              ],
-            ),
-            if (container.note.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                container.note,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: hampanelInkSoft,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ],
-            // Actions live at the end of the card so the title row stays
-            // readable on phones.
-            const SizedBox(height: 10),
-            Divider(height: 1, color: hampanelBorder),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: onOpen,
-                    borderRadius: BorderRadius.circular(2),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.open_in_new,
-                            size: 14,
-                            color: hampanelMuted,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '详情',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: hampanelMuted,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          container.image,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11, color: hampanelMuted),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                _CardAction(
-                  icon: Icons.terminal,
-                  label: '终端',
-                  onPressed: running ? onTerminal : null,
-                ),
-                _CardAction(
-                  icon: Icons.receipt_long_outlined,
-                  label: '日志',
-                  onPressed: onLogs,
-                ),
-                _CardAction(
-                  icon: Icons.folder_open_outlined,
-                  label: '文件',
-                  onPressed: running ? onFiles : null,
-                ),
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_horiz, size: 18),
-                  onSelected: (value) {
-                    switch (value) {
-                      case 'edit':
-                        onOpen();
-                      case 'commit':
-                        onCommit();
-                      case 'note':
-                        onNote();
-                      default:
-                        onAction(value);
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    if (!running)
-                      const PopupMenuItem(value: 'start', child: Text('启动')),
-                    if (running)
-                      const PopupMenuItem(value: 'stop', child: Text('停止')),
-                    if (running)
-                      const PopupMenuItem(value: 'pause', child: Text('暂停')),
-                    if (!running)
-                      const PopupMenuItem(value: 'unpause', child: Text('恢复')),
-                    const PopupMenuItem(value: 'restart', child: Text('重启')),
-                    const PopupMenuItem(value: 'edit', child: Text('详情与配置')),
-                    const PopupMenuItem(value: 'commit', child: Text('导出镜像')),
-                    const PopupMenuItem(value: 'note', child: Text('备注')),
-                    const PopupMenuItem(value: 'rm', child: Text('删除')),
-                  ],
+                  StatusPill(text: container.state, good: running),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 18,
+                runSpacing: 8,
+                children: [
+                  _Field(label: '网络 / IP', value: container.networkLabel),
+                  _Field(label: '端口', value: container.portsLabel),
+                  _Field(label: '资源', value: container.resourceLabel),
+                  _Field(label: '运行时长', value: container.uptimeLabel),
+                  _Field(label: '创建时间', value: container.createdLabel),
+                ],
+              ),
+              if (container.note.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  container.note,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: hampanelInkSoft,
+                    fontStyle: FontStyle.italic,
+                  ),
                 ),
               ],
-            ),
-          ],
+              // Actions live at the end of the card so the title row stays
+              // readable on phones.
+              const SizedBox(height: 10),
+              Divider(height: 1, color: hampanelBorder),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _CardAction(
+                    icon: Icons.open_in_new,
+                    label: '详情',
+                    onPressed: onOpen,
+                  ),
+                  _CardAction(
+                    icon: Icons.terminal,
+                    label: '终端',
+                    onPressed: running ? onTerminal : null,
+                  ),
+                  _CardAction(
+                    icon: Icons.receipt_long_outlined,
+                    label: '日志',
+                    onPressed: onLogs,
+                  ),
+                  _CardAction(
+                    icon: Icons.folder_open_outlined,
+                    label: '文件',
+                    onPressed: running ? onFiles : null,
+                  ),
+                  PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_horiz, size: 18),
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'edit':
+                          onOpen();
+                        case 'commit':
+                          onCommit();
+                        case 'note':
+                          onNote();
+                        default:
+                          onAction(value);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      if (!running)
+                        const PopupMenuItem(value: 'start', child: Text('启动')),
+                      if (running)
+                        const PopupMenuItem(value: 'stop', child: Text('停止')),
+                      if (running)
+                        const PopupMenuItem(value: 'pause', child: Text('暂停')),
+                      if (!running)
+                        const PopupMenuItem(
+                          value: 'unpause',
+                          child: Text('恢复'),
+                        ),
+                      const PopupMenuItem(value: 'restart', child: Text('重启')),
+                      const PopupMenuItem(value: 'edit', child: Text('详情与配置')),
+                      const PopupMenuItem(value: 'commit', child: Text('导出镜像')),
+                      const PopupMenuItem(value: 'note', child: Text('备注')),
+                      const PopupMenuItem(value: 'rm', child: Text('删除')),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -473,11 +454,7 @@ class _CardAction extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
         child: Row(
           children: [
-            Icon(
-              icon,
-              size: 15,
-              color: enabled ? hampanelInk : hampanelMuted,
-            ),
+            Icon(icon, size: 15, color: enabled ? hampanelInk : hampanelMuted),
             const SizedBox(width: 4),
             Text(
               label,
@@ -668,6 +645,10 @@ class _ContainerEditorDialogState extends State<ContainerEditorDialog> {
   Future<void> _submit() async {
     if (_name.text.trim().isEmpty || _image.text.trim().isEmpty) {
       setState(() => _error = '名称和镜像不能为空');
+      return;
+    }
+    if (!isDockerImageReference(_image.text)) {
+      setState(() => _error = '请输入有效的镜像引用');
       return;
     }
     if (_editing) {
@@ -942,7 +923,14 @@ class _CommitDialogState extends State<_CommitDialog> {
         ),
         FilledButton(
           onPressed: () {
-            if (_repository.text.trim().isEmpty) return;
+            if (!isDockerImageReference(_repository.text) ||
+                _tag.text.trim().endsWith(':')) {
+              showAppSnackBar(
+                context,
+                const SnackBar(content: Text('请输入有效的镜像引用')),
+              );
+              return;
+            }
             Navigator.pop(context, (
               repository: _repository.text.trim(),
               tag: _tag.text.trim().isEmpty ? 'latest' : _tag.text.trim(),

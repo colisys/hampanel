@@ -5,6 +5,8 @@ services:
     ports:
       - "{{port}}:80"
     volumes:
+      - ./sites-conf:/etc/nginx/hampanel:ro
+      - ./sites-include.conf:/etc/nginx/conf.d/hampanel.conf:ro
       - html:/usr/share/nginx/html
 
 volumes:

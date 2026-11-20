@@ -21,12 +21,12 @@ class ImagesSection extends StatefulWidget {
 }
 
 class _ImagesSectionState extends State<ImagesSection> {
-
   @override
   void didUpdateWidget(covariant ImagesSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
   }
+
   List<DockerImage> _images = const [];
   List<DockerRegistry> _registries = const [];
   bool _loading = true;
@@ -92,10 +92,15 @@ class _ImagesSectionState extends State<ImagesSection> {
   }
 
   Future<void> _pullReference(String reference, {String? registryId}) async {
+    if (!isDockerImageReference(reference)) {
+      _toast('请输入有效的镜像引用');
+      return;
+    }
     try {
       final json = await _api.postJson('/api/v1/docker/images/pull', {
         'reference': reference,
-        if (registryId != null && registryId.isNotEmpty) 'registry_id': registryId,
+        if (registryId != null && registryId.isNotEmpty)
+          'registry_id': registryId,
       });
       final map = json as Map<String, dynamic>? ?? const {};
       final jobId = map['job_id'] as String?;
@@ -132,17 +137,15 @@ class _ImagesSectionState extends State<ImagesSection> {
   }
 
   Future<void> _tag(DockerImage image) async {
-    final target = await textInputDialog(
-      context,
-      title: '镜像标签',
-      label: '新引用',
-      initial: image.reference,
+    final request = await showDialog<({String source, String target})>(
+      context: context,
+      builder: (_) => _ImageTagDialog(image: image),
     );
-    if (target == null || target.trim().isEmpty) return;
+    if (request == null || !mounted) return;
     try {
       await _api.postJson('/api/v1/docker/images/tag', {
-        'source': image.reference,
-        'target': target.trim(),
+        'source': request.source,
+        'target': request.target,
       });
       await _load();
     } catch (error) {
@@ -284,7 +287,10 @@ class _ImagesSectionState extends State<ImagesSection> {
       builder: (context) => _SearchDialog(api: _api, registries: _registries),
     );
     if (reference != null) {
-      await _pullReference(reference.reference, registryId: reference.registryId);
+      await _pullReference(
+        reference.reference,
+        registryId: reference.registryId,
+      );
     }
   }
 
@@ -381,9 +387,7 @@ class _ImagesSectionState extends State<ImagesSection> {
               title: '镜像管理',
               subtitle: '${_images.length} 个镜像 · ${_registries.length} 个源',
               actions: compact
-                  ? [
-                      PageRefreshButton(onPressed: _load),
-                    ]
+                  ? [PageRefreshButton(onPressed: _load)]
                   : [
                       FilledButton.icon(
                         onPressed: _pull,
@@ -414,18 +418,12 @@ class _ImagesSectionState extends State<ImagesSection> {
                           if (value == 'cache') _pruneCache();
                         },
                         itemBuilder: (context) => const [
-                          PopupMenuItem(
-                            value: 'prune',
-                            child: Text('清理悬空镜像'),
-                          ),
+                          PopupMenuItem(value: 'prune', child: Text('清理悬空镜像')),
                           PopupMenuItem(
                             value: 'prune-all',
                             child: Text('清理未使用镜像'),
                           ),
-                          PopupMenuItem(
-                            value: 'cache',
-                            child: Text('清理构建缓存'),
-                          ),
+                          PopupMenuItem(value: 'cache', child: Text('清理构建缓存')),
                         ],
                       ),
                       PageRefreshButton(onPressed: _load),
@@ -495,6 +493,78 @@ class _ImagesSectionState extends State<ImagesSection> {
   }
 }
 
+class _ImageTagDialog extends StatefulWidget {
+  const _ImageTagDialog({required this.image});
+
+  final DockerImage image;
+
+  @override
+  State<_ImageTagDialog> createState() => _ImageTagDialogState();
+}
+
+class _ImageTagDialogState extends State<_ImageTagDialog> {
+  final _form = GlobalKey<FormState>();
+  late final _source = TextEditingController(text: widget.image.reference);
+  late final _target = TextEditingController(text: widget.image.tagTarget);
+
+  @override
+  void dispose() {
+    _source.dispose();
+    _target.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('镜像标签'),
+      content: Form(
+        key: _form,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextFormField(
+              controller: _source,
+              decoration: const InputDecoration(labelText: '源引用'),
+              validator: (value) => isDockerImageReference(value ?? '')
+                  ? null
+                  : '请输入有效的源引用',
+            ),
+            TextFormField(
+              controller: _target,
+              decoration: const InputDecoration(labelText: '新引用'),
+              validator: (value) {
+                final target = value!.trim();
+                if (!isDockerImageReference(target) ||
+                    target.contains('@')) {
+                  return '请输入镜像名称或名称:标签';
+                }
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            if (!_form.currentState!.validate()) return;
+            Navigator.of(context).pop((
+              source: _source.text.trim(),
+              target: _target.text.trim(),
+            ));
+          },
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
+}
+
 class _ImageCard extends StatelessWidget {
   const _ImageCard({
     required this.image,
@@ -538,136 +608,79 @@ class _ImageCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 700;
-        final icon = Icon(
-          Icons.layers_outlined,
-          size: 20,
-          color: image.inUse ? hampanelAccent : hampanelMuted,
-        );
-        final identity = Column(
+    final icon = Icon(
+      Icons.layers_outlined,
+      size: 20,
+      color: image.inUse ? hampanelAccent : hampanelMuted,
+    );
+    final identity = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          image.reference,
+
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          image.digest.isEmpty ? image.id : '${image.id} · ${image.digest}',
+
+          style: monospace.copyWith(fontSize: 10.5),
+        ),
+      ],
+    );
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              image.reference,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              image.digest.isEmpty
-                  ? image.id
-                  : '${image.id} · ${image.digest}',
-              overflow: TextOverflow.ellipsis,
-              style: monospace.copyWith(fontSize: 10.5),
-            ),
-          ],
-        );
-        if (compact) {
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      icon,
-                      const SizedBox(width: 10),
-                      Expanded(child: identity),
-                      IconButton(
-                        tooltip: '更新',
-                        visualDensity: VisualDensity.compact,
-                        onPressed: onUpdate,
-                        icon: const Icon(Icons.sync, size: 18),
-                      ),
-                      _menu(),
-                    ],
-                  ),
-                  const SizedBox(height: 7),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 3,
-                    children: [
-                      Text(
-                        image.size,
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          color: hampanelMuted,
-                        ),
-                      ),
-                      Text(
-                        image.inUse ? image.usedBy.join(', ') : '未使用',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          color: image.inUse
-                              ? hampanelAccent
-                              : hampanelMuted,
-                        ),
-                      ),
-                      Text(
-                        image.createdAt,
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          color: hampanelMuted,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
+            Row(
               children: [
                 icon,
-                const SizedBox(width: 12),
-                Expanded(flex: 3, child: identity),
-                SizedBox(
-                  width: 90,
-                  child: Text(
-                    image.size,
-                    style: TextStyle(fontSize: 11, color: hampanelMuted),
+                const SizedBox(width: 10),
+                Expanded(child: identity),
+              ],
+            ),
+            const SizedBox(height: 7),
+            Wrap(
+              spacing: 12,
+              runSpacing: 3,
+              children: [
+                Text(
+                  image.size,
+                  style: TextStyle(fontSize: 10.5, color: hampanelMuted),
+                ),
+                Text(
+                  image.inUse ? image.usedBy.join(', ') : '未使用',
+
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: image.inUse ? hampanelAccent : hampanelMuted,
                   ),
                 ),
-                SizedBox(
-                  width: 140,
-                  child: Text(
-                    image.inUse ? image.usedBy.join(', ') : '未使用',
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: image.inUse ? hampanelAccent : hampanelMuted,
-                    ),
-                  ),
+                Text(
+                  image.createdAt,
+                  style: TextStyle(fontSize: 10.5, color: hampanelMuted),
                 ),
-                SizedBox(
-                  width: 150,
-                  child: Text(
-                    image.createdAt,
-                    style: TextStyle(fontSize: 10.5, color: hampanelMuted),
-                  ),
-                ),
+              ],
+            ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
                 IconButton(
                   tooltip: '更新',
+                  visualDensity: VisualDensity.compact,
                   onPressed: onUpdate,
-                  icon: const Icon(Icons.sync, size: 17),
+                  icon: const Icon(Icons.sync, size: 18),
                 ),
                 _menu(),
               ],
             ),
-          ),
-        );
-      },
+          ],
+        ),
+      ),
     );
   }
 }
@@ -825,8 +838,10 @@ class _SearchDialogState extends State<_SearchDialog> {
                                 color: hampanelMuted,
                               ),
                             ),
-                            onTap: () =>
-                                Navigator.pop(context, (reference: '$_source/${result.name}:latest', registryId: _resultRegistryId)),
+                            onTap: () => Navigator.pop(context, (
+                              reference: '$_source/${result.name}:latest',
+                              registryId: _resultRegistryId,
+                            )),
                           ),
                         for (final repository in _repositories)
                           ListTile(
@@ -836,7 +851,10 @@ class _SearchDialogState extends State<_SearchDialog> {
                               size: 18,
                             ),
                             title: Text(repository),
-                            onTap: () => Navigator.pop(context, (reference: repository, registryId: _resultRegistryId)),
+                            onTap: () => Navigator.pop(context, (
+                              reference: repository,
+                              registryId: _resultRegistryId,
+                            )),
                           ),
                       ],
                     ),
@@ -990,7 +1008,13 @@ class _BuildDialogState extends State<_BuildDialog> {
         ),
         FilledButton(
           onPressed: () {
-            if (_tag.text.trim().isEmpty) return;
+            if (!isDockerImageReference(_tag.text)) {
+              showAppSnackBar(
+                context,
+                const SnackBar(content: Text('请输入有效的镜像引用')),
+              );
+              return;
+            }
             Navigator.pop(
               context,
               _BuildRequest(

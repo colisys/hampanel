@@ -226,16 +226,17 @@ class _LogViewerState extends State<LogViewer> {
     );
   }
 
-  Widget _searchField() {
+  Widget _searchField(double height) {
     return SizedBox(
-      height: 34,
+      height: height,
       child: TextField(
         controller: _queryController,
         onChanged: _activeFilter.setQuery,
         style: const TextStyle(fontSize: 12),
+        textAlignVertical: TextAlignVertical.center,
         decoration: const InputDecoration(
           isDense: true,
-          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           prefixIcon: Icon(Icons.search, size: 18),
           labelText: '筛选内容',
           border: OutlineInputBorder(),
@@ -260,81 +261,94 @@ class _LogViewerState extends State<LogViewer> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: hampanelSurface,
-            border: Border.all(color: hampanelBorder),
-          ),
-          child: widget.compactFilters
-              ? Row(
-                  children: [
-                    Expanded(child: _searchField()),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: widget.onAdvancedFilter,
-                      icon: const Icon(Icons.tune, size: 16),
-                      label: Text(
-                        _activeFilter.activeCount == 0
-                            ? '高级筛选'
-                            : '高级筛选 · ${_activeFilter.activeCount}',
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: '复制当前筛选结果',
-                      onPressed: visible.isEmpty ? null : _copyVisible,
-                      icon: const Icon(Icons.copy_all_outlined, size: 17),
-                    ),
-                    if (widget.truncated)
-                      Text(
-                        '已截断',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          color: hampanelWarning,
-                        ),
-                      ),
-                  ],
-                )
-              : Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    SizedBox(width: 240, child: _searchField()),
-                    for (final severity in LogSeverity.values)
-                      _severityChip(severity),
-                    OutlinedButton.icon(
-                      onPressed: _pickRange,
-                      icon: const Icon(Icons.date_range, size: 16),
-                      label: Text(
-                        _activeFilter.range == null
-                            ? '时间范围'
-                            : '${formatTimestamp(_activeFilter.range!.start.toIso8601String()).substring(0, 10)}'
-                                  ' ~ '
-                                  '${formatTimestamp(_activeFilter.range!.end.toIso8601String()).substring(0, 10)}',
-                      ),
-                    ),
-                    if (_activeFilter.range != null)
-                      IconButton(
-                        tooltip: '清除时间范围',
-                        onPressed: () => _activeFilter.setRange(null),
-                        icon: const Icon(Icons.close, size: 16),
-                      ),
-                    IconButton(
-                      tooltip: '复制当前筛选结果',
-                      onPressed: visible.isEmpty ? null : _copyVisible,
-                      icon: const Icon(Icons.copy_all_outlined, size: 17),
-                    ),
-                    if (widget.truncated)
-                      Text(
-                        '已截断',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          color: hampanelWarning,
-                        ),
-                      ),
-                  ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final textHeight = MediaQuery.textScalerOf(context).scale(14);
+            final height = 48.0 + (textHeight > 14 ? textHeight - 14 : 0);
+            final inlineWidth = 360 * (textHeight > 14 ? textHeight / 14 : 1);
+            final copy = IconButton(
+              tooltip: '复制当前筛选结果',
+              onPressed: visible.isEmpty ? null : _copyVisible,
+              icon: const Icon(Icons.copy_all_outlined, size: 17),
+            );
+            final truncated = Text(
+              '已截断',
+              style: TextStyle(fontSize: 10.5, color: hampanelWarning),
+            );
+            if (widget.compactFilters) {
+              final advanced = SizedBox(
+                height: height,
+                child: OutlinedButton.icon(
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.standard,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: widget.onAdvancedFilter,
+                  icon: const Icon(Icons.tune, size: 16),
+                  label: Text(
+                    _activeFilter.activeCount == 0
+                        ? '高级筛选'
+                        : '高级筛选 · ${_activeFilter.activeCount}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
+              );
+              if (constraints.maxWidth >= inlineWidth) {
+                return Row(
+                  children: [
+                    Expanded(child: _searchField(height)),
+                    const SizedBox(width: 8),
+                    advanced,
+                    copy,
+                    if (widget.truncated) truncated,
+                  ],
+                );
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _searchField(height),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [advanced, copy, if (widget.truncated) truncated],
+                  ),
+                ],
+              );
+            }
+            return Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(width: 240, child: _searchField(height)),
+                for (final severity in LogSeverity.values)
+                  _severityChip(severity),
+                OutlinedButton.icon(
+                  onPressed: _pickRange,
+                  icon: const Icon(Icons.date_range, size: 16),
+                  label: Text(
+                    _activeFilter.range == null
+                        ? '时间范围'
+                        : '${formatTimestamp(_activeFilter.range!.start.toIso8601String()).substring(0, 10)}'
+                              ' ~ '
+                              '${formatTimestamp(_activeFilter.range!.end.toIso8601String()).substring(0, 10)}',
+                  ),
+                ),
+                if (_activeFilter.range != null)
+                  IconButton(
+                    tooltip: '清除时间范围',
+                    onPressed: () => _activeFilter.setRange(null),
+                    icon: const Icon(Icons.close, size: 16),
+                  ),
+                copy,
+                if (widget.truncated) truncated,
+              ],
+            );
+          },
         ),
         if (widget.path != null)
           Padding(

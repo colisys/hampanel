@@ -2,7 +2,7 @@
 """Isolated mTLS API regression. Run only through api_regression_isolate.sh.
 Every registered route appears in matrix.json; absent scenarios are NOT coverage.
 """
-import http.client, json, os, pathlib, re, ssl, subprocess, time, urllib.parse
+import base64, http.client, json, os, pathlib, re, ssl, subprocess, time, urllib.parse
 ROOT = pathlib.Path('/work')
 assert os.environ.get('HAMPANEL_ISOLATED') == '1' and ROOT.is_dir()
 OUT = ROOT / 'reports'; OUT.mkdir(exist_ok=True)
@@ -50,9 +50,8 @@ try:
     check('GET','/api/v1/files/content','/api/v1/files/content?path=%2Fwork%2Fabsent',404,scenario='missing')
     check('PUT','/api/v1/files/content','/api/v1/files/content',200,{'path':str(fixture),'content':'short'})
     check('GET','/api/v1/files/content','/api/v1/files/content?'+urllib.parse.urlencode({'path':str(fixture)}),200,predicate=lambda d:d['content']=='short' and not d['truncated'],scenario='write-roundtrip')
-    for route in ['/docker/containers','/docker/images','/docker/info','/sites/reload']:
-        method='POST' if route=='/sites/reload' else 'GET'
-        check(method,'/api/v1'+route,'/api/v1'+route,502,scenario='dependency-failure')
+    for route in ['/docker/containers','/docker/images','/docker/info']:
+        check('GET','/api/v1'+route,'/api/v1'+route,502,scenario='dependency-failure')
     check('GET','/api/v1/docker/jobs/:id','/api/v1/docker/jobs/missing',404,scenario='missing')
     # Switch from fail-closed dependencies to the persistent engine double.
     for name in ('docker', 'podman'):
@@ -61,6 +60,57 @@ try:
         full='/api/v1'+suffix
         check(method, '/api/v1'+(route or suffix.split('?')[0]), full, expected, body, predicate, scenario)
         return results[-1].get('response', {})
+    def task(kind, params=None, error=None, output=None):
+        scenario=kind+(':'+error if error else '')
+        submitted=test('POST','/tasks',{'kind':kind,'params':params or {}},202,
+                       lambda d:d['task']['kind']==kind and bool(d['task']['id']),scenario=scenario)
+        tid=submitted.get('task',{}).get('id')
+        if not tid:
+            return None
+        path='/tasks/'+tid
+        deadline=time.monotonic()+10
+        while time.monotonic()<deadline:
+            status,detail=call('GET','/api/v1'+path)
+            if status!=200 or detail.get('status') in ('succeeded','failed','canceled','interrupted'):
+                break
+            time.sleep(.05)
+        test('GET',path,route='/tasks/:id',scenario=scenario,
+             predicate=lambda d:d['id']==tid and d['kind']==kind
+             and d['status']==('failed' if error else 'succeeded') and d['error']==(error or '')
+             and (output is None or output in d['output']))
+        return tid
+
+    def sse(path, route, event, predicate):
+        conn=http.client.HTTPSConnection(config['listen'],18443,context=ctx,timeout=5)
+        try:
+            conn.request('GET','/regression/api/v1'+path)
+            resp=conn.getresponse()
+            name, payload = b'', None
+            if resp.status==200 and resp.getheader('Content-Type','').startswith('text/event-stream'):
+                for _ in range(32):
+                    line=resp.readline(65536)
+                    if not line: break
+                    if line.startswith(b'event:'): name=line[6:].strip()
+                    if line.startswith(b'data:') and name==event:
+                        payload=json.loads(line[5:]); break
+            results.append(dict(method='GET',route='/api/v1'+route,scenario='success',status=resp.status,
+                                expected=200,passed=payload is not None and bool(predicate(payload)),response=payload))
+        except Exception as e:
+            results.append(dict(method='GET',route='/api/v1'+route,scenario='success',passed=False,error=str(e)))
+        finally:
+            conn.close()
+
+    tid=task('sites.reload',error='SitesReloadFailed',output='fake dependency unavailable')
+    if tid:
+        path='/tasks/'+tid
+        has_task=lambda d:any(t['id']==tid and t['status']=='failed' for t in d['tasks'])
+        test('GET','/tasks',predicate=has_task)
+        sse('/tasks/events','/tasks/events',b'snapshot',has_task)
+        sse(path+'/events','/tasks/:id/events',b'output',
+            lambda d:d['offset']==0 and b'fake dependency unavailable' in base64.b64decode(d['data']))
+        test('POST',path+'/cancel',expected=409,route='/tasks/:id/cancel',predicate=lambda d:d['code']=='not_running')
+        test('DELETE',path,route='/tasks/:id',predicate=lambda d:d['ok'])
+        test('GET',path,expected=404,route='/tasks/:id',predicate=lambda d:d['code']=='not_found',scenario='missing')
     for suffix in ('/docker/info','/docker/overview','/docker/containers','/docker/images','/docker/networks','/docker/volumes'):
         test('GET',suffix)
     test('POST','/docker/test-connection',predicate=lambda d:d['ok'])
@@ -107,27 +157,35 @@ try:
     test('POST','/files/mkdir',{'path':'/work/lifecycle'})
     test('PUT','/files/content',{'path':'/work/lifecycle/a','content':'roundtrip'})
     test('GET','/files?path=/work/lifecycle',predicate=lambda d:any(x['name']=='a' for x in d['entries']))
+    test('GET','/files/meta?path=/work/lifecycle/a',predicate=lambda d:d['size']==9 and d['owner']=='root')
+    test('GET','/files/accounts',predicate=lambda d:d['users']==[{'id':0,'name':'root'}] and d['groups']==[{'id':0,'name':'root'}])
+    test('POST','/files/permissions',{'path':'/work/lifecycle/a','mode':0o640},predicate=lambda d:d['ok'])
+    test('GET','/files/meta?path=/work/lifecycle/a',predicate=lambda d:d['mode_bits']==0o640)
     test('POST','/files/rename',{'from':'/work/lifecycle/a','to':'/work/lifecycle/b'})
     test('GET','/files/content?path=/work/lifecycle/b',predicate=lambda d:d['content']=='roundtrip')
     test('POST','/files/delete',{'paths':['/work/lifecycle/b']},predicate=lambda d:d['results'][0]['ok'])
     test('GET','/files/content?path=/work/lifecycle/b',expected=404,scenario='missing')
     for suffix in ('/runtimes','/runtimes/catalog','/docker/settings','/sites','/processes','/logs/sources','/audit','/store/apps','/store/packages','/store/nix','/software','/recycle','/notifications'):
         test('GET',suffix)
-    runtime=test('POST','/runtimes',{'name':'regression-runtime','runtime':'php'},predicate=lambda d:d['ok'])
-    if runtime.get('environment'):
-        rid=runtime['environment']['id']; prefix='/runtimes/'+rid
-        for suffix in ('/logs','/config','/extensions'):
-            data=test('GET',prefix+suffix,route='/runtimes/:id'+suffix)
-            if suffix=='/config' and data.get('files'):
-                file=data['files'][0]
-                test('PUT',prefix+suffix,{'file':file['path'],'content':file['content']+'\n; regression\n'},route='/runtimes/:id/config',predicate=lambda d:d['ok'])
-                test('GET',prefix+suffix,route='/runtimes/:id/config',predicate=lambda d:any('; regression' in f['content'] for f in d['files']))
+    task('runtime.create',{'name':'regression-runtime','runtime':'php'})
+    runtime=test('GET','/runtimes',predicate=lambda d:any(e['name']=='regression-runtime' for e in d['environments']))
+    env=next((e for e in runtime.get('environments',[]) if e['name']=='regression-runtime'),None)
+    if env:
+        rid=env['id']; prefix='/runtimes/'+rid
+        test('GET',prefix+'/logs',route='/runtimes/:id/logs')
+        test('GET',prefix+'/extensions',route='/runtimes/:id/extensions')
+        data=test('GET',prefix+'/config',route='/runtimes/:id/config',predicate=lambda d:bool(d['files']))
+        if data.get('files'):
+            file=data['files'][0]
+            test('PUT',prefix+'/config',{'file':file['path'],'content':file['content']+'\n; regression\n'},route='/runtimes/:id/config',predicate=lambda d:d['ok'])
+            test('GET',prefix+'/config',route='/runtimes/:id/config',predicate=lambda d:any('; regression' in f['content'] for f in d['files']))
         for method,suffix in [('GET',''),('POST','/app/start')]:
             test(method,prefix+'/processes'+suffix,route='/runtimes/:id/processes'+('/:name/:action' if suffix else ''),predicate=lambda d:d['ok'] and 'app' in d['output'])
-        for action in ('stop','start','restart','rebuild'):
-            test('POST',prefix+'/'+action,route='/runtimes/:id/'+action,predicate=lambda d:d['ok'])
-        test('PUT',prefix+'/extensions',{'extensions':[]},route='/runtimes/:id/extensions',predicate=lambda d:d['ok'])
-        test('DELETE',prefix,route='/runtimes/:id',predicate=lambda d:d['removed'])
+        for action in ('stop','start','restart'):
+            task('runtime.action',{'id':rid,'action':action})
+        task('runtime.rebuild',{'id':rid})
+        task('runtime.extensions',{'id':rid,'extensions':[]})
+        task('runtime.action',{'id':rid,'action':'remove'})
         test('GET',prefix+'/extensions',route='/runtimes/:id/extensions',expected=404,scenario='missing')
     # Persisted file versions and recycle operations use the real daemon/filesystem.
     test('GET','/files/download?path=/work/lifecycle',expected=400,scenario='invalid')
@@ -160,9 +218,9 @@ try:
     test('GET','/ssh/keys',predicate=lambda d:not d['keys'])
     for suffix in ('/host/hosts','/notifications'):
         test('PUT',suffix,{'content':'\u0000'} if suffix=='/host/hosts' else {'ntfy_enabled':True},400,scenario='invalid')
-    test('POST','/host/ntp',{'enabled':True},expected=501,scenario='unsupported')
-    test('POST','/host/grub',{'index':0},expected=409,scenario='missing')
-    test('POST','/waf/install',expected=501,scenario='unsupported')
+    task('host.change',{'op':'ntp','enabled':True},error='TimeSyncUnavailable')
+    task('host.change',{'op':'grub','index':0},error='GrubUnavailable')
+    task('waf.install',error='GoUnavailable')
     test('POST','/waf/typesafe/key',{'api_key':'isolated-fixture-key'},expected=501,scenario='unsupported')
     test('DELETE','/waf/typesafe/key')
     test('GET','/docker/images/search?term=alpine',predicate=lambda d:d['results'][0]['name']=='alpine')
@@ -189,8 +247,8 @@ try:
         test(method,path,body,status,lambda d:d.get('code')==code,route,
              {400:'invalid',404:'missing',409:'configuration-conflict',501:'unsupported',502:'dependency-failure'}[status])
     test('POST','/update/check',predicate=lambda d:d['current_version'] and not d['update_available'])
-    for suffix in ('apply','schedule'):
-        reject('POST','/update/'+suffix,'/update/'+suffix,409,'update_disabled')
+    task('update.apply',error='UpdateDisabled')
+    reject('POST','/update/schedule','/update/schedule',409,'update_disabled')
     test('GET','/logs/tail?source=audit&lines=2',predicate=lambda d:d['path']=='sqlite:audit_log' and len(d['entries'])<=2)
     child=subprocess.Popen(['/usr/bin/python3','-c','import time; time.sleep(60)'])
     try:
@@ -205,9 +263,19 @@ try:
     adopt=ROOT/'compose.yaml'; adopt.write_text(yaml)
     test('POST','/docker/compose/adopt',{'name':'adopted','config_files':[str(adopt)]},201,lambda d:d['adopted'] and d['managed'])
     slug='/store/apps/nginx'; template='/store/apps/:slug'
-    for method,suffix in [('GET',''),('POST','/deploy'),('POST','/stop'),('POST','/start'),('GET','/logs'),('DELETE','')]:
-        test(method,slug+suffix,route=template+suffix,predicate=lambda d:d['app']['slug']=='nginx' if 'app' in d else d['ok'])
-    for suffix in ('/host/swap','/host/swap-device','/ssh/config','/waf/config','/fail2ban/config'):
+    test('GET',slug,route=template,predicate=lambda d:d['app']['slug']=='nginx')
+    task('store.deploy',{'slug':'nginx'})
+    for action in ('stop','start'):
+        task('store.app',{'slug':'nginx','action':action})
+    test('GET',slug+'/logs',route=template+'/logs',predicate=lambda d:d['ok'] and 'compose fixture success' in d['output'])
+    task('store.app',{'slug':'nginx','action':'remove'})
+    task('host.change',{'op':'swap','size_mb':1},error='InvalidSize')
+    task('host.change',{'op':'swap-device'},error='InvalidParams')
+    task('service.action',{'unit':'fixture.service','action':'unknown'},error='InvalidParams')
+    task('software.initialize',{'id':'missing'},error='UnknownSoftware')
+    task('package.custom',error='InvalidParams')
+    task('package.install',{'id':'missing'},error='UnknownTool')
+    for suffix in ('/ssh/config','/waf/config','/fail2ban/config'):
         reject('POST',suffix,suffix,400,'bad_request',{})
     for suffix in ('ban','unban'):
         path='/fail2ban/'+suffix; reject('POST',path,path,400,'bad_request',{'jail':'sshd'})
@@ -217,19 +285,15 @@ try:
         ('POST','/cron/delete','/cron/delete',400,'bad_id',{'id':''}),
         ('POST','/firewall/rules','/firewall/rules',400,'bad_port',{'port':'abc'}),
         ('POST','/firewall/rules/delete','/firewall/rules/delete',400,'bad_id',{'id':''}),
-        ('POST','/services/:name/:action','/services/fixture.service/unknown',400,'bad_action',None),
         ('PUT','/services/:name/config','/services/fixture.service/config',400,'bad_request',{}),
         ('GET','/runtimes/catalog/:runtime/tags','/runtimes/catalog/missing/tags',404,'not_found',None),
-        ('POST','/software/:id/initialize','/software/missing/initialize',404,'unknown_software',None),
-        ('POST','/store/packages/custom','/store/packages/custom',400,'bad_request',{}),
-        ('POST','/store/packages/:id/install','/store/packages/missing/install',404,'unknown_tool',None),
     ]: reject(method,route,path,status,code,body)
     for method,suffix,body in [('GET','',None),('DELETE','',None),('POST','/toggle',{'enabled':False}),('POST','/certificate',None),('POST','/basic-auth',{'users':[]}),('GET','/logs',None)]:
         reject(method,'/sites/:name'+suffix,'/sites/missing'+suffix,404,'not_found',body)
-    reject('POST','/waf/start','/waf/start',409,'not_installed')
-    test('POST','/waf/stop',predicate=lambda d:d['ok'])
-    for suffix in ('build','run'):
-        test('POST','/store/nix/'+suffix,{'target':'hello'},502,lambda d:not d['ok'] and 'fake dependency unavailable' in d['output'],scenario='dependency-failure')
+    task('waf.start',error='NotInstalled')
+    task('waf.stop')
+    for action in ('build','run'):
+        task('nix.'+action,{'target':'hello'},error='Nix'+action.title()+'Failed',output='fake dependency unavailable')
     import io, tarfile
     archive=io.BytesIO()
     with tarfile.open(fileobj=archive,mode='w') as tar:
@@ -238,8 +302,8 @@ try:
     await_job(test('POST','/docker/images/build/upload?tag=fixture:uploaded',archive.getvalue(),202))
     test('DELETE','/update/schedule',predicate=lambda d:d['ok'] and not d['scheduled'])
     reject('PUT','/docker/settings','/docker/settings',501,'unsupported',{'restart':False,'experimental':True})
-    reject('POST','/docker/restart','/docker/restart',501,'unsupported')
-    test('POST','/store/packages/refresh',expected=502,predicate=lambda d:not d['ok'],scenario='dependency-failure')
+    reject('POST','/docker/restart','/docker/restart',409,'engine_endpoint_unknown')
+    task('package.refresh',error='PackageRefreshFailed',output='fake dependency unavailable')
     reject('GET','/services','/services',502,'services_failed')
     reject('GET','/services/:name/config','/services/fixture.service/config',404,'not_found')
     reject('GET','/services/:name/logs','/services/fixture.service/logs',502,'logs_failed')
@@ -261,7 +325,7 @@ try:
     container_file('POST','/delete',{'paths':['/sample/b']},lambda d:d['results'][0]['ok'])
     container_file('GET','?path=/sample',predicate=lambda d:not d['entries'])
     # A real TLS + RFC6455 handshake (not a parameter-validation substitute).
-    import socket, base64, hashlib
+    import socket, hashlib
     for route,path in [('/api/v1/terminal/ws','/api/v1/terminal/ws'),('/api/v1/docker/containers/:id/terminal/ws','/api/v1/docker/containers/fixture/terminal/ws')]:
         try:
             with ctx.wrap_socket(socket.create_connection((config['listen'],18443),timeout=10),server_hostname=config['listen']) as ws:

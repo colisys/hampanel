@@ -113,7 +113,7 @@ pub fn isVolumeName(value: []const u8) bool {
 
 pub fn isImageRef(value: []const u8) bool {
     if (value.len == 0 or value.len > 255) return false;
-    if (value[0] == '-') return false;
+    if (value[0] == '-' or value[value.len - 1] == ':') return false;
     for (value) |ch| {
         if (std.ascii.isAlphanumeric(ch)) continue;
         if (std.mem.indexOfScalar(u8, "._/:@-+", ch) != null) continue;
@@ -141,6 +141,14 @@ pub fn isEnvKey(value: []const u8) bool {
     return true;
 }
 
+pub fn isLabelKey(value: []const u8) bool {
+    if (value.len == 0 or value.len > 255) return false;
+    for (value) |ch| {
+        if (!std.ascii.isAlphanumeric(ch) and ch != '.' and ch != '_' and ch != '-' and ch != '/') return false;
+    }
+    return true;
+}
+
 pub fn isEnvValue(value: []const u8) bool {
     if (value.len > 4096) return false;
     for (value) |ch| {
@@ -151,17 +159,32 @@ pub fn isEnvValue(value: []const u8) bool {
 
 pub fn isPortMapping(value: []const u8) bool {
     if (value.len == 0 or value.len > 64) return false;
-    var colons: usize = 0;
-    for (value) |ch| {
-        if (ch == ':') {
-            colons += 1;
-            continue;
-        }
-        if (std.ascii.isDigit(ch) or ch == '.' or ch == '-' or ch == '[' or ch == ']' or ch == '/') continue;
-        if (std.ascii.isAlphabetic(ch) and (ch == 't' or ch == 'c' or ch == 'p' or ch == 'u' or ch == 'd')) continue;
-        return false;
+    var mapping = value;
+    if (std.mem.indexOfScalar(u8, mapping, '/')) |split| {
+        const proto = mapping[split + 1 ..];
+        if (!std.mem.eql(u8, proto, "tcp") and !std.mem.eql(u8, proto, "udp") and !std.mem.eql(u8, proto, "sctp")) return false;
+        mapping = mapping[0..split];
     }
-    return colons >= 1;
+    if (std.mem.startsWith(u8, mapping, "[")) {
+        const end = std.mem.indexOf(u8, mapping, "]:") orelse return false;
+        _ = std.Io.net.IpAddress.parseIp6(mapping[1..end], 0) catch return false;
+        mapping = mapping[end + 2 ..];
+    } else if (std.mem.count(u8, mapping, ":") == 2) {
+        const end = std.mem.indexOfScalar(u8, mapping, ':').?;
+        _ = std.Io.net.IpAddress.parseIp4(mapping[0..end], 0) catch return false;
+        mapping = mapping[end + 1 ..];
+    }
+    const split = std.mem.indexOfScalar(u8, mapping, ':') orelse return false;
+    return (split == 0 or validPortRange(mapping[0..split])) and validPortRange(mapping[split + 1 ..]);
+}
+
+fn validPortRange(value: []const u8) bool {
+    var parts = std.mem.splitScalar(u8, value, '-');
+    const first = std.fmt.parseUnsigned(u16, parts.next().?, 10) catch return false;
+    if (first == 0) return false;
+    const end = parts.next() orelse return true;
+    const last = std.fmt.parseUnsigned(u16, end, 10) catch return false;
+    return last >= first and parts.next() == null;
 }
 
 pub fn isMountSpec(value: []const u8) bool {
@@ -210,4 +233,25 @@ test "docker management validators" {
     try std.testing.expect(isMountSpec("/data:/data:ro"));
     try std.testing.expect(isImageRef("nginx:alpine"));
     try std.testing.expect(isImageRef("sha256:abc123"));
+}
+
+test "published port mappings" {
+    for ([_][]const u8{ "[fd00::ab]:8080:80/tcp", ":53/udp", "127.0.0.1:100-110:200-210/sctp" }) |spec| try std.testing.expect(isPortMapping(spec));
+    for ([_][]const u8{ "65536:80", "80:0", "[bad]:1:2", "80:80/other" }) |spec| try std.testing.expect(!isPortMapping(spec));
+}
+
+test "container labels accept namespaced keys" {
+    try std.testing.expect(isLabelKey("org.opencontainers.image.title"));
+    try std.testing.expect(isLabelKey("io.example/team"));
+    try std.testing.expect(!isLabelKey("bad key"));
+    try std.testing.expect(!isLabelKey("key=value"));
+}
+
+test "image references reject a dangling colon and preserve ports and digests" {
+    for ([_][]const u8{ "nginx:", "registry:5000/team/app:", "app@sha256:" }) |ref| {
+        try std.testing.expect(!isImageRef(ref));
+    }
+    for ([_][]const u8{ "registry:5000/team/app", "registry:5000/team/app:v1", "registry:5000/team/app@sha256:abc" }) |ref| {
+        try std.testing.expect(isImageRef(ref));
+    }
 }

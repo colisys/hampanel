@@ -239,7 +239,9 @@ class _HostCard extends StatelessWidget {
           _detail('客户端 CN', enrollment.clientCn),
           _detail('CA 指纹', enrollment.caSha256),
           const SizedBox(height: 12),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
             children: [
               if (!active)
                 OutlinedButton.icon(
@@ -247,13 +249,13 @@ class _HostCard extends StatelessWidget {
                   icon: const Icon(Icons.swap_horiz, size: 15),
                   label: const Text('设为当前'),
                 ),
-              if (!active) const SizedBox(width: 10),
+
               OutlinedButton.icon(
                 onPressed: busy ? null : onEdit,
                 icon: const Icon(Icons.edit_outlined, size: 15),
                 label: const Text('编辑'),
               ),
-              const Spacer(),
+
               IconButton(
                 tooltip: '删除',
                 onPressed: busy ? null : onDelete,
@@ -283,7 +285,7 @@ class _HostCard extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              overflow: TextOverflow.ellipsis,
+
               style: TextStyle(
                 fontFamily: 'DejaVu Sans Mono',
                 fontSize: 11.5,

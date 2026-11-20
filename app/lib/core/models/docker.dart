@@ -233,6 +233,8 @@ class DockerContainerDetail {
     this.privileged = false,
     this.dns = const [],
     this.addHosts = const [],
+    this.ip = '',
+    this.macAddress = '',
   });
 
   final String id;
@@ -265,6 +267,8 @@ class DockerContainerDetail {
   final bool privileged;
   final List<String> dns;
   final List<String> addHosts;
+  final String ip;
+  final String macAddress;
 
   factory DockerContainerDetail.fromJson(Map<String, dynamic> json) =>
       DockerContainerDetail(
@@ -316,6 +320,8 @@ class DockerContainerDetail {
         dns: ((json['dns'] as List<dynamic>?) ?? const [])
             .whereType<String>()
             .toList(),
+        ip: json['ip'] as String? ?? '',
+        macAddress: json['mac_address'] as String? ?? '',
         addHosts: ((json['add_hosts'] as List<dynamic>?) ?? const [])
             .whereType<String>()
             .toList(),
@@ -454,6 +460,12 @@ class DockerJob {
   );
 }
 
+/// Basic UI check; the container engine validates the full reference syntax.
+bool isDockerImageReference(String value) {
+  final reference = value.trim();
+  return reference.isNotEmpty && !reference.endsWith(':');
+}
+
 class DockerImage {
   const DockerImage({
     required this.id,
@@ -477,9 +489,17 @@ class DockerImage {
   final bool inUse;
   final List<String> usedBy;
 
-  String get reference => repository == '<none>'
-      ? id
-      : '$repository:${tag == '<none>' ? 'latest' : tag}';
+  bool get _hasRepository => repository.isNotEmpty && repository != '<none>';
+
+  String get reference {
+    if (!_hasRepository) return id;
+    if (repository.contains('@') || tag.isEmpty || tag == '<none>') {
+      return repository;
+    }
+    return '$repository:$tag';
+  }
+
+  String get tagTarget => _hasRepository ? reference.split('@').first : '';
 
   factory DockerImage.fromJson(Map<String, dynamic> json) => DockerImage(
     id: json['id'] as String? ?? '',

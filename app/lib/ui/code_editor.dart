@@ -64,6 +64,8 @@ class CodeEditorPaneState extends State<CodeEditorPane> {
   late final re.CodeLineEditingController _controller;
   late final re.CodeFindController _findController;
 
+  CodeLanguage? _languageOverride;
+
   String get text => _controller.text;
 
   @override
@@ -87,13 +89,16 @@ class CodeEditorPaneState extends State<CodeEditorPane> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = _themeFor(widget.language);
+    final language = _languageOverride ?? widget.language;
+    final theme = _themeFor(language);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (widget.showToolbar)
           Container(
-            height: _editorToolbarHeight,
+            constraints: const BoxConstraints(
+              minHeight: _editorToolbarHeight,
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 4),
             decoration: BoxDecoration(
               color: hampanelSurfaceAlt,
@@ -103,25 +108,56 @@ class CodeEditorPaneState extends State<CodeEditorPane> {
             ),
             child: Row(
               children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Text(
-                    widget.language.label,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.6,
-                      color: hampanelMuted,
+                Expanded(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: PopupMenuButton<({CodeLanguage? language})>(
+                      tooltip: '语法高亮',
+                      requestFocus: false,
+                      initialValue: (language: _languageOverride),
+                      onSelected: (choice) =>
+                          setState(() => _languageOverride = choice.language),
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: (language: null),
+                          child: Text('自动 · ${widget.language.label}'),
+                        ),
+                        for (final option in CodeLanguage.values)
+                          PopupMenuItem(
+                            value: (language: option),
+                            child: Text(option.label),
+                          ),
+                      ],
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 12,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                _languageOverride == null
+                                    ? '自动 · ${language.label}'
+                                    : language.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const Icon(Icons.arrow_drop_down, size: 18),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
-                const Spacer(),
                 IconButton(
                   tooltip: '搜索',
                   onPressed: _search,
                   icon: const Icon(Icons.search, size: 18),
                 ),
-                if (widget.onSave != null)
+                if (!widget.readOnly && widget.onSave != null)
                   Padding(
                     padding: const EdgeInsets.only(right: 4),
                     child: FilledButton.icon(
@@ -167,7 +203,7 @@ class CodeEditorPaneState extends State<CodeEditorPane> {
             leadingDivider: Container(width: 1, color: hampanelBorder),
             findBuilder: (context, controller, readOnly) =>
                 _FindPanel(controller: controller, readOnly: readOnly),
-            toolbarController: const _SelectionToolbar(),
+            toolbarController: _SelectionToolbar(readOnly: widget.readOnly),
             onChanged: (_) => widget.onChanged?.call(_controller.text),
           ),
         ),
@@ -513,7 +549,9 @@ class _FindButton extends StatelessWidget {
 }
 
 class _SelectionToolbar implements re.SelectionToolbarController {
-  const _SelectionToolbar();
+  const _SelectionToolbar({required this.readOnly});
+
+  final bool readOnly;
 
   @override
   void hide(BuildContext context) {}
@@ -539,9 +577,11 @@ class _SelectionToolbar implements re.SelectionToolbarController {
       context: context,
       position: position,
       items: [
-        PopupMenuItem<void>(onTap: controller.cut, child: const Text('剪切')),
+        if (!readOnly)
+          PopupMenuItem<void>(onTap: controller.cut, child: const Text('剪切')),
         PopupMenuItem<void>(onTap: controller.copy, child: const Text('复制')),
-        PopupMenuItem<void>(onTap: controller.paste, child: const Text('粘贴')),
+        if (!readOnly)
+          PopupMenuItem<void>(onTap: controller.paste, child: const Text('粘贴')),
       ],
     ).whenComplete(() => visibility.value = false);
   }

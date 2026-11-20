@@ -13,18 +13,17 @@ class RegistriesSection extends StatefulWidget {
   final String? engine;
   final int refreshEpoch;
 
-
   @override
   State<RegistriesSection> createState() => _RegistriesSectionState();
 }
 
 class _RegistriesSectionState extends State<RegistriesSection> {
-
   @override
   void didUpdateWidget(covariant RegistriesSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
   }
+
   List<DockerRegistry> _registries = const [];
   bool _loading = true;
   String? _error;
@@ -65,7 +64,8 @@ class _RegistriesSectionState extends State<RegistriesSection> {
   Future<void> _edit([DockerRegistry? registry]) async {
     final saved = await showDialog<bool>(
       context: context,
-      builder: (context) => _RegistryDialog(api: _api, registry: registry, engine: widget.engine),
+      builder: (context) =>
+          _RegistryDialog(api: _api, registry: registry, engine: widget.engine),
     );
     if (saved == true) {
       _toast(registry == null ? '镜像源已添加' : '镜像源已更新');
@@ -155,84 +155,88 @@ class _RegistriesSectionState extends State<RegistriesSection> {
                     return Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              Icons.dns_outlined,
-                              size: 20,
-                              color: registry.lastSyncOk == true
-                                  ? hampanelAccent
-                                  : hampanelMuted,
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.dns_outlined,
+                                  size: 20,
+                                  color: registry.lastSyncOk == true
+                                      ? hampanelAccent
+                                      : hampanelMuted,
+                                ),
+                                Text(
+                                  registry.name,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  registry.engine,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: hampanelMuted,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        registry.name,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        registry.engine,
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: hampanelMuted,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    '${registry.address}'
-                                    '${registry.username.isEmpty ? '' : ' · ${registry.username}'}'
-                                    '${registry.hasSecret ? ' · 已保存密码' : ''}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: hampanelMuted,
-                                    ),
-                                  ),
-                                  if (registry.lastSyncMessage.isNotEmpty)
-                                    Text(
-                                      registry.lastSyncMessage,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        color: hampanelDanger,
-                                      ),
-                                    ),
-                                ],
+                            const SizedBox(height: 3),
+                            Text(
+                              '${registry.address}'
+                              '${registry.username.isEmpty ? '' : ' · ${registry.username}'}'
+                              '${registry.hasSecret ? ' · 已保存密码' : ''}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: hampanelMuted,
                               ),
                             ),
+                            if (registry.lastSyncMessage.isNotEmpty)
+                              Text(
+                                registry.lastSyncMessage,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  color: hampanelDanger,
+                                ),
+                              ),
+
                             if (registry.lastSyncOk != null)
                               StatusPill(
                                 text: registry.lastSyncOk! ? '已同步' : '同步失败',
                                 good: registry.lastSyncOk!,
                               ),
-                            const SizedBox(width: 6),
-                            IconButton(
-                              tooltip: '同步登录',
-                              onPressed: () => _sync(registry),
-                              icon: const Icon(Icons.sync, size: 17),
-                            ),
-                            PopupMenuButton<String>(
-                              icon: const Icon(Icons.more_horiz, size: 18),
-                              onSelected: (value) {
-                                if (value == 'edit') _edit(registry);
-                                if (value == 'delete') _delete(registry);
-                              },
-                              itemBuilder: (context) => const [
-                                PopupMenuItem(value: 'edit', child: Text('编辑')),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text('删除'),
+
+                            Wrap(
+                              spacing: 6,
+                              children: [
+                                IconButton(
+                                  tooltip: '同步登录',
+                                  onPressed: () => _sync(registry),
+                                  icon: const Icon(Icons.sync, size: 17),
+                                ),
+                                PopupMenuButton<String>(
+                                  icon: const Icon(Icons.more_horiz, size: 18),
+                                  onSelected: (value) {
+                                    if (value == 'edit') _edit(registry);
+                                    if (value == 'delete') _delete(registry);
+                                  },
+                                  itemBuilder: (context) => const [
+                                    PopupMenuItem(
+                                      value: 'edit',
+                                      child: Text('编辑'),
+                                    ),
+                                    PopupMenuItem(
+                                      value: 'delete',
+                                      child: Text('删除'),
+                                    ),
+                                  ],
                                 ),
                               ],
                             ),
@@ -281,7 +285,8 @@ class _RegistryDialogState extends State<_RegistryDialog> {
     _host = TextEditingController(text: registry?.host ?? '');
     _username = TextEditingController(text: registry?.username ?? '');
     _secret = TextEditingController();
-    _engine = registry?.engine ?? (widget.engine == 'podman' ? 'podman' : 'docker');
+    _engine =
+        registry?.engine ?? (widget.engine == 'podman' ? 'podman' : 'docker');
     _protocol = registry?.protocol ?? 'https';
   }
 

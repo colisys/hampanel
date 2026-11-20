@@ -232,18 +232,52 @@ fn sanitize(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
     return out;
 }
 
-pub fn apply(allocator: std.mem.Allocator, site: store.Site, site_dir: []const u8) !Outcome {
+const engine_mod = @import("engine.zig");
+
+pub const Container = struct {
+    engine: engine_mod.Engine,
+    socket: []const u8,
+    id: []const u8,
+    dir: []const u8,
+
+    fn command(self: Container, a: std.mem.Allocator, action: enum { check, reload }) Outcome {
+        const args: []const []const u8 = switch (action) {
+            .check => &.{ self.engine.name, "exec", self.id, "nginx", "-t" },
+            .reload => &.{ self.engine.name, "exec", self.id, "nginx", "-s", "reload" },
+        };
+        const r = engine_mod.run(a, self.engine, self.socket, args, .{ .max_output = max_output }) catch return .{ .ok = false, .output = "managed nginx unavailable" };
+        return .{ .ok = r.ok(), .output = textOf(r) };
+    }
+};
+
+pub fn resolveContainer(a: std.mem.Allocator, data_dir: []const u8, socket: []const u8) !Container {
+    const dir = try compat.path.join(a, &.{ data_dir, "apps/nginx/sites-conf" });
+    const engine = try engine_mod.detect(a, socket);
+    const ps = try engine_mod.run(a, engine, socket, &.{ engine.name, "ps", "--no-trunc", "--filter", "label=com.docker.compose.project=hampanel-nginx", "--filter", "label=com.docker.compose.service=web", "--format", "{{.ID}}" }, .{});
+    const id = std.mem.trim(u8, ps.stdout, " \t\r\n");
+    if (!ps.ok() or id.len != 64) return error.ManagedNginxUnavailable;
+    for (id) |c| if (!std.ascii.isHex(c)) return error.ManagedNginxUnavailable;
+    // Require the catalog image and mount layout, not just spoofable labels.
+    const layout = "{{.Config.Image}}\n{{.HostConfig.Privileged}}\n{{range .Mounts}}{{.Type}} {{.Destination}} {{.RW}} {{.Source}}\n{{end}}";
+    const inspect = try engine_mod.run(a, engine, socket, &.{ engine.name, "inspect", "--format", layout, id }, .{});
+    const snippet = try compat.path.join(a, &.{ data_dir, "apps/nginx/sites-include.conf" });
+    if (!inspect.ok() or !try @import("site_nginx_layout.zig").catalogLayout(a, inspect.stdout, dir, snippet)) return error.ManagedNginxUnavailable;
+    return .{ .engine = engine, .socket = socket, .id = id, .dir = dir };
+}
+
+pub fn apply(allocator: std.mem.Allocator, container: ?Container, site: store.Site, site_dir: []const u8) !Outcome {
     const is_stream = std.mem.eql(u8, site.kind, "tcp_proxy") or std.mem.eql(u8, site.kind, "udp_proxy");
+    if (container != null and (is_stream or site.basic_auth.enabled or site.tls.enabled)) return .{ .ok = false, .output = "stream, host certificates and host auth files are not mounted in managed nginx" };
     if (is_stream) {
         try compat.cwd().makePath(stream_dir);
         ensureStreamInclude(allocator) catch |err| {
             return .{ .ok = false, .output = @errorName(err) };
         };
     } else {
-        try compat.cwd().makePath(conf_dir);
+        try compat.cwd().makePath(if (container) |c| c.dir else conf_dir);
     }
-    const active = if (is_stream) try streamConfPath(allocator, site.name, true) else try confPath(allocator, site.name, true);
-    const disabled = if (is_stream) try streamConfPath(allocator, site.name, false) else try confPath(allocator, site.name, false);
+    const active = if (is_stream) try streamConfPath(allocator, site.name, true) else try confPath(allocator, container, site.name, true);
+    const disabled = if (is_stream) try streamConfPath(allocator, site.name, false) else try confPath(allocator, container, site.name, false);
     const target = if (site.enabled) active else disabled;
     const alternate = if (site.enabled) disabled else active;
 
@@ -259,14 +293,14 @@ pub fn apply(allocator: std.mem.Allocator, site: store.Site, site_dir: []const u
     if (readOptional(allocator, alternate) != null) compat.deleteFileAbsolute(alternate) catch {};
 
     if (site.enabled) {
-        const test_result = nginxTest(allocator);
+        const test_result = if (container) |c| c.command(allocator, .check) else nginxTest(allocator);
         if (!test_result.ok) {
             restoreFile(target, previous_target);
             restoreFile(alternate, previous_alternate);
             return test_result;
         }
     }
-    const reload_result = try reload(allocator);
+    const reload_result = try reloadTarget(allocator, container);
     if (!reload_result.ok) {
         restoreFile(target, previous_target);
         restoreFile(alternate, previous_alternate);
@@ -275,37 +309,42 @@ pub fn apply(allocator: std.mem.Allocator, site: store.Site, site_dir: []const u
     return .{ .ok = true, .output = reload_result.output };
 }
 
-pub fn remove(allocator: std.mem.Allocator, name: []const u8) !Outcome {
-    const active = try confPath(allocator, name, true);
-    const disabled = try confPath(allocator, name, false);
+pub fn remove(allocator: std.mem.Allocator, container: ?Container, name: []const u8) !Outcome {
+    const active = try confPath(allocator, container, name, true);
+    const disabled = try confPath(allocator, container, name, false);
     const stream_active = try streamConfPath(allocator, name, true);
     const stream_disabled = try streamConfPath(allocator, name, false);
     const previous_active = readOptional(allocator, active);
     const previous_disabled = readOptional(allocator, disabled);
-    const previous_stream_active = readOptional(allocator, stream_active);
-    const previous_stream_disabled = readOptional(allocator, stream_disabled);
+    const previous_stream_active = if (container != null) null else readOptional(allocator, stream_active);
+    const previous_stream_disabled = if (container != null) null else readOptional(allocator, stream_disabled);
     compat.deleteFileAbsolute(active) catch {};
     compat.deleteFileAbsolute(disabled) catch {};
-    compat.deleteFileAbsolute(stream_active) catch {};
-    compat.deleteFileAbsolute(stream_disabled) catch {};
+    if (container == null) compat.deleteFileAbsolute(stream_active) catch {};
+    if (container == null) compat.deleteFileAbsolute(stream_disabled) catch {};
 
-    const test_result = nginxTest(allocator);
+    const test_result = if (container) |c| c.command(allocator, .check) else nginxTest(allocator);
     if (!test_result.ok) {
         restoreFile(active, previous_active);
         restoreFile(disabled, previous_disabled);
-        restoreFile(stream_active, previous_stream_active);
-        restoreFile(stream_disabled, previous_stream_disabled);
+        if (container == null) restoreFile(stream_active, previous_stream_active);
+        if (container == null) restoreFile(stream_disabled, previous_stream_disabled);
         return test_result;
     }
-    const reload_result = try reload(allocator);
+    const reload_result = try reloadTarget(allocator, container);
     if (!reload_result.ok) {
         restoreFile(active, previous_active);
         restoreFile(disabled, previous_disabled);
-        restoreFile(stream_active, previous_stream_active);
-        restoreFile(stream_disabled, previous_stream_disabled);
+        if (container == null) restoreFile(stream_active, previous_stream_active);
+        if (container == null) restoreFile(stream_disabled, previous_stream_disabled);
         return reload_result;
     }
     return .{ .ok = true, .output = reload_result.output };
+}
+
+pub fn reloadTarget(allocator: std.mem.Allocator, container: ?Container) !Outcome {
+    if (container) |c| return c.command(allocator, .reload);
+    return reload(allocator);
 }
 
 pub fn reload(allocator: std.mem.Allocator) !Outcome {
@@ -320,7 +359,7 @@ pub fn reload(allocator: std.mem.Allocator) !Outcome {
 }
 
 pub fn configPath(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
-    return confPath(allocator, name, true);
+    return confPath(allocator, null, name, true);
 }
 
 fn streamConfPath(allocator: std.mem.Allocator, name: []const u8, enabled: bool) ![]const u8 {
@@ -368,11 +407,11 @@ fn fileExists(path: []const u8) bool {
     return true;
 }
 
-fn confPath(allocator: std.mem.Allocator, name: []const u8, enabled: bool) ![]const u8 {
+fn confPath(allocator: std.mem.Allocator, container: ?Container, name: []const u8, enabled: bool) ![]const u8 {
     return std.fmt.allocPrint(
         allocator,
         "{s}/hampanel-{s}.conf{s}",
-        .{ conf_dir, name, if (enabled) "" else ".disabled" },
+        .{ if (container) |c| c.dir else conf_dir, name, if (enabled) "" else ".disabled" },
     );
 }
 

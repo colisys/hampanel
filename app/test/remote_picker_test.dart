@@ -38,6 +38,7 @@ void main() {
     await _open(tester, (context) async {
       result = await showRemotePicker(context, source: _source);
     });
+    expect(find.text('反选'), findsNothing);
     await tester.tap(find.text('Volume A'));
     await tester.pumpAndSettle();
     expect(result, 'a');
@@ -51,11 +52,11 @@ void main() {
     final confirm = find.widgetWithText(FilledButton, '选择');
     expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
     expect(find.byType(Checkbox), findsOneWidget);
-    await tester.tap(find.byType(Checkbox));
+    await tester.tap(find.text('全选'));
     await tester.tap(find.text('Group'));
     await tester.pumpAndSettle();
     expect(find.text('选择当前位置'), findsNothing);
-    await tester.tap(find.text('Volume B'));
+    await tester.tap(find.text('反选'));
     await tester.pumpAndSettle();
     expect(find.text('已选择 2 项'), findsOneWidget);
     await tester.tap(find.byTooltip('上一级'));
@@ -75,7 +76,7 @@ void main() {
     });
     await tester.tap(find.text('Volume A'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('清空选择'));
+    await tester.tap(find.text('清空'));
     await tester.pumpAndSettle();
     expect(find.text('已选择 0 项'), findsOneWidget);
     await tester.tap(find.text('取消'));

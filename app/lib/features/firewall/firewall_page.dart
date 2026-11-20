@@ -159,15 +159,11 @@ class _FirewallPageState extends State<FirewallPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(fontSize: 10, color: hampanelMuted),
-        ),
+        Text(label, style: TextStyle(fontSize: 10, color: hampanelMuted)),
         const SizedBox(height: 2),
         Text(
           value.isEmpty ? '-' : value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+
           style: mono
               ? monospace.copyWith(fontSize: 11.5)
               : const TextStyle(fontSize: 11.5),
@@ -267,35 +263,30 @@ class _FirewallPageState extends State<FirewallPage> {
                                       4,
                                       8,
                                     ),
-                                    child: Row(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Expanded(
-                                          flex: 3,
-                                          child: _ruleField(
-                                            '端口',
-                                            rule.to,
-                                            mono: true,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          flex: 3,
-                                          child: _ruleField('来源', rule.from),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        _ruleField(
-                                          '方向',
-                                          _direction(rule),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        StatusPill(
-                                          text: rule.action,
-                                          good: allowed,
+                                        Wrap(
+                                          spacing: 16,
+                                          runSpacing: 8,
+                                          children: [
+                                            _ruleField(
+                                              '端口',
+                                              rule.to,
+                                              mono: true,
+                                            ),
+                                            _ruleField('来源', rule.from),
+                                            _ruleField('方向', _direction(rule)),
+                                            StatusPill(
+                                              text: rule.action,
+                                              good: allowed,
+                                            ),
+                                          ],
                                         ),
                                         IconButton(
                                           tooltip: '删除',
-                                          visualDensity:
-                                              VisualDensity.compact,
+                                          visualDensity: VisualDensity.compact,
                                           onPressed: () => _deleteRule(rule),
                                           icon: const Icon(
                                             Icons.delete_outline,

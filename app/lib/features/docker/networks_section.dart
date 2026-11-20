@@ -17,12 +17,12 @@ class NetworksSection extends StatefulWidget {
 }
 
 class _NetworksSectionState extends State<NetworksSection> {
-
   @override
   void didUpdateWidget(covariant NetworksSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
   }
+
   List<DockerNetwork> _networks = const [];
   bool _loading = true;
   String? _error;
@@ -153,58 +153,54 @@ class _NetworksSectionState extends State<NetworksSection> {
                     return Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              Icons.hub_outlined,
-                              size: 20,
-                              color: hampanelMuted,
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.hub_outlined,
+                                  size: 20,
+                                  color: hampanelMuted,
+                                ),
+                                Text(
+                                  network.name,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  '${network.driver} · ${network.scope}',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: hampanelMuted,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        network.name,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        '${network.driver} · ${network.scope}',
-                                        style: TextStyle(
-                                          fontSize: 10.5,
-                                          color: hampanelMuted,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    network.subnet.isEmpty
-                                        ? '无显式子网'
-                                        : '${network.subnet}${network.gateway.isEmpty ? '' : ' · 网关 ${network.gateway}'}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: hampanelMuted,
-                                    ),
-                                  ),
-                                  if (network.labels.isNotEmpty)
-                                    Text(
-                                      network.labels.join(', '),
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        color: hampanelMuted,
-                                      ),
-                                    ),
-                                ],
+                            const SizedBox(height: 3),
+                            Text(
+                              network.subnet.isEmpty
+                                  ? '无显式子网'
+                                  : '${network.subnet}${network.gateway.isEmpty ? '' : ' · 网关 ${network.gateway}'}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: hampanelMuted,
                               ),
                             ),
+                            if (network.labels.isNotEmpty)
+                              Text(
+                                network.labels.join(', '),
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  color: hampanelMuted,
+                                ),
+                              ),
+
                             Text(
                               formatTimestamp(network.createdAt),
                               style: TextStyle(
@@ -212,10 +208,18 @@ class _NetworksSectionState extends State<NetworksSection> {
                                 color: hampanelMuted,
                               ),
                             ),
-                            IconButton(
-                              tooltip: '删除',
-                              onPressed: () => _delete(network),
-                              icon: const Icon(Icons.delete_outline, size: 18),
+                            Wrap(
+                              spacing: 6,
+                              children: [
+                                IconButton(
+                                  tooltip: '删除',
+                                  onPressed: () => _delete(network),
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    size: 18,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

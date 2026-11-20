@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../ui/selection_toolbar.dart';
+
 import '../../core/api_client.dart';
 import '../../core/format.dart';
 import '../../core/file_results.dart';
@@ -280,21 +282,6 @@ class _FilesPageState extends State<FilesPage> {
           liveRegion: true,
           child: Text('已选择 ${_selectedPaths.length} 项'),
         ),
-        TextButton(
-          onPressed: _deleting ||
-                  _entries.every((entry) => _selectedPaths.contains(entry.path))
-              ? null
-              : () => setState(() {
-                  _selectedPaths.addAll(_entries.map((entry) => entry.path));
-                }),
-          child: const Text('全选'),
-        ),
-        TextButton(
-          onPressed: _deleting || _selectedPaths.isEmpty
-              ? null
-              : () => setState(_selectedPaths.clear),
-          child: const Text('清空选择'),
-        ),
         OutlinedButton.icon(
           onPressed: _deleting || _selectedPaths.isEmpty
               ? null
@@ -550,9 +537,8 @@ class _FilesPageState extends State<FilesPage> {
   }
 
   Future<void> _openRecycle() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => RecyclePage(api: _api)),
-    );
+    await Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => RecyclePage(api: _api)));
     if (mounted) _load(_path);
   }
 
@@ -662,6 +648,17 @@ class _FilesPageState extends State<FilesPage> {
                   ),
                 ),
         ),
+        if (!_loading && _error == null && _entries.isNotEmpty)
+          SelectionToolbar(
+            selected: _selectedPaths,
+            visible: _entries.map((entry) => entry.path).toSet(),
+            enabled: !_deleting,
+            onChanged: (paths) => setState(() {
+              _selectedPaths
+                ..clear()
+                ..addAll(paths);
+            }),
+          ),
         if (compact)
           ActionDock(
             actions: [

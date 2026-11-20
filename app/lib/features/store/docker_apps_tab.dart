@@ -135,6 +135,16 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
       return;
     }
 
+    if (action == 'upgrade-nginx') {
+      final ok = await confirmDialog(
+        context,
+        title: '升级旧版 Nginx 部署？',
+        message: '仅支持未修改的旧版商店配置。将重新创建容器，保留当前端口和 HTML 数据卷，服务可能短暂中断。',
+        confirmLabel: '升级',
+      );
+      if (!ok || !mounted) return;
+    }
+
     if (action == 'logs') {
       final api = _api;
       await Navigator.of(context).push(
@@ -318,6 +328,11 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
                                 const PopupMenuItem(
                                   value: 'logs',
                                   child: Text('查看日志'),
+                                ),
+                              if (app.installed && app.slug == 'nginx')
+                                const PopupMenuItem(
+                                  value: 'upgrade-nginx',
+                                  child: Text('升级旧版部署（保留端口）'),
                                 ),
                               if (app.installed)
                                 const PopupMenuItem(

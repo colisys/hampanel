@@ -19,12 +19,12 @@ class ComposeSection extends StatefulWidget {
 }
 
 class _ComposeSectionState extends State<ComposeSection> {
-
   @override
   void didUpdateWidget(covariant ComposeSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
   }
+
   List<DockerComposeProject> _projects = const [];
   bool _loading = true;
   String? _error;
@@ -329,7 +329,9 @@ class _ComposeCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
                         children: [
                           Text(
                             project.name,
@@ -338,7 +340,6 @@ class _ComposeCard extends StatelessWidget {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(width: 8),
                           _Badge(
                             text: project.managed
                                 ? (project.adopted ? '已接管' : '受管理')
@@ -356,18 +357,39 @@ class _ComposeCard extends StatelessWidget {
                             : project.configFiles.isEmpty
                             ? '无配置文件'
                             : project.configFiles.join(', '),
-                        overflow: TextOverflow.ellipsis,
+
                         style: TextStyle(fontSize: 10.5, color: hampanelMuted),
                       ),
                     ],
                   ),
                 ),
-                if (project.status.isNotEmpty)
-                  Text(
-                    project.status,
-                    style: TextStyle(fontSize: 11, color: hampanelMuted),
-                  ),
-                const SizedBox(width: 8),
+              ],
+            ),
+            if (project.files.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final file in project.files)
+                    Text(
+                      file,
+                      style: monospace.copyWith(
+                        fontSize: 10.5,
+                        color: hampanelMuted,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+            if (project.status.isNotEmpty)
+              Text(
+                project.status,
+                style: TextStyle(fontSize: 11, color: hampanelMuted),
+              ),
+            Wrap(
+              spacing: 4,
+              children: [
                 if (project.managed) ...[
                   IconButton(
                     tooltip: '启动',
@@ -413,23 +435,6 @@ class _ComposeCard extends StatelessWidget {
                   ),
               ],
             ),
-            if (project.files.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: [
-                  for (final file in project.files)
-                    Text(
-                      file,
-                      style: monospace.copyWith(
-                        fontSize: 10.5,
-                        color: hampanelMuted,
-                      ),
-                    ),
-                ],
-              ),
-            ],
           ],
         ),
       ),

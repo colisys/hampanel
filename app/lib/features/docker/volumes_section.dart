@@ -17,12 +17,12 @@ class VolumesSection extends StatefulWidget {
 }
 
 class _VolumesSectionState extends State<VolumesSection> {
-
   @override
   void didUpdateWidget(covariant VolumesSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.refreshEpoch != widget.refreshEpoch) _load();
   }
+
   List<DockerVolume> _volumes = const [];
   bool _loading = true;
   String? _error;
@@ -153,66 +153,62 @@ class _VolumesSectionState extends State<VolumesSection> {
                     return Card(
                       child: Padding(
                         padding: const EdgeInsets.all(16),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              Icons.save_outlined,
-                              size: 20,
-                              color: hampanelMuted,
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.save_outlined,
+                                  size: 20,
+                                  color: hampanelMuted,
+                                ),
+                                Text(
+                                  volume.name,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  '${volume.driver} · ${volume.scope}',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    color: hampanelMuted,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        volume.name,
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        '${volume.driver} · ${volume.scope}',
-                                        style: TextStyle(
-                                          fontSize: 10.5,
-                                          color: hampanelMuted,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    volume.mountpoint.isEmpty
-                                        ? '—'
-                                        : volume.mountpoint,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: monospace.copyWith(fontSize: 10.5),
-                                  ),
-                                  if (volume.options.isNotEmpty)
-                                    Text(
-                                      volume.options.join(' · '),
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        color: hampanelMuted,
-                                      ),
-                                    ),
-                                  if (volume.labels.isNotEmpty)
-                                    Text(
-                                      volume.labels.join(', '),
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        color: hampanelMuted,
-                                      ),
-                                    ),
-                                ],
+                            const SizedBox(height: 3),
+                            Text(
+                              volume.mountpoint.isEmpty
+                                  ? '—'
+                                  : volume.mountpoint,
+
+                              style: monospace.copyWith(fontSize: 10.5),
+                            ),
+                            if (volume.options.isNotEmpty)
+                              Text(
+                                volume.options.join(' · '),
+
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  color: hampanelMuted,
+                                ),
                               ),
-                            ),
+                            if (volume.labels.isNotEmpty)
+                              Text(
+                                volume.labels.join(', '),
+
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  color: hampanelMuted,
+                                ),
+                              ),
+
                             Text(
                               formatTimestamp(volume.createdAt),
                               style: TextStyle(
@@ -220,10 +216,18 @@ class _VolumesSectionState extends State<VolumesSection> {
                                 color: hampanelMuted,
                               ),
                             ),
-                            IconButton(
-                              tooltip: '删除',
-                              onPressed: () => _delete(volume),
-                              icon: const Icon(Icons.delete_outline, size: 18),
+                            Wrap(
+                              spacing: 6,
+                              children: [
+                                IconButton(
+                                  tooltip: '删除',
+                                  onPressed: () => _delete(volume),
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    size: 18,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

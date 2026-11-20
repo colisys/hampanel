@@ -122,7 +122,9 @@ class _SitesPageState extends State<SitesPage> {
                     label: '站点根目录',
                     hintText: '/var/www/example',
                   ),
-                if (kind == 'reverse_proxy' || kind == 'tcp_proxy' || kind == 'udp_proxy')
+                if (kind == 'reverse_proxy' ||
+                    kind == 'tcp_proxy' ||
+                    kind == 'udp_proxy')
                   TextField(
                     controller: targetController,
                     decoration: const InputDecoration(
@@ -223,7 +225,8 @@ class _SitesPageState extends State<SitesPage> {
     try {
       final json = await api.getJson('/api/v1/runtimes');
       final items =
-          ((json as Map<String, dynamic>?)?['environments'] as List<dynamic>?) ??
+          ((json as Map<String, dynamic>?)?['environments']
+              as List<dynamic>?) ??
           const [];
       return [
         for (final item in items.whereType<Map<String, dynamic>>())
@@ -338,9 +341,7 @@ class _SitesPageState extends State<SitesPage> {
                   const SizedBox(width: 8),
                   PageRefreshButton(onPressed: _load, refreshing: _loading),
                 ]
-              : [
-                  PageRefreshButton(onPressed: _load, refreshing: _loading),
-                ],
+              : [PageRefreshButton(onPressed: _load, refreshing: _loading)],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
         Expanded(
@@ -408,12 +409,49 @@ class _SitesPageState extends State<SitesPage> {
                                       ),
                                     ),
                                   ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 16,
+                                runSpacing: 6,
+                                children: [
+                                  _Info(
+                                    label: '类型',
+                                    value: _kindLabel(site.kind),
+                                  ),
+                                  _Info(
+                                    label: '域名',
+                                    value: site.domains.isEmpty
+                                        ? '—'
+                                        : site.domains.join(', '),
+                                  ),
+                                  _Info(
+                                    label: '目标',
+                                    value: site.summaryTarget.isEmpty
+                                        ? '—'
+                                        : site.summaryTarget,
+                                    mono: true,
+                                  ),
+                                  _Info(
+                                    label: '端口',
+                                    value: site.listen.toString(),
+                                  ),
+                                ],
+                              ),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 4,
+                                children: [
                                   StatusPill(
                                     text: site.enabled ? '已启用' : '已停用',
                                     good: site.enabled,
                                   ),
                                   PopupMenuButton<String>(
-                                    icon: const Icon(Icons.more_horiz, size: 18),
+                                    icon: const Icon(
+                                      Icons.more_horiz,
+                                      size: 18,
+                                    ),
                                     onSelected: (value) {
                                       switch (value) {
                                         case 'edit':
@@ -446,34 +484,6 @@ class _SitesPageState extends State<SitesPage> {
                                         child: Text('删除站点'),
                                       ),
                                     ],
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 16,
-                                runSpacing: 6,
-                                children: [
-                                  _Info(
-                                    label: '类型',
-                                    value: _kindLabel(site.kind),
-                                  ),
-                                  _Info(
-                                    label: '域名',
-                                    value: site.domains.isEmpty
-                                        ? '—'
-                                        : site.domains.join(', '),
-                                  ),
-                                  _Info(
-                                    label: '目标',
-                                    value: site.summaryTarget.isEmpty
-                                        ? '—'
-                                        : site.summaryTarget,
-                                    mono: true,
-                                  ),
-                                  _Info(
-                                    label: '端口',
-                                    value: site.listen.toString(),
                                   ),
                                 ],
                               ),
@@ -513,18 +523,14 @@ class _Info extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return Wrap(
       children: [
-        Text(
-          '$label ',
-          style: TextStyle(fontSize: 10.5, color: hampanelMuted),
-        ),
+        Text('$label ', style: TextStyle(fontSize: 10.5, color: hampanelMuted)),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 260),
           child: Text(
             value,
-            overflow: TextOverflow.ellipsis,
+
             style: mono
                 ? monospace.copyWith(fontSize: 11)
                 : const TextStyle(fontSize: 11.5),

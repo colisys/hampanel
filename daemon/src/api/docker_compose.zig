@@ -461,19 +461,34 @@ fn parseFiles(allocator: std.mem.Allocator, raw: []const u8) []const []const u8 
 }
 
 fn loadExternal(ctx: *context.Context, engine: engine_mod.Engine, socket: []const u8) ![]const External {
+    var projects = std.array_list.Managed(External).init(ctx.arena);
+    try projects.appendSlice(try composeListing(ctx, engine, socket));
+    // Some providers (notably podman-compose) do not implement compose ls.
+    // Labels identify projects, but must never authorize reading host paths.
+    const result = engine_mod.run(ctx.arena, engine, socket, &.{ engine.name, "ps", "-a", "--format", "{{.Label \"com.docker.compose.project\"}}" }, .{ .max_output = max_output }) catch return projects.items;
+    if (result.ok()) {
+        var lines = std.mem.tokenizeAny(u8, result.stdout, "\r\n");
+        while (lines.next()) |line| {
+            const name = std.mem.trim(u8, line, " \t");
+            if (!validate.isComposeName(name)) continue;
+            for (projects.items) |project| {
+                if (std.mem.eql(u8, name, project.name)) break;
+            } else try projects.append(.{ .name = name, .status = "", .config_files = &.{} });
+        }
+    }
+    return projects.items;
+}
+
+fn composeListing(ctx: *context.Context, engine: engine_mod.Engine, socket: []const u8) ![]const External {
     const base = engine_mod.composeCommand(ctx.arena, engine, socket) catch return &.{};
     var argv = std.array_list.Managed([]const u8).init(ctx.arena);
     try argv.appendSlice(base);
     try argv.appendSlice(&.{ "ls", "--all", "--format", "json" });
     const result = engine_mod.run(ctx.arena, engine, socket, argv.items, .{ .max_output = max_output }) catch return &.{};
     if (!result.ok()) return &.{};
-    const value = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, result.stdout, .{
-        .ignore_unknown_fields = true,
-        .allocate = .alloc_always,
-    }) catch return &.{};
-    if (value != .array) return &.{};
+    const rows = try engine_mod.parseJsonObjects(ctx.arena, result.stdout);
     var projects = std.array_list.Managed(External).init(ctx.arena);
-    for (value.array.items) |item| {
+    for (rows) |item| {
         if (item != .object) continue;
         const name = field(item, "Name");
         if (name.len == 0) continue;

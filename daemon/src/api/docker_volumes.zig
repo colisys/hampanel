@@ -45,21 +45,21 @@ pub fn index(ctx: *context.Context) anyerror!void {
         var argv = std.array_list.Managed([]const u8).init(ctx.arena);
         try argv.appendSlice(&.{ engine.name, "volume", "inspect" });
         try argv.appendSlice(names.items);
-        const result = engine_mod.run(ctx.arena, engine, socket, argv.items, .{ .max_output = max_output }) catch null;
-        if (result) |value| {
-            if (value.ok()) {
-                const parsed = std.json.parseFromSliceLeaky(std.json.Value, ctx.arena, value.stdout, .{
-                    .ignore_unknown_fields = true,
-                    .allocate = .alloc_always,
-                }) catch null;
-                if (parsed) |root| {
-                    if (root == .array) {
-                        for (root.array.items) |item| {
-                            const name = fieldAny(item, &.{ "Name", "name" });
-                            if (name.len > 0) try inspected.put(name, item);
-                        }
-                    }
-                }
+        const result = engine_mod.run(ctx.arena, engine, socket, argv.items, .{ .max_output = max_output }) catch {
+            ctx.fail(502, "docker_unavailable", "unable to inspect volumes");
+            return;
+        };
+        if (!result.ok() and !onlyMissingVolumes(result.stderr, names.items)) {
+            ctx.fail(502, "volume_inspect_failed", textOf(result));
+            return;
+        }
+        for (try engine_mod.parseJsonObjects(ctx.arena, result.stdout)) |item| {
+            try inspected.put(fieldAny(item, &.{ "Name", "name" }), item);
+        }
+        for (names.items) |name| {
+            if (!inspected.contains(name) and !missingVolume(result.stderr, name)) {
+                ctx.fail(502, "volume_inspect_failed", "incomplete volume inspection");
+                return;
             }
         }
     }
@@ -68,6 +68,7 @@ pub fn index(ctx: *context.Context) anyerror!void {
     for (objects) |value| {
         if (value != .object) continue;
         const name = fieldAny(value, &.{ "Name", "name" });
+        if (!inspected.contains(name)) continue; // removed after ls
         var item = Volume{
             .name = name,
             .driver = fieldAny(value, &.{ "Driver", "driver" }),
@@ -227,4 +228,38 @@ fn validKeyValue(value: []const u8) bool {
 fn textOf(result: exec.Result) []const u8 {
     if (result.stderr.len > 0) return result.stderr;
     return result.stdout;
+}
+
+// Docker emits the surviving inspect objects on stdout and a diagnostic per
+// vanished name on stderr. Never mask unrelated permission or engine failures.
+fn missingLine(line: []const u8, name: []const u8) bool {
+    const prefix = "Error response from daemon: get ";
+    const suffix = ": no such volume";
+    return line.len == prefix.len + name.len + suffix.len and std.mem.startsWith(u8, line, prefix) and std.mem.endsWith(u8, line, suffix) and std.mem.eql(u8, line[prefix.len..][0..name.len], name);
+}
+
+fn missingVolume(stderr: []const u8, name: []const u8) bool {
+    var lines = std.mem.tokenizeAny(u8, stderr, "\r\n");
+    while (lines.next()) |line| if (missingLine(line, name)) return true;
+    return false;
+}
+
+fn onlyMissingVolumes(stderr: []const u8, names: []const []const u8) bool {
+    var lines = std.mem.tokenizeAny(u8, stderr, "\r\n");
+    var found = false;
+    while (lines.next()) |line| {
+        for (names) |name| {
+            if (missingLine(line, name)) break;
+        } else return false;
+        found = true;
+    }
+    return found;
+}
+
+test "docker partial inspect skips only reported missing volumes" {
+    const msg = "Error response from daemon: get gone: no such volume\n";
+    try std.testing.expect(onlyMissingVolumes(msg, &.{ "live", "gone" }));
+    try std.testing.expect(!missingVolume(msg, "live"));
+    try std.testing.expect(!onlyMissingVolumes(msg ++ "permission denied", &.{"gone"}));
+    try std.testing.expect(!onlyMissingVolumes(msg, &.{"other"}));
 }

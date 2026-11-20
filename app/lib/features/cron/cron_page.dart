@@ -182,7 +182,8 @@ class _CronPageState extends State<CronPage> {
                     return Card(
                       child: Padding(
                         padding: const EdgeInsets.all(14),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -201,14 +202,8 @@ class _CronPageState extends State<CronPage> {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Text(
-                                entry.command,
-                                overflow: TextOverflow.ellipsis,
-                                style: monospace,
-                              ),
-                            ),
+                            const SizedBox(height: 8),
+                            Text(entry.command, style: monospace),
                             IconButton(
                               tooltip: '删除',
                               onPressed: () => _delete(entry),
@@ -224,11 +219,7 @@ class _CronPageState extends State<CronPage> {
         if (compact)
           ActionDock(
             actions: [
-              ActionDockItem(
-                icon: Icons.add,
-                label: '新增任务',
-                onPressed: _add,
-              ),
+              ActionDockItem(icon: Icons.add, label: '新增任务', onPressed: _add),
             ],
           ),
       ],

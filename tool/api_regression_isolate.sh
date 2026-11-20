@@ -10,6 +10,7 @@ root=$base/root
 mkdir -p "$root/etc" "$root/root/.ssh"
 printf 'root:x:0:0:Regression:/root:/bin/sh\n' > "$root/etc/passwd"
 printf '127.0.0.1 localhost\n' > "$root/etc/hosts"
+printf 'root:x:0:\n' > "$root/etc/group"
 touch "$root/root/.ssh/authorized_keys"
 touch "$root/dev/null"
 copy_binary() {

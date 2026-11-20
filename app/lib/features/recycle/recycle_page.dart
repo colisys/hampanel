@@ -178,66 +178,56 @@ class _RecyclePageState extends State<RecyclePage> {
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              isDir ? Icons.folder_outlined : Icons.description_outlined,
-              size: 20,
-              color: isDir ? hampanelAccent : hampanelMuted,
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        entry.name,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      StatusPill(text: isDir ? '目录' : '文件', good: isDir),
-                      const SizedBox(width: 8),
-                      Text(
-                        isDir ? '-' : formatBytes(entry.size),
-                        style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-                      ),
-                    ],
+            Row(
+              children: [
+                Icon(
+                  isDir ? Icons.folder_outlined : Icons.description_outlined,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    entry.name,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    entry.originalPath,
-                    style: monospace.copyWith(
-                      fontSize: 11.5,
-                      color: hampanelMuted,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '删除于 ${formatDateTime(entry.deletedAt)}',
-                    style: TextStyle(fontSize: 11, color: hampanelMuted),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            OutlinedButton.icon(
-              onPressed: () => _restore(entry),
-              icon: const Icon(Icons.restore, size: 16),
-              label: const Text('恢复'),
+            const SizedBox(height: 4),
+            Text(entry.originalPath, style: monospace),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                StatusPill(text: isDir ? '目录' : '文件', good: isDir),
+                if (!isDir) Text(formatBytes(entry.size)),
+                Text('删除于 ${formatDateTime(entry.deletedAt)}'),
+              ],
             ),
-            const SizedBox(width: 8),
-            IconButton(
-              tooltip: '永久删除',
-              onPressed: () => _purge(entry),
-              icon: Icon(
-                Icons.delete_forever_outlined,
-                size: 19,
-                color: hampanelDanger,
-              ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _restore(entry),
+                  icon: const Icon(Icons.restore, size: 16),
+                  label: const Text('恢复'),
+                ),
+                IconButton(
+                  tooltip: '永久删除',
+                  onPressed: () => _purge(entry),
+                  icon: Icon(
+                    Icons.delete_forever_outlined,
+                    size: 19,
+                    color: hampanelDanger,
+                  ),
+                ),
+              ],
             ),
           ],
         ),

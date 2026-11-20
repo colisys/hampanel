@@ -31,11 +31,15 @@ pub fn index(ctx: *context.Context) anyerror!void {
         });
         return;
     }
+    const target = nginxTarget(ctx) catch {
+        try ctx.json(.{ .available = false, .supported = true, .webserver = server, .dir = "", .sites = sites });
+        return;
+    };
     try ctx.json(.{
-        .available = nginx.available(ctx.arena),
+        .available = target != null or nginx.available(ctx.arena),
         .supported = true,
         .webserver = server,
-        .dir = "/etc/nginx/conf.d",
+        .dir = if (target) |c| c.dir else "/etc/nginx/conf.d",
         .sites = sites,
     });
 }
@@ -247,7 +251,7 @@ pub fn destroy(ctx: *context.Context) anyerror!void {
         };
         break :blk .{ .ok = result.ok, .output = result.output };
     } else blk: {
-        const result = nginx.remove(ctx.arena, site.name) catch |err| {
+        const result = nginx.remove(ctx.arena, try nginxTarget(ctx), site.name) catch |err| {
             ctx.fail(500, "sites_failed", @errorName(err));
             return;
         };
@@ -269,7 +273,7 @@ pub fn reload(ctx: *context.Context) anyerror!void {
         };
         break :blk .{ .ok = result.ok, .output = result.output };
     } else blk: {
-        const result = nginx.reload(ctx.arena) catch |err| {
+        const result = nginx.reloadTarget(ctx.arena, try nginxTarget(ctx)) catch |err| {
             ctx.fail(500, "sites_failed", @errorName(err));
             return;
         };
@@ -444,11 +448,14 @@ pub fn logs(ctx: *context.Context) anyerror!void {
     try ctx.json(.{ .path = path, .lines = lines });
 }
 
+const provider = @import("../runtime/site_provider.zig");
+
+fn nginxTarget(ctx: *context.Context) !?nginx.Container {
+    return provider.nginxTarget(ctx.arena, ctx.app.config.data_dir, ctx.app.db);
+}
+
 fn webServer(ctx: *context.Context) []const u8 {
-    if (ctx.app.config.web_server.len > 0) return ctx.app.config.web_server;
-    if (nginx.available(ctx.arena)) return webserver_nginx;
-    if (exec.commandExists(ctx.arena, "caddy")) return webserver_caddy;
-    return "";
+    return provider.webServer(ctx.arena, ctx.app.config.data_dir, ctx.app.config.web_server);
 }
 
 fn loadSite(ctx: *context.Context, name: []const u8) ?store.Site {
@@ -479,7 +486,7 @@ fn applySite(ctx: *context.Context, site: store.Site) !Outcome {
         return .{ .ok = false, .output = "当前 WebServer 不是 Nginx 或 Caddy" };
     }
     try writeHtpasswd(ctx.arena, dir, site);
-    const result = try nginx.apply(ctx.arena, site, dir);
+    const result = try nginx.apply(ctx.arena, try nginxTarget(ctx), site, dir);
     return .{ .ok = result.ok, .output = result.output };
 }
 

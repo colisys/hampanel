@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
@@ -34,11 +35,15 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
     with TickerProviderStateMixin {
   late final TabController _tabs = TabController(length: 5, vsync: this);
   DockerContainerDetail? _detail;
+  late String _lookup = widget.containerId;
   List<String> _networks = const [];
-  bool _loading = true;
+  bool _loading = false;
   bool _saving = false;
   String? _error;
 
+  final _name = TextEditingController();
+  final _ip = TextEditingController();
+  final _mac = TextEditingController();
   final _hostname = TextEditingController();
   final _domainname = TextEditingController();
   final _user = TextEditingController();
@@ -56,7 +61,7 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
   final List<String> _env = [];
   final List<String> _labels = [];
   final List<String> _addHosts = [];
-  final List<_PortEntry> _ports = [];
+  final List<DockerPort> _ports = [];
   final List<_MountEntry> _mounts = [];
 
   ApiClient get _api => widget.api;
@@ -70,6 +75,9 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
   @override
   void dispose() {
     _tabs.dispose();
+    _name.dispose();
+    _ip.dispose();
+    _mac.dispose();
     _hostname.dispose();
     _domainname.dispose();
     _user.dispose();
@@ -78,23 +86,25 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
     _cpus.dispose();
     _memory.dispose();
     _restartMax.dispose();
-    for (final port in _ports) {
-      port.dispose();
-    }
     for (final mount in _mounts) {
       mount.dispose();
     }
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({String? savedName}) async {
+    if (savedName == null && (_saving || _loading)) return;
     setState(() {
+      if (savedName != null) {
+        _lookup = savedName;
+        _detail = null;
+      }
       _loading = true;
       _error = null;
     });
     try {
       final results = await Future.wait<Object?>([
-        _api.getJson('/api/v1/docker/containers/${widget.containerId}'),
+        _api.getJson('/api/v1/docker/containers/$_lookup'),
         _api.getJson('/api/v1/docker/networks').catchError(
           (Object _) => <String, dynamic>{},
         ),
@@ -106,6 +116,7 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
       final networkMap = results[1] as Map<String, dynamic>? ?? const {};
       setState(() {
         _detail = detail;
+        if (detail.name.isNotEmpty) _lookup = detail.name;
         _networks = ((networkMap['networks'] as List<dynamic>?) ?? const [])
             .whereType<Map<String, dynamic>>()
             .map((entry) => entry['name'] as String? ?? '')
@@ -124,15 +135,14 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
   }
 
   void _applyDetail(DockerContainerDetail detail) {
-    for (final port in _ports) {
-      port.dispose();
-    }
-    _ports.clear();
     for (final mount in _mounts) {
       mount.dispose();
     }
     _mounts.clear();
 
+    _name.text = detail.name;
+    _ip.text = detail.ip;
+    _mac.text = detail.macAddress;
     _hostname.text = detail.hostname;
     _domainname.text = detail.domainname;
     _user.text = detail.user;
@@ -173,16 +183,9 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
     _addHosts
       ..clear()
       ..addAll(detail.addHosts);
-    for (final port in detail.ports) {
-      _ports.add(
-        _PortEntry(
-          hostIp: port.hostIp,
-          hostPort: port.hostPort,
-          containerPort: port.containerPort,
-          protocol: port.protocol.isEmpty ? 'tcp' : port.protocol,
-        ),
-      );
-    }
+    _ports
+      ..clear()
+      ..addAll(detail.ports);
     for (final mount in detail.mounts) {
       _mounts.add(
         _MountEntry(
@@ -204,9 +207,25 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
 
   Future<void> _save() async {
     final detail = _detail;
-    if (detail == null) return;
+    if (detail == null || _loading || _saving) return;
     if (detail.composeProject.isNotEmpty) {
       _toast('Compose 管理的容器请在编排页面修改');
+      return;
+    }
+    final name = _name.text.trim();
+    if (!RegExp(r'^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$').hasMatch(name)) {
+      _toast('容器名称无效');
+      return;
+    }
+    if (_ip.text.trim().isNotEmpty &&
+        InternetAddress.tryParse(_ip.text.trim()) == null) {
+      _toast('IP 地址无效');
+      return;
+    }
+    if (_mac.text.trim().isNotEmpty &&
+        !RegExp(r'^(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$')
+            .hasMatch(_mac.text.trim())) {
+      _toast('MAC 地址无效');
       return;
     }
     final cpus = double.tryParse(_cpus.text.trim());
@@ -216,12 +235,12 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
         ? 'on-failure:${int.parse(_restartMax.text.trim())}'
         : _restart;
     final body = <String, dynamic>{
-      'name': detail.name,
+      'name': name,
       'image': detail.image,
       'command': _splitCommand(_command.text),
       'entrypoint': _entrypoint.text.trim(),
       'env': [..._env],
-      'ports': [for (final port in _ports) ?port.spec],
+      'ports': [for (final port in _ports) _portSpec(port)],
       'mounts': [for (final mount in _mounts) ?mount.spec],
       'restart': restart,
       'network': _network == 'default' ? '' : _network,
@@ -236,15 +255,17 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
       'privileged': _privileged,
       'dns': [..._dns],
       'add_hosts': [..._addHosts],
+      'ip': _ip.text.trim(),
+      'mac_address': _mac.text.trim(),
     };
     final ok = await confirmDialog(
       context,
-      title: '保存并重建 ${detail.name}?',
+      title: '保存并重建 $name?',
       message: '容器不能原地修改。保存后会停止旧容器并按新配置重建，旧配置会备份在数据目录。',
       confirmLabel: '重建',
       danger: true,
     );
-    if (!ok) return;
+    if (!ok || !mounted) return;
     setState(() => _saving = true);
     try {
       await _api.postJson(
@@ -253,7 +274,7 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
       );
       if (!mounted) return;
       _toast('容器已重建');
-      await _load();
+      await _load(savedName: name);
     } on ApiException catch (error) {
       _toast(error.message);
     } catch (error) {
@@ -265,7 +286,8 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
 
   Future<void> _logs() async {
     final api = _api;
-    final name = _detail?.name ?? widget.containerId;
+    final name = _detail?.name ?? _lookup;
+    final id = _detail?.id ?? _lookup;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => LogPage(
@@ -273,7 +295,7 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
           emptyMessage: '暂无日志',
           load: (lines) async {
             final json = await api.getJson(
-              '/api/v1/docker/containers/${widget.containerId}/logs',
+              '/api/v1/docker/containers/$id/logs',
               query: {'lines': '$lines'},
             );
             final map = json as Map<String, dynamic>? ?? const {};
@@ -336,7 +358,9 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              detail?.name ?? widget.initial?.name ?? '容器详情',
+              detail?.name ?? (_lookup == widget.containerId
+                  ? widget.initial?.name ?? '容器详情'
+                  : _lookup),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -514,6 +538,12 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            TextField(
+              controller: _name,
+              readOnly: detail.composeProject.isNotEmpty,
+              decoration: const InputDecoration(labelText: '容器名称'),
+            ),
+            const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               initialValue: _network.isEmpty ? '' : _network,
               isExpanded: true,
@@ -524,6 +554,7 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
               items: [
                 const DropdownMenuItem(value: '', child: Text('默认（bridge）')),
                 for (final network in {
+                  _network,
                   ..._networks,
                   ...detail.networks.map((entry) => entry.name),
                 }.where((name) => name.isNotEmpty))
@@ -549,6 +580,21 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
                     hintText: 'example.internal',
                     isDense: true,
                   ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            FormRow(
+              children: [
+                TextField(
+                  controller: _ip,
+                  readOnly: detail.composeProject.isNotEmpty,
+                  decoration: const InputDecoration(labelText: '静态 IP 地址'),
+                ),
+                TextField(
+                  controller: _mac,
+                  readOnly: detail.composeProject.isNotEmpty,
+                  decoration: const InputDecoration(labelText: 'MAC 地址'),
                 ),
               ],
             ),
@@ -586,7 +632,7 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
       PanelCard(
         title: '端口映射',
         trailing: TextButton.icon(
-          onPressed: () => setState(() => _ports.add(_PortEntry())),
+          onPressed: () => _editPort(),
           icon: const Icon(Icons.add, size: 15),
           label: const Text('添加'),
         ),
@@ -606,77 +652,121 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
   }
 
   Widget _portRow(int index) {
-    final port = _ports[index];
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            flex: 3,
-            child: TextField(
-              controller: port.hostIp,
-              decoration: const InputDecoration(
-                labelText: '主机 IP',
-                hintText: '0.0.0.0',
-                isDense: true,
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            flex: 2,
-            child: TextField(
-              controller: port.hostPort,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: '主机端口',
-                hintText: '8080',
-                isDense: true,
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            flex: 2,
-            child: TextField(
-              controller: port.containerPort,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: '容器端口',
-                hintText: '80',
-                isDense: true,
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
-          SizedBox(
-            width: 82,
-            child: DropdownButtonFormField<String>(
-              initialValue: port.protocol,
-              decoration: const InputDecoration(
-                labelText: '协议',
-                isDense: true,
-              ),
-              items: const [
-                DropdownMenuItem(value: 'tcp', child: Text('tcp')),
-                DropdownMenuItem(value: 'udp', child: Text('udp')),
+    return _editableRow(
+      label: _portSpec(_ports[index]),
+      onEdit: () => _editPort(index),
+      onRemove: () => setState(() => _ports.removeAt(index)),
+    );
+  }
+
+  Future<void> _editPort([int? index]) async {
+    final initial = index == null ? null : _ports[index];
+    var hostIp = initial?.hostIp ?? '';
+    if (hostIp.startsWith('[') && hostIp.endsWith(']')) {
+      hostIp = hostIp.substring(1, hostIp.length - 1);
+    }
+    var hostPort = initial?.hostPort ?? '';
+    var containerPort = initial?.containerPort ?? '';
+    var protocol = initial?.protocol ?? 'tcp';
+    if (protocol.isEmpty) protocol = 'tcp';
+    final form = GlobalKey<FormState>();
+    final port = await showDialog<DockerPort>(
+      context: context,
+      builder: (context) => AlertDialog(
+        scrollable: true,
+        title: Text(index == null ? '添加端口映射' : '编辑端口映射'),
+        content: DialogBody(
+          maxWidth: 420,
+          child: Form(
+            key: form,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  initialValue: hostIp,
+                  decoration: const InputDecoration(labelText: '主机 IP'),
+                  onChanged: (value) => hostIp = value.trim(),
+                  validator: (_) => hostIp.isEmpty ||
+                          InternetAddress.tryParse(hostIp) != null
+                      ? null
+                      : 'IP 地址无效',
+                ),
+                TextFormField(
+                  initialValue: hostPort,
+                  decoration: const InputDecoration(
+                    labelText: '主机端口',
+                    hintText: '留空自动分配',
+                  ),
+                  onChanged: (value) => hostPort = value.trim(),
+                  validator: (_) => hostPort.isEmpty || _validPort(hostPort)
+                      ? null
+                      : '端口无效',
+                ),
+                TextFormField(
+                  initialValue: containerPort,
+                  decoration: const InputDecoration(labelText: '容器端口'),
+                  onChanged: (value) => containerPort = value.trim(),
+                  validator: (_) => _validPort(containerPort) ? null : '端口无效',
+                ),
+                DropdownButtonFormField<String>(
+                  initialValue: protocol,
+                  decoration: const InputDecoration(labelText: '协议'),
+                  items: [
+                    for (final value in {'tcp', 'udp', 'sctp', protocol})
+                      DropdownMenuItem(value: value, child: Text(value)),
+                  ],
+                  onChanged: (value) => protocol = value ?? 'tcp',
+                ),
               ],
-              onChanged: (value) =>
-                  setState(() => port.protocol = value ?? 'tcp'),
             ),
           ),
-          IconButton(
-            tooltip: '删除',
-            visualDensity: VisualDensity.compact,
-            onPressed: () => setState(() {
-              _ports.removeAt(index).dispose();
-            }),
-            icon: const Icon(Icons.close, size: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (!form.currentState!.validate()) return;
+              Navigator.of(context).pop(DockerPort(
+                hostIp: hostIp,
+                hostPort: hostPort,
+                containerPort: containerPort,
+                protocol: protocol,
+              ));
+            },
+            child: const Text('保存'),
           ),
         ],
       ),
     );
+    if (port == null || !mounted) return;
+    setState(() {
+      if (index == null) {
+        _ports.add(port);
+      } else {
+        _ports[index] = port;
+      }
+    });
+  }
+
+  bool _validPort(String value) {
+    final bounds = value.split('-');
+    if (bounds.length > 2 || !RegExp(r'^\d+(?:-\d+)?$').hasMatch(value)) {
+      return false;
+    }
+    final low = int.tryParse(bounds.first) ?? 0;
+    final high = int.tryParse(bounds.last) ?? 0;
+    return low > 0 && high >= low && high <= 65535;
+  }
+
+  String _portSpec(DockerPort port) {
+    final ip = port.hostIp;
+    final host = ip.contains(':') && !ip.startsWith('[') ? '[$ip]' : ip;
+    final prefix = host.isEmpty ? '' : '$host:';
+    final protocol = port.protocol.isEmpty ? 'tcp' : port.protocol;
+    return '$prefix${port.hostPort}:${port.containerPort}/$protocol';
   }
 
   Widget _resourceTab(DockerContainerDetail detail) {
@@ -922,7 +1012,7 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
         trailing: TextButton.icon(
           onPressed: () async {
             final value = await _hostMappingDialog();
-            if (value != null) setState(() => _addHosts.add(value));
+            if (value != null && mounted) setState(() => _addHosts.add(value));
           },
           icon: const Icon(Icons.add, size: 15),
           label: const Text('添加'),
@@ -941,18 +1031,20 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
                 style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               )
             else
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
+              Column(
                 children: [
                   for (var index = 0; index < _addHosts.length; index++)
-                    Chip(
-                      label: Text(
-                        _addHosts[index],
-                        style: const TextStyle(fontSize: 11.5),
-                      ),
-                      onDeleted: () =>
-                          setState(() => _addHosts.removeAt(index)),
+                    _editableRow(
+                      label: _addHosts[index],
+                      onEdit: () async {
+                        final value = await _hostMappingDialog(
+                          initial: _addHosts[index],
+                        );
+                        if (value != null && mounted) {
+                          setState(() => _addHosts[index] = value);
+                        }
+                      },
+                      onRemove: () => setState(() => _addHosts.removeAt(index)),
                     ),
                 ],
               ),
@@ -1089,7 +1181,7 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
         trailing: TextButton.icon(
           onPressed: () async {
             final value = await _keyValueDialog('添加标签');
-            if (value != null) setState(() => _labels.add(value));
+            if (value != null && mounted) setState(() => _labels.add(value));
           },
           icon: const Icon(Icons.add, size: 15),
           label: const Text('添加'),
@@ -1099,24 +1191,46 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
                 '没有容器标签。',
                 style: TextStyle(fontSize: 11.5, color: hampanelMuted),
               )
-            : Wrap(
-                spacing: 8,
-                runSpacing: 6,
+            : Column(
                 children: [
                   for (var index = 0; index < _labels.length; index++)
-                    Chip(
-                      label: Text(
-                        _labels[index],
-                        style: const TextStyle(fontSize: 11.5),
-                      ),
-                      onDeleted: () =>
-                          setState(() => _labels.removeAt(index)),
+                    _keyValueRow(
+                      value: _labels[index],
+                      onEdit: () async {
+                        final value = await _keyValueDialog(
+                          '编辑标签',
+                          initial: _labels[index],
+                        );
+                        if (value != null && mounted) {
+                          setState(() => _labels[index] = value);
+                        }
+                      },
+                      onRemove: () => setState(() => _labels.removeAt(index)),
                     ),
                 ],
               ),
       ),
     ]);
   }
+
+  Widget _editableRow({
+    required String label,
+    required VoidCallback onEdit,
+    required VoidCallback onRemove,
+  }) => InkWell(
+    onTap: onEdit,
+    child: Row(
+      children: [
+        Expanded(child: Text(label, style: monospace.copyWith(fontSize: 11.5))),
+        IconButton(
+          tooltip: '删除',
+          visualDensity: VisualDensity.compact,
+          onPressed: onRemove,
+          icon: const Icon(Icons.close, size: 15),
+        ),
+      ],
+    ),
+  );
 
   Widget _keyValueRow({
     required String value,
@@ -1234,38 +1348,54 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
     return textInputDialog(context, title: title, label: label);
   }
 
-  Future<String?> _keyValueDialog(String title, {String? initial}) async {
-    final key = TextEditingController(
-      text: initial == null ? '' : initial.split('=').first,
+  Future<String?> _keyValueDialog(String title, {String? initial}) {
+    return _pairDialog(title, '名称', '值', '=', initial: initial);
+  }
+
+  Future<String?> _hostMappingDialog({String? initial}) {
+    return _pairDialog(
+      initial == null ? '添加主机映射' : '编辑主机映射',
+      '主机名',
+      'IP 地址',
+      ':',
+      initial: initial,
+      requireValue: true,
     );
-    final value = TextEditingController(
-      text: initial == null || !initial.contains('=')
-          ? ''
-          : initial.substring(initial.indexOf('=') + 1),
-    );
-    final result = await showDialog<String>(
+  }
+
+  Future<String?> _pairDialog(
+    String title,
+    String firstLabel,
+    String secondLabel,
+    String separator, {
+    String? initial,
+    bool requireValue = false,
+  }) {
+    final entry = initial ?? '';
+    final equals = entry.indexOf('=');
+    final split = equals >= 0 ? equals : entry.indexOf(separator);
+    var first = split < 0 ? entry : entry.substring(0, split);
+    var second = split < 0 ? '' : entry.substring(split + 1);
+    return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         title: Text(title),
         content: DialogBody(
           maxWidth: 420,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                controller: key,
-                decoration: const InputDecoration(
-                  labelText: '名称',
-                  isDense: true,
-                ),
+              TextFormField(
+                initialValue: first,
+                onChanged: (value) => first = value,
+                decoration: InputDecoration(labelText: firstLabel),
               ),
               const SizedBox(height: 10),
-              TextField(
-                controller: value,
-                decoration: const InputDecoration(
-                  labelText: '值',
-                  isDense: true,
-                ),
+              TextFormField(
+                initialValue: second,
+                onChanged: (value) => second = value,
+                decoration: InputDecoration(labelText: secondLabel),
               ),
             ],
           ),
@@ -1277,104 +1407,19 @@ class _ContainerDetailPageState extends State<ContainerDetailPage>
           ),
           FilledButton(
             onPressed: () {
-              final k = key.text.trim();
-              if (k.isEmpty) return;
-              Navigator.of(context).pop('$k=${value.text.trim()}');
+              final key = first.trim();
+              final value = requireValue ? second.trim() : second;
+              if (key.isEmpty || key.contains(separator) ||
+                  (requireValue && InternetAddress.tryParse(value) == null)) {
+                return;
+              }
+              Navigator.of(context).pop('$key$separator$value');
             },
             child: const Text('保存'),
           ),
         ],
       ),
     );
-    key.dispose();
-    value.dispose();
-    return result;
-  }
-
-  Future<String?> _hostMappingDialog() async {
-    final host = TextEditingController();
-    final ip = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('添加主机映射'),
-        content: DialogBody(
-          maxWidth: 420,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: host,
-                decoration: const InputDecoration(
-                  labelText: '主机名',
-                  hintText: 'db.internal',
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: ip,
-                decoration: const InputDecoration(
-                  labelText: 'IP 地址',
-                  hintText: '10.0.0.12',
-                  isDense: true,
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final name = host.text.trim();
-              final address = ip.text.trim();
-              if (name.isEmpty || address.isEmpty) return;
-              Navigator.of(context).pop('$name:$address');
-            },
-            child: const Text('添加'),
-          ),
-        ],
-      ),
-    );
-    host.dispose();
-    ip.dispose();
-    return result;
-  }
-}
-
-class _PortEntry {
-  _PortEntry({
-    String hostIp = '',
-    String hostPort = '',
-    String containerPort = '',
-    this.protocol = 'tcp',
-  }) : hostIp = TextEditingController(text: hostIp),
-       hostPort = TextEditingController(text: hostPort),
-       containerPort = TextEditingController(text: containerPort);
-
-  final TextEditingController hostIp;
-  final TextEditingController hostPort;
-  final TextEditingController containerPort;
-  String protocol;
-
-  String? get spec {
-    final container = containerPort.text.trim();
-    final host = hostPort.text.trim();
-    if (container.isEmpty || host.isEmpty) return null;
-    final ip = hostIp.text.trim();
-    final prefix = ip.isEmpty ? host : '$ip:$host';
-    final suffix = protocol.isEmpty ? '' : '/$protocol';
-    return prefix.isEmpty ? '$container$suffix' : '$prefix:$container$suffix';
-  }
-
-  void dispose() {
-    hostIp.dispose();
-    hostPort.dispose();
-    containerPort.dispose();
   }
 }
 

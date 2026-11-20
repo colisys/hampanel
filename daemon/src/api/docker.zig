@@ -249,33 +249,15 @@ pub fn images(ctx: *context.Context) anyerror!void {
     for (try engine_mod.parseJsonObjects(ctx.arena, result.stdout)) |value| {
         if (value != .object) continue;
         const id = stringFieldAny(value, &.{ "ID", "Id", "id" });
-        var repository = stringField(value, "Repository");
-        var tag = stringField(value, "Tag");
-        if (repository.len == 0) {
-            if (value.object.get("RepoTags")) |repo_tags| {
-                if (repo_tags == .array) {
-                    for (repo_tags.array.items) |entry| {
-                        if (entry != .string) continue;
-                        const reference = entry.string;
-                        if (std.mem.eql(u8, reference, "<none>:<none>") or reference.len == 0) continue;
-                        if (std.mem.lastIndexOfScalar(u8, reference, ':')) |colon| {
-                            repository = reference[0..colon];
-                            tag = reference[colon + 1 ..];
-                        } else {
-                            repository = reference;
-                            tag = "latest";
-                        }
-                        break;
-                    }
-                }
-            }
-        }
+        const image_name = imageName(value);
+        const repository = image_name.repository;
+        const tag = image_name.tag;
         const size_text = imageSize(ctx.arena, value) catch "";
         const created_text = imageCreated(ctx.arena, value) catch "";
-        const reference = if (std.mem.eql(u8, tag, "<none>"))
+        const reference = if (repository.len == 0 or std.mem.eql(u8, repository, "<none>"))
+            id
+        else if (tag.len == 0 or std.mem.eql(u8, tag, "<none>"))
             repository
-        else if (std.mem.eql(u8, repository, "<none>"))
-            ""
         else
             try std.fmt.allocPrint(ctx.arena, "{s}:{s}", .{ repository, tag });
         var used_by = std.array_list.Managed([]const u8).init(ctx.arena);
@@ -293,7 +275,7 @@ pub fn images(ctx: *context.Context) anyerror!void {
             .size = size_text,
             .created_at = created_text,
             .digest = stringField(value, "Digest"),
-            .dangling = std.mem.eql(u8, repository, "<none>") or std.mem.eql(u8, tag, "<none>"),
+            .dangling = repository.len == 0 or std.mem.eql(u8, repository, "<none>") or std.mem.eql(u8, tag, "<none>"),
             .in_use = used_by.items.len > 0,
             .used_by = used_by.items,
         });
@@ -420,6 +402,8 @@ const Detail = struct {
     mounts: []const Mount,
     networks: []const Network,
     network_mode: []const u8,
+    ip: []const u8,
+    mac_address: []const u8,
     labels: []const []const u8,
     cpus: ?f64,
     memory: ?u64,
@@ -725,7 +709,7 @@ fn parseCreateBody(ctx: *context.Context) ?CreateBody {
             ctx.fail(400, "bad_label", "labels must be KEY=VALUE");
             return null;
         };
-        if (!validate.isEnvKey(entry[0..index]) or !validate.isEnvValue(entry[index + 1 ..])) {
+        if (!validate.isLabelKey(entry[0..index]) or !validate.isEnvValue(entry[index + 1 ..])) {
             ctx.fail(400, "bad_label", "invalid label");
             return null;
         }
@@ -839,7 +823,7 @@ fn buildRunArgv(
         try argv.append(entry);
     }
     if (body.ip.len > 0) {
-        try argv.append("--ip");
+        try argv.append(if (!engine.podman and std.mem.indexOfScalar(u8, body.ip, ':') != null) "--ip6" else "--ip");
         try argv.append(body.ip);
     }
     if (body.mac_address.len > 0) {
@@ -1003,37 +987,41 @@ fn enrich(allocator: std.mem.Allocator, item: *Container, value: std.json.Value)
             }
             if (settings.object.get("Ports")) |ports| {
                 if (ports == .object) {
-                    var list = std.array_list.Managed(PortMap).init(allocator);
-                    var iterator = ports.object.iterator();
-                    while (iterator.next()) |entry| {
-                        const spec = entry.key_ptr.*;
-                        const slash = std.mem.indexOfScalar(u8, spec, '/') orelse spec.len;
-                        const container_port = spec[0..slash];
-                        const protocol = if (slash < spec.len) spec[slash + 1 ..] else "";
-                        const bindings = entry.value_ptr.*;
-                        if (bindings == .array and bindings.array.items.len > 0) {
-                            for (bindings.array.items) |binding| {
-                                try list.append(.{
-                                    .host_ip = stringField(binding, "HostIp"),
-                                    .host_port = stringField(binding, "HostPort"),
-                                    .container_port = container_port,
-                                    .protocol = protocol,
-                                });
-                            }
-                        } else {
-                            try list.append(.{
-                                .host_ip = "",
-                                .host_port = "",
-                                .container_port = container_port,
-                                .protocol = protocol,
-                            });
-                        }
-                    }
-                    item.port_map = list.items;
+                    item.port_map = try inspectPortBindings(allocator, ports, true);
                 }
             }
         }
     }
+}
+
+fn inspectPortBindings(allocator: std.mem.Allocator, ports: std.json.Value, include_exposed: bool) ![]const PortMap {
+    var list = std.array_list.Managed(PortMap).init(allocator);
+    var iterator = ports.object.iterator();
+    while (iterator.next()) |entry| {
+        const spec = entry.key_ptr.*;
+        const slash = std.mem.indexOfScalar(u8, spec, '/') orelse spec.len;
+        const container_port = spec[0..slash];
+        const protocol = if (slash < spec.len) spec[slash + 1 ..] else "";
+        const bindings = entry.value_ptr.*;
+        if (bindings == .array and bindings.array.items.len > 0) {
+            for (bindings.array.items) |binding| {
+                try list.append(.{
+                    .host_ip = stringField(binding, "HostIp"),
+                    .host_port = stringField(binding, "HostPort"),
+                    .container_port = container_port,
+                    .protocol = protocol,
+                });
+            }
+        } else if (include_exposed) {
+            try list.append(.{
+                .host_ip = "",
+                .host_port = "",
+                .container_port = container_port,
+                .protocol = protocol,
+            });
+        }
+    }
+    return list.items;
 }
 
 fn detailFrom(
@@ -1133,9 +1121,13 @@ fn detailFrom(
     var privileged = false;
     var dns = std.array_list.Managed([]const u8).init(allocator);
     var add_hosts = std.array_list.Managed([]const u8).init(allocator);
+    var configured_ports: ?[]const PortMap = null;
     if (value.object.get("HostConfig")) |host| {
         if (host == .object) {
             network_mode = stringField(host, "NetworkMode");
+            if (host.object.get("PortBindings")) |bindings| {
+                if (bindings == .object) configured_ports = try inspectPortBindings(allocator, bindings, false);
+            }
             privileged = if (host.object.get("Privileged")) |flag| flag == .bool and flag.bool else false;
             if (host.object.get("Dns")) |entries| {
                 if (entries == .array) {
@@ -1168,6 +1160,14 @@ fn detailFrom(
             }
         }
     }
+    const ports = configured_ports orelse blk: {
+        const settings = value.object.get("NetworkSettings") orelse break :blk &.{};
+        if (settings != .object) break :blk &.{};
+        const bindings = settings.object.get("Ports") orelse break :blk &.{};
+        if (bindings != .object) break :blk &.{};
+        break :blk try inspectPortBindings(allocator, bindings, false);
+    };
+    const addresses = @import("docker_addresses.zig").configured(value, network_mode);
     const note = note_map.get(item.name) orelse "";
     return .{
         .id = item.id,
@@ -1181,10 +1181,12 @@ fn detailFrom(
         .restart_policy = restart_policy,
         .restart_max = restart_max,
         .env = env.items,
-        .ports = item.port_map,
+        .ports = ports,
         .mounts = mounts.items,
         .networks = item.networks,
         .network_mode = network_mode,
+        .ip = addresses.ip,
+        .mac_address = addresses.mac,
         .labels = labels.items,
         .cpus = cpus,
         .memory = memory,
@@ -1327,6 +1329,34 @@ fn nameField(value: std.json.Value) []const u8 {
     return stringField(value, "Name");
 }
 
+const ImageName = struct { repository: []const u8, tag: []const u8 };
+
+fn imageName(value: std.json.Value) ImageName {
+    const repository = stringField(value, "Repository");
+    if (repository.len > 0 and !std.mem.eql(u8, repository, "<none>")) {
+        return .{ .repository = repository, .tag = stringField(value, "Tag") };
+    }
+    for ([_][]const u8{ "RepoTags", "Names" }) |key| {
+        const names = value.object.get(key) orelse continue;
+        if (names != .array) continue;
+        for (names.array.items) |entry| {
+            if (entry != .string) continue;
+            const reference = entry.string;
+            if (reference.len == 0 or std.mem.startsWith(u8, reference, "<none>")) continue;
+            if (std.mem.indexOfScalar(u8, reference, '@') == null) {
+                if (std.mem.lastIndexOfScalar(u8, reference, ':')) |colon| {
+                    const slash = std.mem.lastIndexOfScalar(u8, reference, '/');
+                    if (slash == null or colon > slash.?) {
+                        return .{ .repository = reference[0..colon], .tag = reference[colon + 1 ..] };
+                    }
+                }
+            }
+            return .{ .repository = reference, .tag = "" };
+        }
+    }
+    return .{ .repository = repository, .tag = stringField(value, "Tag") };
+}
+
 fn imageSize(allocator: std.mem.Allocator, value: std.json.Value) ![]const u8 {
     if (value != .object) return "";
     const entry = value.object.get("Size") orelse return "";
@@ -1376,4 +1406,21 @@ fn formatEpoch(allocator: std.mem.Allocator, seconds: i64) ![]const u8 {
 fn textOf(result: exec.Result) []const u8 {
     if (result.stderr.len > 0) return result.stderr;
     return result.stdout;
+}
+
+test "image names from Docker and Podman listings" {
+    const cases = [_]struct { json: []const u8, repository: []const u8, tag: []const u8 }{
+        .{ .json = "{\"Repository\":\"nginx\",\"Tag\":\"alpine\"}", .repository = "nginx", .tag = "alpine" },
+        .{ .json = "{\"Names\":[\"registry:5000/team/app:v1\"]}", .repository = "registry:5000/team/app", .tag = "v1" },
+        .{ .json = "{\"RepoTags\":[\"registry:5000/team/app\"]}", .repository = "registry:5000/team/app", .tag = "" },
+        .{ .json = "{\"Names\":[\"registry:5000/team/app@sha256:abc\"]}", .repository = "registry:5000/team/app@sha256:abc", .tag = "" },
+        .{ .json = "{\"Names\":[\"<none>:<none>\"]}", .repository = "", .tag = "" },
+    };
+    for (cases) |case| {
+        const parsed = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, case.json, .{});
+        defer parsed.deinit();
+        const name = imageName(parsed.value);
+        try std.testing.expectEqualStrings(case.repository, name.repository);
+        try std.testing.expectEqualStrings(case.tag, name.tag);
+    }
 }

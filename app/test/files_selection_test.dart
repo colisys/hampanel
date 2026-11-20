@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hampanel/core/api_client.dart';
 import 'package:hampanel/core/session.dart';
+import 'package:hampanel/features/recycle/recycle_page.dart';
 import 'package:hampanel/features/files/files_page.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -24,6 +25,17 @@ class _FilesApi implements ApiClient {
     Map<String, String>? query,
     Duration? timeout,
   }) async {
+    if (path == '/api/v1/recycle') {
+      return {
+        'entries': [
+          {
+            'name': 'long-filename-' * 8,
+            'original_path': '/archive/' * 12,
+            'size': 100,
+          },
+        ],
+      };
+    }
     if (path == '/api/v1/system') return {'platform': 'linux'};
     final directory = query!['path'];
     return {
@@ -62,6 +74,23 @@ class _FilesApi implements ApiClient {
 }
 
 void main() {
+  testWidgets('long recycle entry keeps actions below its path at 320px', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(home: RecyclePage(api: _FilesApi())));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getTopLeft(find.text('恢复')).dy,
+      greaterThan(tester.getBottomLeft(find.text('/archive/' * 12)).dy),
+    );
+    await tester.tap(find.byTooltip('永久删除'));
+    await tester.pumpAndSettle();
+    expect(find.text('该操作不可恢复，会直接删除回收站中的内容。'), findsOneWidget);
+  });
   for (final width in [400.0, 1000.0]) {
     testWidgets('batch trash and navigation at width $width', (tester) async {
       tester.view.physicalSize = Size(width, 800);
@@ -82,6 +111,14 @@ void main() {
       await tester.tap(find.byType(Checkbox).first);
       await tester.pumpAndSettle();
       expect(find.text('已选择 1 项'), findsOneWidget);
+      await tester.tap(find.text('反选'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<Checkbox>(find.byType(Checkbox).first).value,
+        isFalse,
+      );
+      await tester.tap(find.text('清空'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('全选'));
       await tester.pumpAndSettle();
       expect(find.text('已选择 2 项'), findsOneWidget);

@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'selection_toolbar.dart';
+
 import '../core/api_client.dart';
 import '../core/models/file_entry.dart';
 import 'theme.dart';
@@ -40,24 +42,30 @@ class HostDirectorySource implements RemotePickerSource {
   String get title => '选择远程目录';
 
   @override
-  Future<List<RemotePickerEntry>> list(String path, {bool includeFiles = false}) async {
+  Future<List<RemotePickerEntry>> list(
+    String path, {
+    bool includeFiles = false,
+  }) async {
     final target = path.isEmpty ? root : path;
     final json = await api.getJson('/api/v1/files', query: {'path': target});
     final map = json as Map<String, dynamic>? ?? const {};
-    final entries = ((map['entries'] as List<dynamic>?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .map(FileEntry.fromJson)
-        .where((entry) => includeFiles || entry.isDir)
-        .map(
-          (entry) => RemotePickerEntry(
-            name: entry.name,
-            path: entry.path,
-            isDirectory: entry.isDir,
-            subtitle: entry.mode,
-          ),
-        )
-        .toList()
-      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final entries =
+        ((map['entries'] as List<dynamic>?) ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(FileEntry.fromJson)
+            .where((entry) => includeFiles || entry.isDir)
+            .map(
+              (entry) => RemotePickerEntry(
+                name: entry.name,
+                path: entry.path,
+                isDirectory: entry.isDir,
+                subtitle: entry.mode,
+              ),
+            )
+            .toList()
+          ..sort(
+            (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+          );
     return entries;
   }
 }
@@ -324,7 +332,11 @@ class _RemotePickerDialogState<T> extends State<_RemotePickerDialog<T>> {
                       scrollDirection: Axis.horizontal,
                       child: Row(
                         children: [
-                          for (var index = 0; index < crumbs.length; index++) ...[
+                          for (
+                            var index = 0;
+                            index < crumbs.length;
+                            index++
+                          ) ...[
                             if (index > 0)
                               Icon(
                                 Icons.chevron_right,
@@ -343,20 +355,9 @@ class _RemotePickerDialogState<T> extends State<_RemotePickerDialog<T>> {
                 ],
               ),
               if (widget.multiple)
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Semantics(
-                      liveRegion: true,
-                      child: Text('已选择 ${_selected.length} 项'),
-                    ),
-                    TextButton(
-                      onPressed: _selected.isEmpty
-                          ? null
-                          : () => setState(_selected.clear),
-                      child: const Text('清空选择'),
-                    ),
-                  ],
+                Semantics(
+                  liveRegion: true,
+                  child: Text('已选择 ${_selected.length} 项'),
                 ),
               const Divider(height: 10),
               Expanded(
@@ -367,13 +368,8 @@ class _RemotePickerDialogState<T> extends State<_RemotePickerDialog<T>> {
                     : _entries.isEmpty
                     ? Center(
                         child: Text(
-                          widget.allowFiles
-                              ? '这里没有子目录或文件'
-                              : '这里没有子目录',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: hampanelMuted,
-                          ),
+                          widget.allowFiles ? '这里没有子目录或文件' : '这里没有子目录',
+                          style: TextStyle(fontSize: 12, color: hampanelMuted),
                         ),
                       )
                     : ListView.builder(
@@ -413,7 +409,10 @@ class _RemotePickerDialogState<T> extends State<_RemotePickerDialog<T>> {
                                     children: [
                                       _checkbox(entry.path, '选择 ${entry.name}'),
                                       if (entry.isDirectory)
-                                        const Icon(Icons.chevron_right, size: 16),
+                                        const Icon(
+                                          Icons.chevron_right,
+                                          size: 16,
+                                        ),
                                     ],
                                   )
                                 : entry.isDirectory
@@ -454,6 +453,21 @@ class _RemotePickerDialogState<T> extends State<_RemotePickerDialog<T>> {
                       fontFamily: 'monospace',
                     ),
                   ),
+                ),
+              if (widget.multiple)
+                SelectionToolbar(
+                  selected: _selected,
+                  visible: _loading || _error != null
+                      ? {}
+                      : _entries
+                            .where(_canSelectEntry)
+                            .map((entry) => entry.path)
+                            .toSet(),
+                  onChanged: (paths) => setState(() {
+                    _selected
+                      ..clear()
+                      ..addAll(paths);
+                  }),
                 ),
             ],
           ),

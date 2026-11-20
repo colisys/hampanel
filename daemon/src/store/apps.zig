@@ -97,6 +97,13 @@ pub fn deploy(
     const path = try composePath(allocator, data_dir, app);
     if (compat.path.dirname(path)) |dir| {
         try compat.cwd().makePath(dir);
+        if (std.mem.eql(u8, app.slug, "nginx")) {
+            try compat.cwd().makePath(try compat.path.join(allocator, &.{ dir, "sites-conf" }));
+            const include = try compat.path.join(allocator, &.{ dir, "sites-include.conf" });
+            var snippet = try compat.createFileAbsolute(include, .{ .truncate = true, .mode = 0o644 });
+            defer snippet.close();
+            try snippet.writeAll("include /etc/nginx/hampanel/*.conf;\n");
+        }
     }
 
     var file = try compat.createFileAbsolute(path, .{ .truncate = true, .mode = 0o600 });
@@ -136,6 +143,95 @@ pub fn deploy(
         .path = path,
         .params = applied.items,
     };
+}
+
+const legacy_nginx = @embedFile("catalog/nginx-legacy.yml");
+
+fn legacyPort(raw: []const u8) ![]const u8 {
+    const marker = "{{port}}";
+    const at = comptime std.mem.indexOf(u8, legacy_nginx, marker).?;
+    const suffix = legacy_nginx[at + marker.len ..];
+    if (raw.len <= at + suffix.len or !std.mem.startsWith(u8, raw, legacy_nginx[0..at]) or !std.mem.endsWith(u8, raw, suffix)) return error.NotLegacyCatalogLayout;
+    const port = raw[at .. raw.len - suffix.len];
+    for (port) |ch| if (!std.ascii.isDigit(ch)) return error.InvalidParam;
+    if ((std.fmt.parseInt(u16, port, 10) catch return error.InvalidParam) == 0) return error.InvalidParam;
+    return port;
+}
+
+// Only called by an explicit Store task. Never run down or change the project.
+pub fn upgradeNginx(a: std.mem.Allocator, engine: engine_mod.Engine, socket: []const u8, data_dir: []const u8, app: *const catalog.App) !Outcome {
+    if (!std.mem.eql(u8, app.slug, "nginx")) return error.InvalidParams;
+    const argv = try composeArgs(a, engine, socket, data_dir, app, &.{ "up", "-d" });
+    const path = try composePath(a, data_dir, app);
+    const dir = compat.path.dirname(path).?;
+    const backup = try compat.path.join(a, &.{ dir, "compose.pre-upgrade.yml" });
+    const old = try compat.cwd().readFileAlloc(a, path, 16384);
+    const port = try legacyPort(old);
+    const updated = try replaceAll(a, app.compose, "{{port}}", port);
+    // Do not adopt a same-name Compose project from another checkout or
+    // silently replace a drifted HTML mount / host port. Fail closed when a
+    // provider cannot attest the working directory and legacy runtime layout.
+    const lookup = try engine_mod.run(a, engine, socket, &.{ engine.name, "ps", "-a", "--no-trunc", "--filter", "label=com.docker.compose.project=hampanel-nginx", "--format", "{{.ID}}" }, .{});
+    const id = std.mem.trim(u8, lookup.stdout, " \t\r\n");
+    if (!lookup.ok() or id.len != 64) return error.LegacyContainerMismatch;
+    for (id) |ch| if (!std.ascii.isHex(ch)) return error.LegacyContainerMismatch;
+    const format = "{{index .Config.Labels \"com.docker.compose.project.working_dir\"}}\n{{index .Config.Labels \"com.docker.compose.service\"}}\n{{.Config.Image}}\n{{.HostConfig.Privileged}}\n{{range .Mounts}}{{.Type}} {{.Name}} {{.Destination}} {{.RW}}\n{{end}}{{range $p, $bindings := .HostConfig.PortBindings}}{{range $bindings}}{{$p}} {{.HostIp}} {{.HostPort}}\n{{end}}{{end}}";
+    const inspected = try engine_mod.run(a, engine, socket, &.{ engine.name, "inspect", "--format", format, id }, .{});
+    if (!inspected.ok() or !legacyRuntime(inspected.stdout, dir, port)) return error.LegacyContainerMismatch;
+    // Exclusive files: refuse to overwrite backups or load pre-existing site snippets.
+    try writeNew(backup, old, 0o600);
+    errdefer compat.deleteFileAbsolute(backup) catch {};
+    const sites = try compat.path.join(a, &.{ dir, "sites-conf" });
+    try compat.makeDirAbsolute(sites, 0o755);
+    errdefer std.Io.Dir.cwd().deleteDir(compat.io(), sites) catch {};
+    const snippet = try compat.path.join(a, &.{ dir, "sites-include.conf" });
+    try writeNew(snippet, "include /etc/nginx/hampanel/*.conf;\n", 0o644);
+    errdefer compat.deleteFileAbsolute(snippet) catch {};
+    const stage = try compat.path.join(a, &.{ dir, "compose.upgrading.yml" });
+    try writeNew(stage, updated, 0o600);
+    defer compat.deleteFileAbsolute(stage) catch {};
+    try compat.renameAbsolute(stage, path);
+    // Once Compose has started, a provider failure can mean a partial apply.
+    // Keep both manifests and mounts for explicit recovery; don't auto-recreate again.
+    var result = engine_mod.run(a, engine, socket, argv, .{ .max_output = 4 * 1024 * 1024 }) catch return .{ .ok = false, .output = "Compose failed; review compose.yml and compose.pre-upgrade.yml" };
+    if (!result.ok()) return .{ .ok = false, .output = textOf(result) };
+    _ = @import("../runtime/site_nginx.zig").resolveContainer(a, data_dir, socket) catch return .{ .ok = false, .output = "Updated mounts not verified; review compose.yml and compose.pre-upgrade.yml" };
+    return .{ .ok = true, .output = textOf(result) };
+}
+
+fn legacyRuntime(raw: []const u8, dir: []const u8, port: []const u8) bool {
+    var lines = std.mem.tokenizeAny(u8, raw, "\r\n");
+    for ([_][]const u8{ dir, "web", "docker.io/library/nginx:1.27-alpine", "false", "volume hampanel-nginx_html /usr/share/nginx/html true" }) |expected| {
+        if (!std.mem.eql(u8, lines.next() orelse return false, expected)) return false;
+    }
+    const binding = lines.next() orelse return false;
+    const prefix = "80/tcp  "; // no host-IP override
+    return std.mem.startsWith(u8, binding, prefix) and std.mem.eql(u8, binding[prefix.len..], port) and lines.next() == null;
+}
+
+test "legacy runtime must match the project directory, volume and published binding" {
+    const layout = "/apps/nginx\nweb\ndocker.io/library/nginx:1.27-alpine\nfalse\nvolume hampanel-nginx_html /usr/share/nginx/html true\n80/tcp  49101\n";
+    try std.testing.expect(legacyRuntime(layout, "/apps/nginx", "49101"));
+    try std.testing.expect(!legacyRuntime(layout, "/other/nginx", "49101"));
+    try std.testing.expect(!legacyRuntime(layout, "/apps/nginx", "8080"));
+    try std.testing.expect(!legacyRuntime(layout ++ "80/tcp 127.0.0.1 8080", "/apps/nginx", "49101"));
+}
+
+fn writeNew(path: []const u8, data: []const u8, mode: compat.File.Mode) !void {
+    var f = try compat.createFileAbsolute(path, .{ .exclusive = true, .mode = mode });
+    errdefer compat.deleteFileAbsolute(path) catch {};
+    defer f.close();
+    try f.writeAll(data);
+}
+
+test "nginx upgrade accepts only the exact legacy layout and preserves published port" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const old = try replaceAll(a, legacy_nginx, "{{port}}", "49101");
+    try std.testing.expectEqualStrings("49101", try legacyPort(old));
+    try std.testing.expectError(error.NotLegacyCatalogLayout, legacyPort(try replaceAll(a, old, "html:", "custom:")));
+    try std.testing.expectError(error.InvalidParam, legacyPort(try replaceAll(a, old, "49101", "65536")));
 }
 
 pub fn start(allocator: std.mem.Allocator, engine: engine_mod.Engine, socket: []const u8, data_dir: []const u8, app: *const catalog.App) !Outcome {

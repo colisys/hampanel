@@ -333,7 +333,9 @@ fn storeApp(ctx: *tasks.Context) !void {
     const socket = engine_mod.socketFromDb(ctx.allocator, ctx.manager.database);
     const engine = engine_mod.detect(ctx.allocator, socket) catch return error.EngineUnavailable;
     try ctx.setPhase(action);
-    const outcome = if (std.mem.eql(u8, action, "start"))
+    const outcome = if (std.mem.eql(u8, action, "upgrade-nginx"))
+        try store_apps.upgradeNginx(ctx.allocator, engine, socket, ctx.manager.data_dir, app)
+    else if (std.mem.eql(u8, action, "start"))
         store_apps.start(ctx.allocator, engine, socket, ctx.manager.data_dir, app) catch |err| return err
     else if (std.mem.eql(u8, action, "stop"))
         store_apps.stop(ctx.allocator, engine, socket, ctx.manager.data_dir, app) catch |err| return err
@@ -355,7 +357,11 @@ fn storeApp(ctx: *tasks.Context) !void {
 fn serviceAction(ctx: *tasks.Context) !void {
     const unit = try stringParam(ctx, "unit");
     const action = try stringParam(ctx, "action");
-    if (unit.len == 0 or action.len == 0) return error.InvalidParams;
+    if (!@import("shared").validate.isUnitName(unit)) return error.InvalidParams;
+    const allowed = [_][]const u8{ "start", "stop", "restart", "reload", "enable", "disable" };
+    for (allowed) |candidate| {
+        if (std.mem.eql(u8, action, candidate)) break;
+    } else return error.InvalidParams;
     try ctx.setPhase(action);
     const outcome = platform_mod.services.action(ctx.allocator, unit, action) catch |err| return err;
     try ctx.write(outcome.output);
@@ -365,10 +371,13 @@ fn serviceAction(ctx: *tasks.Context) !void {
 fn sitesReload(ctx: *tasks.Context) !void {
     try ctx.setPhase("reloading");
     const Reloaded = struct { ok: bool, output: []const u8 };
-    const reloaded: Reloaded = if (site_nginx.available(ctx.allocator)) blk: {
-        const result = site_nginx.reload(ctx.allocator) catch |err| return err;
+    const provider = @import("runtime/site_provider.zig");
+    const server = provider.webServer(ctx.allocator, ctx.manager.data_dir, ctx.manager.config.web_server);
+    const reloaded: Reloaded = if (std.mem.eql(u8, server, "nginx")) blk: {
+        const target = try provider.nginxTarget(ctx.allocator, ctx.manager.data_dir, ctx.manager.database);
+        const result = try site_nginx.reloadTarget(ctx.allocator, target);
         break :blk .{ .ok = result.ok, .output = result.output };
-    } else if (site_caddy.available(ctx.allocator)) blk: {
+    } else if (std.mem.eql(u8, server, "caddy")) blk: {
         const result = site_caddy.reload(ctx.allocator) catch |err| return err;
         break :blk .{ .ok = result.ok, .output = result.output };
     } else return error.WebServerUnavailable;

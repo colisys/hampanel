@@ -26,25 +26,7 @@ class ServiceCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    service.unit,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: monospace.copyWith(fontSize: 13),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                StatusPill(text: service.active, good: service.running),
-                ServiceActions(
-                  onAction: onAction,
-                  onEdit: onEdit,
-                  onLogs: onLogs,
-                ),
-              ],
-            ),
+            Text(service.unit, style: monospace.copyWith(fontSize: 13)),
             const SizedBox(height: 6),
             Wrap(
               spacing: 12,
@@ -52,10 +34,7 @@ class ServiceCard extends StatelessWidget {
               children: [
                 Text(
                   service.sub,
-                  style: monospace.copyWith(
-                    fontSize: 11,
-                    color: hampanelMuted,
-                  ),
+                  style: monospace.copyWith(fontSize: 11, color: hampanelMuted),
                 ),
                 if (service.description.isNotEmpty)
                   Text(
@@ -70,6 +49,8 @@ class ServiceCard extends StatelessWidget {
                   ),
               ],
             ),
+            StatusPill(text: service.active, good: service.running),
+            ServiceActions(onAction: onAction, onEdit: onEdit, onLogs: onLogs),
           ],
         ),
       ),
