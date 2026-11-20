@@ -75,6 +75,9 @@ comptime {
 
     _ = &backend.security.scanStatus;
     _ = &backend.security.recordBan;
+    _ = &backend.tamper.status;
+    _ = &backend.tamper.protect;
+    _ = &backend.tamper.unprotect;
 
     _ = &service.run;
 }

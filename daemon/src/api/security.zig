@@ -3,6 +3,7 @@ const compat = @import("compat");
 const context = @import("context.zig");
 const platform = @import("../platform/mod.zig");
 const exec = @import("shared").exec;
+const log = @import("../log.zig");
 
 /// Aggregate the three existing security surfaces plus the new sensors so the
 /// hub can render one overview without six round trips.
@@ -47,6 +48,60 @@ fn bannedCount(jails: []const platform.fail2ban.Jail) usize {
     var total: usize = 0;
     for (jails) |jail| total += jail.currently_banned;
     return total;
+}
+
+/// Tamper protection list and its enforcement state.
+pub fn tamper(ctx: *context.Context) anyerror!void {
+    const data_dir = ctx.app.config.data_dir;
+    const status = platform.tamper.status(ctx.arena, data_dir) catch |err| {
+        ctx.fail(500, "tamper_failed", @errorName(err));
+        return;
+    };
+    try ctx.json(status);
+}
+
+pub fn protect(ctx: *context.Context) anyerror!void {
+    const Body = struct { path: []const u8 };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected path");
+        return;
+    };
+    const path = platform.files.resolve(ctx.arena, body.path) catch {
+        ctx.fail(400, "bad_path", "path must be absolute");
+        return;
+    };
+    // The target must exist, otherwise chattr would protect nothing while the
+    // manifest claims otherwise.
+    _ = platform.files.stat(ctx.arena, path) catch {
+        ctx.fail(404, "not_found", "path does not exist");
+        return;
+    };
+    const outcome = platform.tamper.protect(ctx.arena, ctx.app.config.data_dir, path) catch |err| {
+        ctx.fail(if (err == error.Unsupported) 501 else 502, "tamper_failed", @errorName(err));
+        return;
+    };
+    if (!outcome.ok) ctx.response.status = 502;
+    log.info("security: tamper protect ok={}", .{outcome.ok});
+    try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+}
+
+pub fn unprotect(ctx: *context.Context) anyerror!void {
+    const Body = struct { path: []const u8 };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected path");
+        return;
+    };
+    const path = platform.files.resolve(ctx.arena, body.path) catch {
+        ctx.fail(400, "bad_path", "path must be absolute");
+        return;
+    };
+    const outcome = platform.tamper.unprotect(ctx.arena, ctx.app.config.data_dir, path) catch |err| {
+        ctx.fail(if (err == error.Unsupported) 501 else 502, "tamper_failed", @errorName(err));
+        return;
+    };
+    if (!outcome.ok) ctx.response.status = 502;
+    log.info("security: tamper unprotect ok={}", .{outcome.ok});
+    try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
 /// Read-only capability report. Every entry states whether the host can run the

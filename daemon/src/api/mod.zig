@@ -100,6 +100,9 @@ pub const routes = [_]router.Route{
 
     .{ .method = .GET, .pattern = "/api/v1/security/overview", .handler = security.overview },
     .{ .method = .GET, .pattern = "/api/v1/security/capabilities", .handler = security.capabilities },
+    .{ .method = .GET, .pattern = "/api/v1/security/tamper", .handler = security.tamper },
+    .{ .method = .POST, .pattern = "/api/v1/security/tamper", .handler = security.protect },
+    .{ .method = .POST, .pattern = "/api/v1/security/tamper/remove", .handler = security.unprotect },
     .{ .method = .GET, .pattern = "/api/v1/files", .handler = files.list },
     .{ .method = .GET, .pattern = "/api/v1/files/meta", .handler = files.fileMeta },
     .{ .method = .GET, .pattern = "/api/v1/files/accounts", .handler = files.fileAccounts },
