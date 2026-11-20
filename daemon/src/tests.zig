@@ -1169,3 +1169,129 @@ test "hardening marks forwarding as requiring review" {
         try std.testing.expect(!param.needs_review);
     }
 }
+
+test "selinux parses policy contexts, ports and modules" {
+    const selinux = @import("platform/mod.zig").selinux;
+    if (@import("builtin").os.tag != .linux) return;
+    const allocator = std.testing.allocator;
+
+    // Exactly what `semanage fcontext -C -n` prints for local customisations.
+    const context_output =
+        \\/var/www(/.*)?         all files          system_u:object_r:httpd_sys_content_t:s0
+        \\/srv/app(/.*)?         all files          system_u:object_r:container_file_t:s0
+        \\/etc/hosts             regular file       system_u:object_r:net_conf_t:s0
+    ;
+    const contexts = try selinux.parseContexts(allocator, context_output);
+    defer {
+        for (contexts) |entry| {
+            allocator.free(entry.path);
+            allocator.free(entry.kind);
+            allocator.free(entry.file_type);
+        }
+        allocator.free(contexts);
+    }
+    try std.testing.expectEqual(@as(usize, 3), contexts.len);
+    try std.testing.expectEqualStrings("/var/www(/.*)?", contexts[0].path);
+    try std.testing.expectEqualStrings("httpd_sys_content_t", contexts[0].kind);
+    // The class is printed as words, e.g. "all files".
+    try std.testing.expectEqualStrings("all files", contexts[0].file_type);
+    try std.testing.expectEqualStrings("net_conf_t", contexts[2].kind);
+    try std.testing.expectEqualStrings("regular file", contexts[2].file_type);
+
+    // `semanage port -l -n` columns: type, protocol, port list.
+    const port_output =
+        \\http_port_t                    tcp      80, 443, 488, 8008, 8009
+        \\ssh_port_t                     tcp      22
+        \\dns_port_t                     udp      53
+    ;
+    const ports = try selinux.parsePorts(allocator, port_output);
+    defer {
+        for (ports) |entry| {
+            allocator.free(entry.protocol);
+            allocator.free(entry.kind);
+        }
+        allocator.free(ports);
+    }
+    try std.testing.expectEqual(@as(usize, 7), ports.len);
+    try std.testing.expectEqual(@as(u16, 80), ports[0].port);
+    try std.testing.expectEqualStrings("http_port_t", ports[0].kind);
+    try std.testing.expectEqualStrings("udp", ports[6].protocol);
+
+    // `semodule -l`: name and version.
+    const module_output =
+        \\abrt      1.4.1
+        \\container 1.2.3
+        \\mypolicy  1.0
+    ;
+    const modules = try selinux.parseModules(allocator, module_output);
+    defer {
+        for (modules) |entry| {
+            allocator.free(entry.name);
+            allocator.free(entry.version);
+        }
+        allocator.free(modules);
+    }
+    try std.testing.expectEqual(@as(usize, 3), modules.len);
+    try std.testing.expectEqualStrings("container", modules[1].name);
+    try std.testing.expectEqualStrings("1.2.3", modules[1].version);
+    // A bogus line must not become a module.
+    const garbage = try selinux.parseModules(allocator, "Not A Module!\n");
+    defer {
+        for (garbage) |entry| {
+            allocator.free(entry.name);
+            allocator.free(entry.version);
+        }
+        allocator.free(garbage);
+    }
+    try std.testing.expectEqual(@as(usize, 0), garbage.len);
+}
+
+test "selinux parses AVC denials from audit output" {
+    const selinux = @import("platform/mod.zig").selinux;
+    if (@import("builtin").os.tag != .linux) return;
+    const allocator = std.testing.allocator;
+
+    const output =
+        \\----
+        \\type=AVC msg=audit(1700000000.123:456): avc:  denied  { read write } for  pid=1234 comm="nginx" name="app.conf" dev="sda1" ino=99 scontext=system_u:system_r:httpd_t:s0 tcontext=system_u:object_r:etc_t:s0 tclass=file permissive=0
+        \\----
+        \\type=AVC msg=audit(1700000100.500:457): avc:  denied  { connectto } for  pid=2000 comm="caddy" path="/run/app.sock" scontext=system_u:system_r:caddy_t:s0 tcontext=system_u:object_r:var_run_t:s0 tclass=unix_stream_socket permissive=0
+    ;
+    const denials = try selinux.parseDenials(allocator, output);
+    defer {
+        for (denials) |entry| {
+            allocator.free(entry.at);
+            allocator.free(entry.source);
+            allocator.free(entry.target);
+            allocator.free(entry.object_type);
+            allocator.free(entry.tclass);
+            allocator.free(entry.permission);
+            allocator.free(entry.path);
+        }
+        allocator.free(denials);
+    }
+    try std.testing.expectEqual(@as(usize, 2), denials.len);
+    try std.testing.expectEqualStrings("1700000000.123:456", denials[0].at);
+    try std.testing.expectEqualStrings("read write", denials[0].permission);
+    try std.testing.expectEqualStrings("system_u:system_r:httpd_t:s0", denials[0].source);
+    try std.testing.expectEqualStrings("file", denials[0].tclass);
+    try std.testing.expectEqualStrings("unix_stream_socket", denials[1].tclass);
+    try std.testing.expectEqualStrings("/run/app.sock", denials[1].path);
+}
+
+test "selinux validates contexts and ports before writing" {
+    const selinux = @import("platform/mod.zig").selinux;
+    if (@import("builtin").os.tag != .linux) return;
+
+    try std.testing.expect(selinux.validContextPath("/var/www(/.*)?"));
+    try std.testing.expect(selinux.validContextPath("/srv/app"));
+    try std.testing.expect(!selinux.validContextPath("relative/path"));
+    try std.testing.expect(!selinux.validContextPath("/etc/../etc"));
+    try std.testing.expect(!selinux.validContextPath("/var/www; rm -rf /"));
+    try std.testing.expect(!selinux.validContextPath("/var/www | cat"));
+
+    try std.testing.expect(selinux.validTypeName("httpd_sys_content_t"));
+    try std.testing.expect(!selinux.validTypeName("UpperCase"));
+    try std.testing.expect(!selinux.validTypeName("type; rm"));
+    try std.testing.expect(!selinux.validTypeName(""));
+}

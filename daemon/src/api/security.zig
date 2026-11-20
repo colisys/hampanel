@@ -322,9 +322,62 @@ pub fn selinuxBoolean(ctx: *context.Context) anyerror!void {
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
+pub fn selinuxContext(ctx: *context.Context) anyerror!void {
+    const Body = struct {
+        path: []const u8,
+        kind: []const u8,
+        file_type: []const u8 = "all",
+        remove: bool = false,
+    };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected path and kind");
+        return;
+    };
+    const outcome = platform.selinux.setContext(ctx.arena, .{
+        .path = body.path,
+        .kind = body.kind,
+        .file_type = body.file_type,
+    }, body.remove) catch |err| {
+        ctx.fail(mapSelinuxError(err), "selinux_failed", @errorName(err));
+        return;
+    };
+    if (!outcome.ok) ctx.response.status = 502;
+    log.info("security: selinux fcontext written remove={}", .{body.remove});
+    try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+}
+
+pub fn selinuxPort(ctx: *context.Context) anyerror!void {
+    const Body = struct {
+        port: u16,
+        protocol: []const u8,
+        kind: []const u8,
+        remove: bool = false,
+    };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected port, protocol and kind");
+        return;
+    };
+    const outcome = platform.selinux.setPort(ctx.arena, .{
+        .port = body.port,
+        .protocol = body.protocol,
+        .kind = body.kind,
+    }, body.remove) catch |err| {
+        ctx.fail(mapSelinuxError(err), "selinux_failed", @errorName(err));
+        return;
+    };
+    if (!outcome.ok) ctx.response.status = 502;
+    log.info("security: selinux port written remove={}", .{body.remove});
+    try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+}
+
 fn mapSelinuxError(err: anyerror) u16 {
     const name = @errorName(err);
-    if (std.mem.eql(u8, name, "InvalidMode") or std.mem.eql(u8, name, "InvalidBoolean")) return 400;
+    if (std.mem.eql(u8, name, "InvalidMode") or
+        std.mem.eql(u8, name, "InvalidBoolean") or
+        std.mem.eql(u8, name, "InvalidPath") or
+        std.mem.eql(u8, name, "InvalidType") or
+        std.mem.eql(u8, name, "InvalidPort") or
+        std.mem.eql(u8, name, "InvalidProtocol")) return 400;
     if (std.mem.eql(u8, name, "NotPresent")) return 409;
     if (std.mem.eql(u8, name, "ToolingUnavailable") or std.mem.eql(u8, name, "Unsupported")) return 501;
     return 500;

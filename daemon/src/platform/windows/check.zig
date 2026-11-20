@@ -88,6 +88,10 @@ comptime {
     _ = &backend.selinux.status;
     _ = &backend.selinux.setMode;
     _ = &backend.selinux.setBoolean;
+    _ = &backend.selinux.setContext;
+    _ = &backend.selinux.setPort;
+    _ = &backend.selinux.validContextPath;
+    _ = &backend.selinux.validTypeName;
     _ = &backend.tamper.status;
     _ = &backend.tamper.protect;
     _ = &backend.tamper.unprotect;

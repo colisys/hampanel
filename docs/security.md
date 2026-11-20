@@ -207,3 +207,28 @@ syncookies、dmesg_restrict、kptr_restrict、sysrq、ASLR、protected_*）。�
 测试固定了这一行为。
 
 接口：`GET /api/v1/security/hardening`，`POST /hardening/{dangling,umask,scheduler,sudo,kernel}`。
+
+### SELinux 管理界面
+
+有 SELinux 的主机按五个 Tab 打开，避免把上百项布尔值平铺成一屏：
+
+- **概览**：当前/开机模式、策略类型、模块数量与列表。
+- **布尔开关**：带搜索的逐项开关，写入用 `setsebool -P`，且只接受策略实际声明的名字。
+- **文件上下文**：`semanage fcontext -C` 的本地定制，可增删；保存后执行
+  `restorecon -R` 重打标签，因为 `semanage` 只记录规则、不改现状。
+- **端口标签**：`semanage port -l`，可把端口绑定/解绑到类型。
+- **拒绝日志**：`ausearch -m AVC,USER_AVC -ts recent`，展示权限、tclass、源/目标
+  上下文与路径。
+
+解析细节（都由解析器单测固定）：
+
+- 上下文行的格式是 `<路径> <类别> <用户:角色:类型:级别>`，类别本身可能含空格
+  （`all files`），因此从行尾解析；类型取第三个冒号字段，而不是最后一个
+  （末尾常有 `:s0`）。
+- `ausearch` 里 `path=` 可能与 `type=AVC` 同行，`audit(秒:序号)` 需单独提取。
+
+校验先于能力检查：路径/类型/端口不合法时返回 400，即使主机没有 SELinux，这样
+操作者能立刻看出是输入问题；输入合法但主机不支持才返回 409。
+
+未启用 SELinux 的主机（如本机 Ubuntu + AppArmor）只显示"未启用"与开机配置，
+不提供无法生效的开关，也不会自动修改内核启动参数。
