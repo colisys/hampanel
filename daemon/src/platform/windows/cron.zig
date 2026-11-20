@@ -8,6 +8,7 @@ pub const Entry = struct {
     schedule: []const u8,
     command: []const u8,
     line: []const u8,
+    kind: []const u8 = "user",
 };
 
 pub const Outcome = struct {
@@ -48,7 +49,13 @@ pub fn list(allocator: std.mem.Allocator) ![]Entry {
     return items;
 }
 
-pub fn add(allocator: std.mem.Allocator, schedule: []const u8, command: []const u8) !Outcome {
+pub fn add(
+    allocator: std.mem.Allocator,
+    schedule: []const u8,
+    command: []const u8,
+    kind: []const u8,
+) !Outcome {
+    _ = kind;
     const parsed = translateSchedule(allocator, schedule) catch return error.Unsupported;
 
     var random: [4]u8 = undefined;

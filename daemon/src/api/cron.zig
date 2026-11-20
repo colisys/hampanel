@@ -11,13 +11,19 @@ pub fn index(ctx: *context.Context) anyerror!void {
         ctx.fail(502, "cron_failed", @errorName(err));
         return;
     };
-    try ctx.json(.{ .available = true, .entries = entries });
+    try ctx.json(.{
+        .available = true,
+        .entries = entries,
+        .panelJobs = platform.cron.panel_jobs,
+    });
 }
 
 pub fn add(ctx: *context.Context) anyerror!void {
     const Body = struct {
         schedule: []const u8,
         command: []const u8,
+        /// "panel" for curated jobs, "user" for free-form crontab entries.
+        kind: []const u8 = "user",
     };
     const body = ctx.requireJson(Body) catch {
         ctx.fail(400, "bad_request", "expected schedule and command");
@@ -32,13 +38,24 @@ pub fn add(ctx: *context.Context) anyerror!void {
         ctx.fail(400, "bad_command", "command is empty, too long, or contains control characters");
         return;
     }
+    const is_panel = std.mem.eql(u8, body.kind, "panel");
+    if (!is_panel and !std.mem.eql(u8, body.kind, "user")) {
+        ctx.fail(400, "bad_kind", "kind must be panel or user");
+        return;
+    }
+    if (is_panel and platform.cron.panelJobFor(body.command) == null) {
+        ctx.fail(400, "bad_panel_job", "panel jobs must use a curated command");
+        return;
+    }
     if (std.mem.eql(u8, ctx.app.config.install_mode, "source") and update.isUpdateCommand(body.command)) {
         ctx.fail(400, "update_disabled", "source installs cannot schedule update checks");
         return;
     }
 
-    const outcome = platform.cron.add(ctx.arena, body.schedule, body.command) catch |err| {
-        if (errutil.isUnsupported(err)) {
+    const outcome = platform.cron.add(ctx.arena, body.schedule, body.command, body.kind) catch |err| {
+        if (err == error.UnknownPanelJob) {
+            ctx.fail(400, "bad_panel_job", "panel jobs must use a curated command");
+        } else if (errutil.isUnsupported(err)) {
             ctx.fail(501, "unsupported", "scheduled jobs are not available on this platform");
         } else {
             ctx.fail(502, "cron_failed", @errorName(err));

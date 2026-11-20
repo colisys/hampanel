@@ -17,8 +17,12 @@ class CronPage extends StatefulWidget {
 
 class _CronPageState extends State<CronPage> {
   List<CronEntry> _entries = const [];
+  List<CronPanelJob> _panelJobs = const [];
   String? _error;
   bool _loading = true;
+  /// "panel" or "user"; groups the list so curated daemon jobs are never
+  /// mistaken for the operator's own crontab.
+  String _filter = 'all';
 
   @override
   void initState() {
@@ -42,6 +46,10 @@ class _CronPageState extends State<CronPage> {
             .whereType<Map<String, dynamic>>()
             .map(CronEntry.fromJson)
             .toList();
+        _panelJobs = ((map['panelJobs'] as List<dynamic>?) ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(CronPanelJob.fromJson)
+            .toList();
         _loading = false;
       });
     } catch (error) {
@@ -54,12 +62,128 @@ class _CronPageState extends State<CronPage> {
   }
 
   Future<void> _add() async {
+    final kind = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('新增计划任务'),
+        content: DialogBody(
+          maxWidth: 460,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.dashboard_customize_outlined),
+                title: const Text('面板任务'),
+                subtitle: const Text(
+                  '证书续签、软件重启、Supervisord 重启、WAF 汇报等内置任务',
+                ),
+                onTap: () => Navigator.pop(context, 'panel'),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.terminal_outlined),
+                title: const Text('普通任务'),
+                subtitle: const Text('自定义 crontab 命令'),
+                onTap: () => Navigator.pop(context, 'user'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+        ],
+      ),
+    );
+    if (kind == null) return;
+    if (kind == 'panel') {
+      await _addPanelJob();
+    } else {
+      await _addUserJob();
+    }
+  }
+
+  Future<void> _addPanelJob() async {
+    if (_panelJobs.isEmpty) {
+      _toast('后端未提供面板任务目录');
+      return;
+    }
+    var jobId = _panelJobs.first.id;
+    var schedule = '0 3 * * *';
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('新增面板任务'),
+        content: DialogBody(
+          maxWidth: 680,
+          maxHeight: 620,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: jobId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: '任务类型'),
+                  items: [
+                    for (final job in _panelJobs)
+                      DropdownMenuItem(value: job.id, child: Text(job.label)),
+                  ],
+                  onChanged: (value) => jobId = value ?? jobId,
+                ),
+                const SizedBox(height: 12),
+                CronBuilder(
+                  initial: schedule,
+                  onChanged: (value) => schedule = value,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '面板任务只能执行内置命令，不接受自定义 shell。',
+                  style: TextStyle(fontSize: 11, color: hampanelMuted),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('创建'),
+          ),
+        ],
+      ),
+    );
+    if (submitted != true) return;
+    final job = _panelJobs.firstWhere(
+      (candidate) => candidate.id == jobId,
+      orElse: () => _panelJobs.first,
+    );
+    try {
+      await _api.postJson('/api/v1/cron', {
+        'schedule': schedule.trim(),
+        'command': job.command,
+        'kind': 'panel',
+      });
+      await _load();
+    } catch (error) {
+      _toast(describeError(error));
+    }
+  }
+
+  Future<void> _addUserJob() async {
     var schedule = '0 3 * * *';
     final commandController = TextEditingController();
     final submitted = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('新增计划任务'),
+        title: const Text('新增普通任务'),
         content: DialogBody(
           maxWidth: 680,
           maxHeight: 620,
@@ -101,12 +225,12 @@ class _CronPageState extends State<CronPage> {
         ],
       ),
     );
-
     if (submitted == true) {
       try {
         await _api.postJson('/api/v1/cron', {
           'schedule': schedule.trim(),
           'command': commandController.text.trim(),
+          'kind': 'user',
         });
         await _load();
       } catch (error) {
@@ -139,14 +263,26 @@ class _CronPageState extends State<CronPage> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
+  List<CronEntry> get _visible {
+    if (_filter == 'panel') {
+      return _entries.where((entry) => entry.isPanel).toList();
+    }
+    if (_filter == 'user') {
+      return _entries.where((entry) => !entry.isPanel).toList();
+    }
+    return _entries;
+  }
+
   @override
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 720;
+    final visible = _visible;
     return Column(
       children: [
         PageHeader(
           title: '计划任务',
-          subtitle: '${_entries.length} 个由面板托管的任务',
+          subtitle: '${_entries.where((entry) => entry.isPanel).length} 个面板任务'
+              ' · ${_entries.where((entry) => !entry.isPanel).length} 个普通任务',
           actions: [
             if (!compact) ...[
               OutlinedButton.icon(
@@ -160,14 +296,35 @@ class _CronPageState extends State<CronPage> {
           ],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
+        Padding(
+          padding: pageContentPadding(context, top: 0),
+          child: LayoutBuilder(
+            builder: (context, constraints) => SizedBox(
+              width: constraints.maxWidth,
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'all', label: Text('全部')),
+                  ButtonSegment(value: 'panel', label: Text('面板任务')),
+                  ButtonSegment(value: 'user', label: Text('普通任务')),
+                ],
+                selected: {_filter},
+                onSelectionChanged: (value) =>
+                    setState(() => _filter = value.first),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
         Expanded(
           child: _loading
               ? const LoadingView()
-              : _entries.isEmpty
+              : visible.isEmpty
               ? EmptyState(
                   icon: Icons.schedule_outlined,
                   title: '没有计划任务',
-                  message: '创建的任务会被标记，便于与系统现有任务区分。',
+                  message: _entries.isEmpty
+                      ? '创建的任务会被标记，便于与系统现有任务区分。'
+                      : '当前分类下没有任务。',
                   action: FilledButton(
                     onPressed: _add,
                     child: const Text('新增任务'),
@@ -175,10 +332,10 @@ class _CronPageState extends State<CronPage> {
                 )
               : ListView.separated(
                   padding: pageContentPadding(context),
-                  itemCount: _entries.length,
+                  itemCount: visible.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
-                    final entry = _entries[index];
+                    final entry = visible[index];
                     return Card(
                       child: Padding(
                         padding: const EdgeInsets.all(14),
@@ -203,7 +360,23 @@ class _CronPageState extends State<CronPage> {
                               ),
                             ),
                             const SizedBox(height: 8),
-                            Text(entry.command, style: monospace),
+                            Row(
+                              children: [
+                                StatusPill(
+                                  text: entry.isPanel ? '面板任务' : '普通任务',
+                                  good: entry.isPanel,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    entry.command,
+                                    style: monospace,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                             IconButton(
                               tooltip: '删除',
                               onPressed: () => _delete(entry),

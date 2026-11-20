@@ -5,13 +5,40 @@ const exec = @import("shared").exec;
 const begin_marker = "# BEGIN HAMPANEL MANAGED";
 const end_marker = "# END HAMPANEL MANAGED";
 const id_marker = " # hampanel:";
+/// Panel-owned jobs are tagged so the UI can list them separately and the
+/// daemon can refuse to install an arbitrary command under that kind.
+const panel_marker = " # hampanel-panel:";
 
 pub const Entry = struct {
     id: []const u8,
     schedule: []const u8,
     command: []const u8,
     line: []const u8,
+    /// "panel" for the curated jobs, "user" for free-form crontab entries.
+    kind: []const u8,
 };
+
+/// Curated panel jobs. A panel job may only run one of these commands, so the
+/// kind cannot be used to smuggle in arbitrary shell text.
+pub const panel_jobs = [_]PanelJob{
+    .{ .id = "cert-renew", .label = "证书续签", .command = "hampaneld renew-certificates --json" },
+    .{ .id = "software-restart", .label = "软件重启", .command = "hampaneld restart-software --json" },
+    .{ .id = "supervisord-restart", .label = "Supervisord 守护进程重启", .command = "systemctl restart supervisor" },
+    .{ .id = "waf-report", .label = "WAF 防护汇报", .command = "hampaneld waf-report --json" },
+};
+
+pub const PanelJob = struct {
+    id: []const u8,
+    label: []const u8,
+    command: []const u8,
+};
+
+pub fn panelJobFor(command: []const u8) ?PanelJob {
+    for (panel_jobs) |job| {
+        if (std.mem.eql(u8, job.command, command)) return job;
+    }
+    return null;
+}
 
 pub const Outcome = struct {
     ok: bool,
@@ -23,7 +50,14 @@ pub fn list(allocator: std.mem.Allocator) ![]Entry {
     return parseEntries(allocator, current);
 }
 
-pub fn add(allocator: std.mem.Allocator, schedule: []const u8, command: []const u8) !Outcome {
+pub fn add(
+    allocator: std.mem.Allocator,
+    schedule: []const u8,
+    command: []const u8,
+    kind: []const u8,
+) !Outcome {
+    const is_panel = std.mem.eql(u8, kind, "panel");
+    if (is_panel and panelJobFor(command) == null) return error.UnknownPanelJob;
     const current = try readCrontab(allocator);
     var entries = std.array_list.Managed(Entry).init(allocator);
     for (try parseEntries(allocator, current)) |entry| try entries.append(entry);
@@ -31,12 +65,14 @@ pub fn add(allocator: std.mem.Allocator, schedule: []const u8, command: []const 
     var random: [4]u8 = undefined;
     compat.randomBytes(&random);
     const id = try std.fmt.allocPrint(allocator, "{s}", .{std.fmt.bytesToHex(random, .lower)});
-    const line = try std.fmt.allocPrint(allocator, "{s} {s}{s}{s}", .{ schedule, command, id_marker, id });
+    const marker = if (is_panel) panel_marker else id_marker;
+    const line = try std.fmt.allocPrint(allocator, "{s} {s}{s}{s}", .{ schedule, command, marker, id });
     try entries.append(.{
         .id = id,
         .schedule = schedule,
         .command = command,
         .line = line,
+        .kind = if (is_panel) "panel" else "user",
     });
 
     const rewritten = try rewrite(allocator, current, entries.items);
@@ -100,8 +136,13 @@ fn parseEntries(allocator: std.mem.Allocator, contents: []const u8) ![]Entry {
         }
         if (!in_block or line.len == 0 or line[0] == '#') continue;
 
-        const marker_at = std.mem.lastIndexOf(u8, line, id_marker) orelse continue;
-        const id = std.mem.trim(u8, line[marker_at + id_marker.len ..], " \t");
+        const is_panel = std.mem.indexOf(u8, line, panel_marker) != null;
+        const marker_at = std.mem.lastIndexOf(u8, line, if (is_panel) panel_marker else id_marker) orelse continue;
+        const id = std.mem.trim(
+            u8,
+            line[marker_at + (if (is_panel) panel_marker.len else id_marker.len) ..],
+            " \t",
+        );
         if (id.len == 0) continue;
         const body = std.mem.trim(u8, line[0..marker_at], " \t");
 
@@ -127,6 +168,7 @@ fn parseEntries(allocator: std.mem.Allocator, contents: []const u8) ![]Entry {
             .schedule = schedule,
             .command = command,
             .line = line,
+            .kind = if (is_panel) "panel" else "user",
         });
     }
 
@@ -161,7 +203,8 @@ fn rewrite(allocator: std.mem.Allocator, contents: []const u8, entries: []const 
         try writer.writeAll(begin_marker);
         try writer.writeAll("\n");
         for (entries) |entry| {
-            try writer.print("{s} {s}{s}{s}\n", .{ entry.schedule, entry.command, id_marker, entry.id });
+            const marker = if (std.mem.eql(u8, entry.kind, "panel")) panel_marker else id_marker;
+            try writer.print("{s} {s}{s}{s}\n", .{ entry.schedule, entry.command, marker, entry.id });
         }
         try writer.writeAll(end_marker);
         try writer.writeAll("\n");

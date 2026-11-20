@@ -545,6 +545,14 @@ test "generated caddy config is accepted by caddy validate" {
     std.debug.print("caddy validate accepted generated site config\n", .{});
 }
 
+test "panel cron jobs only accept curated commands" {
+    const cron = @import("platform/mod.zig").cron;
+    try std.testing.expect(cron.panelJobFor("hampaneld waf-report --json") != null);
+    try std.testing.expect(cron.panelJobFor("rm -rf /") == null);
+    try std.testing.expect(cron.panelJobFor("hampaneld renew-certificates --json") != null);
+    try std.testing.expect(cron.panel_jobs.len >= 4);
+}
+
 test "security scan status reports missing capabilities without panicking" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});

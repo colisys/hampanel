@@ -121,6 +121,7 @@ pub const CronEntry = struct {
     schedule: []const u8,
     command: []const u8,
     line: []const u8,
+    kind: []const u8 = "user",
 };
 
 pub const LogSource = struct {
