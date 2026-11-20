@@ -16,6 +16,8 @@ test {
     _ = @import("runtime/engine.zig");
     _ = @import("runtime/site_store.zig");
     _ = @import("runtime/site_nginx.zig");
+    _ = @import("runtime/site_nginx_layout.zig");
+    _ = @import("runtime/site_nginx_container.zig");
     _ = @import("api/sites.zig");
     _ = @import("jobs.zig");
     _ = @import("api/runtimes.zig");

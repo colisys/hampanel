@@ -5,8 +5,10 @@ services:
     ports:
       - "{{port}}:80"
     volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./sites-conf:/etc/nginx/hampanel:ro
       - ./sites-include.conf:/etc/nginx/conf.d/hampanel.conf:ro
+      - ./sites-stream.d:/etc/nginx/stream.d/hampanel:ro
       - html:/usr/share/nginx/html
 
 volumes:

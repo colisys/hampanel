@@ -239,6 +239,7 @@ pub const Container = struct {
     socket: []const u8,
     id: []const u8,
     dir: []const u8,
+    data_dir: []const u8,
 
     fn command(self: Container, a: std.mem.Allocator, action: enum { check, reload }) Outcome {
         const args: []const []const u8 = switch (action) {
@@ -261,23 +262,34 @@ pub fn resolveContainer(a: std.mem.Allocator, data_dir: []const u8, socket: []co
     const layout = "{{.Config.Image}}\n{{.HostConfig.Privileged}}\n{{range .Mounts}}{{.Type}} {{.Destination}} {{.RW}} {{.Source}}\n{{end}}";
     const inspect = try engine_mod.run(a, engine, socket, &.{ engine.name, "inspect", "--format", layout, id }, .{});
     const snippet = try compat.path.join(a, &.{ data_dir, "apps/nginx/sites-include.conf" });
-    if (!inspect.ok() or !try @import("site_nginx_layout.zig").catalogLayout(a, inspect.stdout, dir, snippet)) return error.ManagedNginxUnavailable;
-    return .{ .engine = engine, .socket = socket, .id = id, .dir = dir };
+    const container_mod = @import("site_nginx_container.zig");
+    const expect = @import("site_nginx_layout.zig").Expect{
+        .conf = dir,
+        .snippet = snippet,
+        .main = try container_mod.mainConfigPath(a, data_dir),
+        .stream = try container_mod.streamDir(a, data_dir),
+    };
+    if (!inspect.ok() or !try @import("site_nginx_layout.zig").catalogLayout(a, inspect.stdout, expect)) return error.ManagedNginxUnavailable;
+    return .{ .engine = engine, .socket = socket, .id = id, .dir = dir, .data_dir = data_dir };
 }
 
-pub fn apply(allocator: std.mem.Allocator, container: ?Container, site: store.Site, site_dir: []const u8) !Outcome {
+pub fn apply(allocator: std.mem.Allocator, container_in: ?Container, site: store.Site, site_dir: []const u8) !Outcome {
+    var container = container_in;
     const is_stream = std.mem.eql(u8, site.kind, "tcp_proxy") or std.mem.eql(u8, site.kind, "udp_proxy");
-    if (container != null and (is_stream or site.basic_auth.enabled or site.tls.enabled)) return .{ .ok = false, .output = "stream, host certificates and host auth files are not mounted in managed nginx" };
     if (is_stream) {
-        try compat.cwd().makePath(stream_dir);
-        ensureStreamInclude(allocator) catch |err| {
-            return .{ .ok = false, .output = @errorName(err) };
-        };
+        if (container) |c| {
+            try compat.cwd().makePath(try @import("site_nginx_container.zig").streamDir(allocator, c.data_dir));
+        } else {
+            try compat.cwd().makePath(stream_dir);
+            ensureStreamInclude(allocator) catch |err| {
+                return .{ .ok = false, .output = @errorName(err) };
+            };
+        }
     } else {
         try compat.cwd().makePath(if (container) |c| c.dir else conf_dir);
     }
-    const active = if (is_stream) try streamConfPath(allocator, site.name, true) else try confPath(allocator, container, site.name, true);
-    const disabled = if (is_stream) try streamConfPath(allocator, site.name, false) else try confPath(allocator, container, site.name, false);
+    const active = if (is_stream) try streamConfPath(allocator, container, site.name, true) else try confPath(allocator, container, site.name, true);
+    const disabled = if (is_stream) try streamConfPath(allocator, container, site.name, false) else try confPath(allocator, container, site.name, false);
     const target = if (site.enabled) active else disabled;
     const alternate = if (site.enabled) disabled else active;
 
@@ -291,6 +303,25 @@ pub fn apply(allocator: std.mem.Allocator, container: ?Container, site: store.Si
     };
     try writeRaw(target, rendered);
     if (readOptional(allocator, alternate) != null) compat.deleteFileAbsolute(alternate) catch {};
+
+    if (container) |current| {
+        const container_mod = @import("site_nginx_container.zig");
+        const sync = container_mod.sync(allocator, current.data_dir, current.socket) catch |err| {
+            restoreFile(target, previous_target);
+            restoreFile(alternate, previous_alternate);
+            return .{ .ok = false, .output = @errorName(err) };
+        };
+        if (!sync.ok) {
+            restoreFile(target, previous_target);
+            restoreFile(alternate, previous_alternate);
+            return .{ .ok = false, .output = sync.output };
+        }
+        if (sync.recreated) {
+            container = resolveContainer(allocator, current.data_dir, current.socket) catch {
+                return .{ .ok = false, .output = "managed nginx did not return after applying site mounts" };
+            };
+        }
+    }
 
     if (site.enabled) {
         const test_result = if (container) |c| c.command(allocator, .check) else nginxTest(allocator);
@@ -309,34 +340,47 @@ pub fn apply(allocator: std.mem.Allocator, container: ?Container, site: store.Si
     return .{ .ok = true, .output = reload_result.output };
 }
 
-pub fn remove(allocator: std.mem.Allocator, container: ?Container, name: []const u8) !Outcome {
+pub fn remove(allocator: std.mem.Allocator, container_in: ?Container, name: []const u8) !Outcome {
+    var container = container_in;
     const active = try confPath(allocator, container, name, true);
     const disabled = try confPath(allocator, container, name, false);
-    const stream_active = try streamConfPath(allocator, name, true);
-    const stream_disabled = try streamConfPath(allocator, name, false);
+    const stream_active = try streamConfPath(allocator, container, name, true);
+    const stream_disabled = try streamConfPath(allocator, container, name, false);
     const previous_active = readOptional(allocator, active);
     const previous_disabled = readOptional(allocator, disabled);
-    const previous_stream_active = if (container != null) null else readOptional(allocator, stream_active);
-    const previous_stream_disabled = if (container != null) null else readOptional(allocator, stream_disabled);
+    const previous_stream_active = readOptional(allocator, stream_active);
+    const previous_stream_disabled = readOptional(allocator, stream_disabled);
     compat.deleteFileAbsolute(active) catch {};
     compat.deleteFileAbsolute(disabled) catch {};
-    if (container == null) compat.deleteFileAbsolute(stream_active) catch {};
-    if (container == null) compat.deleteFileAbsolute(stream_disabled) catch {};
+    compat.deleteFileAbsolute(stream_active) catch {};
+    compat.deleteFileAbsolute(stream_disabled) catch {};
+
+    if (container) |current| {
+        const sync = @import("site_nginx_container.zig").sync(allocator, current.data_dir, current.socket) catch |err| {
+            return .{ .ok = false, .output = @errorName(err) };
+        };
+        if (!sync.ok) return .{ .ok = false, .output = sync.output };
+        if (sync.recreated) {
+            container = resolveContainer(allocator, current.data_dir, current.socket) catch {
+                return .{ .ok = false, .output = "managed nginx did not return after removing site mounts" };
+            };
+        }
+    }
 
     const test_result = if (container) |c| c.command(allocator, .check) else nginxTest(allocator);
     if (!test_result.ok) {
         restoreFile(active, previous_active);
         restoreFile(disabled, previous_disabled);
-        if (container == null) restoreFile(stream_active, previous_stream_active);
-        if (container == null) restoreFile(stream_disabled, previous_stream_disabled);
+        restoreFile(stream_active, previous_stream_active);
+        restoreFile(stream_disabled, previous_stream_disabled);
         return test_result;
     }
     const reload_result = try reloadTarget(allocator, container);
     if (!reload_result.ok) {
         restoreFile(active, previous_active);
         restoreFile(disabled, previous_disabled);
-        if (container == null) restoreFile(stream_active, previous_stream_active);
-        if (container == null) restoreFile(stream_disabled, previous_stream_disabled);
+        restoreFile(stream_active, previous_stream_active);
+        restoreFile(stream_disabled, previous_stream_disabled);
         return reload_result;
     }
     return .{ .ok = true, .output = reload_result.output };
@@ -362,11 +406,15 @@ pub fn configPath(allocator: std.mem.Allocator, name: []const u8) ![]const u8 {
     return confPath(allocator, null, name, true);
 }
 
-fn streamConfPath(allocator: std.mem.Allocator, name: []const u8, enabled: bool) ![]const u8 {
+fn streamConfPath(allocator: std.mem.Allocator, container: ?Container, name: []const u8, enabled: bool) ![]const u8 {
+    const dir = if (container) |c|
+        try @import("site_nginx_container.zig").streamDir(allocator, c.data_dir)
+    else
+        stream_dir;
     return std.fmt.allocPrint(
         allocator,
-        "{s}/{s}.conf{s}",
-        .{ stream_dir, name, if (enabled) "" else ".disabled" },
+        "{s}/hampanel-{s}.conf{s}",
+        .{ dir, name, if (enabled) "" else ".disabled" },
     );
 }
 

@@ -54,7 +54,14 @@ fn composeArgs(
 
     var argv = std.array_list.Managed([]const u8).init(allocator);
     try argv.appendSlice(try engine_mod.composeCommand(allocator, engine, socket));
-    try argv.appendSlice(&.{ "-f", path, "-p", project });
+    try argv.appendSlice(&.{ "-f", path });
+    if (compat.path.dirname(path)) |app_dir| {
+        const override = try compat.path.join(allocator, &.{ app_dir, "compose.override.yml" });
+        if (compat.cwd().access(override, .{})) |_| {
+            try argv.appendSlice(&.{ "-f", override });
+        } else |_| {}
+    }
+    try argv.appendSlice(&.{ "-p", project });
     try argv.appendSlice(extra);
     return argv.items;
 }
@@ -103,6 +110,7 @@ pub fn deploy(
             var snippet = try compat.createFileAbsolute(include, .{ .truncate = true, .mode = 0o644 });
             defer snippet.close();
             try snippet.writeAll("include /etc/nginx/hampanel/*.conf;\n");
+            try @import("../runtime/site_nginx_container.zig").prepare(allocator, data_dir);
         }
     }
 
@@ -191,6 +199,7 @@ pub fn upgradeNginx(a: std.mem.Allocator, engine: engine_mod.Engine, socket: []c
     try writeNew(stage, updated, 0o600);
     defer compat.deleteFileAbsolute(stage) catch {};
     try compat.renameAbsolute(stage, path);
+    try @import("../runtime/site_nginx_container.zig").prepare(a, data_dir);
     // Once Compose has started, a provider failure can mean a partial apply.
     // Keep both manifests and mounts for explicit recovery; don't auto-recreate again.
     var result = engine_mod.run(a, engine, socket, argv, .{ .max_output = 4 * 1024 * 1024 }) catch return .{ .ok = false, .output = "Compose failed; review compose.yml and compose.pre-upgrade.yml" };
