@@ -38,18 +38,48 @@ env:
   BUILD_REF: ${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }}
 
 concurrency:
-  group: build-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target || 'all' }}-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
-  cancel-in-progress: true
+  group: build-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target || 'all' }}-${{ (github.event_name == 'schedule' || github.ref == 'refs/heads/nightly') && 'nightly' || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && github.ref != 'refs/heads/nightly' }}
 
 jobs:
+  preflight:
+    name: Check nightly publication
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == schedule ]]; then
+            if updated=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/nightly" \
+              --jq '.assets[] | select(.name == "version.txt" and .state == "uploaded") | .updated_at' 2>"$RUNNER_TEMP/nightly-release.err"); then
+              if [[ -n "$updated" ]] && [[ "$(TZ=Asia/Shanghai date -d "$updated" +%F)" == "$(TZ=Asia/Shanghai date +%F)" ]]; then
+                echo 'Nightly already published today (Asia/Shanghai).'
+                echo 'build=false' >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            elif ! grep -q '(HTTP 404)' "$RUNNER_TEMP/nightly-release.err"; then
+              cat "$RUNNER_TEMP/nightly-release.err" >&2
+              exit 1
+            fi
+          fi
+          echo 'build=true' >> "$GITHUB_OUTPUT"
+
   daemon:
     name: Daemon (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: ubuntu-latest
+    needs: preflight
     if: >-
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.target == 'all' ||
-      github.event.inputs.target == 'daemon' ||
-      github.event.inputs.target == 'daemon-gnu'
+      needs.preflight.outputs.build == 'true' && (
+        github.event_name != 'workflow_dispatch' ||
+        github.event.inputs.target == 'all' ||
+        github.event.inputs.target == 'daemon' ||
+        github.event.inputs.target == 'daemon-gnu'
+      )
     steps:
       - uses: actions/checkout@v4
         with:
@@ -134,11 +164,14 @@ jobs:
   daemon-musl:
     name: Daemon musl (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: ubuntu-latest
+    needs: preflight
     if: >-
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.target == 'all' ||
-      github.event.inputs.target == 'daemon' ||
-      github.event.inputs.target == 'daemon-musl'
+      needs.preflight.outputs.build == 'true' && (
+        github.event_name != 'workflow_dispatch' ||
+        github.event.inputs.target == 'all' ||
+        github.event.inputs.target == 'daemon' ||
+        github.event.inputs.target == 'daemon-musl'
+      )
     steps:
       - uses: actions/checkout@v4
         with:
@@ -225,10 +258,13 @@ jobs:
   daemon-windows:
     name: Daemon Windows (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: windows-latest
+    needs: preflight
     if: >-
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.target == 'all' ||
-      github.event.inputs.target == 'daemon-windows'
+      needs.preflight.outputs.build == 'true' && (
+        github.event_name != 'workflow_dispatch' ||
+        github.event.inputs.target == 'all' ||
+        github.event.inputs.target == 'daemon-windows'
+      )
     steps:
       - uses: actions/checkout@v4
         with:
@@ -339,10 +375,13 @@ jobs:
   flutter-linux:
     name: Flutter Linux (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: ubuntu-latest
+    needs: preflight
     if: >-
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.target == 'all' ||
-      github.event.inputs.target == 'flutter-linux'
+      needs.preflight.outputs.build == 'true' && (
+        github.event_name != 'workflow_dispatch' ||
+        github.event.inputs.target == 'all' ||
+        github.event.inputs.target == 'flutter-linux'
+      )
     steps:
       - uses: actions/checkout@v4
         with:
@@ -409,10 +448,13 @@ jobs:
   flutter-windows:
     name: Flutter Windows (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: windows-latest
+    needs: preflight
     if: >-
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.target == 'all' ||
-      github.event.inputs.target == 'flutter-windows'
+      needs.preflight.outputs.build == 'true' && (
+        github.event_name != 'workflow_dispatch' ||
+        github.event.inputs.target == 'all' ||
+        github.event.inputs.target == 'flutter-windows'
+      )
     steps:
       - uses: actions/checkout@v4
         with:
@@ -491,10 +533,13 @@ jobs:
           - runner: macos-15-intel
             arch: x86_64
     runs-on: ${{ matrix.runner }}
+    needs: preflight
     if: >-
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.target == 'all' ||
-      github.event.inputs.target == 'flutter-macos'
+      needs.preflight.outputs.build == 'true' && (
+        github.event_name != 'workflow_dispatch' ||
+        github.event.inputs.target == 'all' ||
+        github.event.inputs.target == 'flutter-macos'
+      )
     steps:
       - uses: actions/checkout@v4
         with:
@@ -548,10 +593,13 @@ jobs:
   flutter-android:
     name: Flutter Android (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: ubuntu-latest
+    needs: preflight
     if: >-
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.target == 'all' ||
-      github.event.inputs.target == 'flutter-android'
+      needs.preflight.outputs.build == 'true' && (
+        github.event_name != 'workflow_dispatch' ||
+        github.event.inputs.target == 'all' ||
+        github.event.inputs.target == 'flutter-android'
+      )
     steps:
       - uses: actions/checkout@v4
         with:
@@ -644,10 +692,13 @@ jobs:
   flutter-ios:
     name: Flutter iOS unsigned (${{ github.event_name == 'schedule' && 'nightly' || github.ref_name }})
     runs-on: macos-latest
+    needs: preflight
     if: >-
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.target == 'all' ||
-      github.event.inputs.target == 'flutter-ios'
+      needs.preflight.outputs.build == 'true' && (
+        github.event_name != 'workflow_dispatch' ||
+        github.event.inputs.target == 'all' ||
+        github.event.inputs.target == 'flutter-ios'
+      )
     steps:
       - uses: actions/checkout@v4
         with:
