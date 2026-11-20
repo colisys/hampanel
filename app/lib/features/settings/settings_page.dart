@@ -20,8 +20,9 @@ import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../ai/ai_tools.dart';
 import 'host_settings_section.dart';
+import 'notification_settings.dart';
 
-enum _SettingsTab { general, ai, host, about }
+enum _SettingsTab { general, ai, host, notifications, about }
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -356,7 +357,7 @@ class _SettingsPageState extends State<SettingsPage> {
             children: [
               if (!compact) ...[
                 SubNav(
-                  items: const ['常规', 'AI', '主机', '关于'],
+                  items: const ['常规', 'AI', '主机', '通知', '关于'],
                   index: _tab.index,
                   onChanged: (index) =>
                       setState(() => _tab = _SettingsTab.values[index]),
@@ -896,6 +897,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         ),
                       if (_tab == _SettingsTab.host)
                         const HostSettingsSection(),
+                      if (_tab == _SettingsTab.notifications)
+                        NotificationSettings(key: ObjectKey(_api), api: _api),
                       if (_tab == _SettingsTab.about)
                         ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 720),
@@ -959,7 +962,7 @@ class _SettingsPageState extends State<SettingsPage> {
             child: SafeArea(
               top: false,
               child: SubNavBar(
-                items: const ['常规', 'AI', '主机', '关于'],
+                items: const ['常规', 'AI', '主机', '通知', '关于'],
                 index: _tab.index,
                 onChanged: (index) =>
                     setState(() => _tab = _SettingsTab.values[index]),
