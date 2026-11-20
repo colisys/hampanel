@@ -104,6 +104,75 @@ pub fn unprotect(ctx: *context.Context) anyerror!void {
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
+/// Honeypot state: host profile being replicated and running guests.
+pub fn honeypot(ctx: *context.Context) anyerror!void {
+    const status = platform.honeypot.status(ctx.arena, ctx.app.config.data_dir) catch |err| {
+        ctx.fail(500, "honeypot_failed", @errorName(err));
+        return;
+    };
+    try ctx.json(status);
+}
+
+pub fn honeypotStop(ctx: *context.Context) anyerror!void {
+    const Body = struct { id: []const u8 };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected id");
+        return;
+    };
+    const outcome = platform.honeypot.stop(ctx.arena, ctx.app.config.data_dir, body.id) catch |err| {
+        const name = @errorName(err);
+        ctx.fail(if (std.mem.eql(u8, name, "InvalidSession")) 404 else 500, "honeypot_failed", name);
+        return;
+    };
+    log.info("security: honeypot stopped", .{});
+    try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+}
+
+pub fn honeypotConsole(ctx: *context.Context) anyerror!void {
+    const id = (try ctx.query("id")) orelse {
+        ctx.fail(400, "bad_request", "expected id");
+        return;
+    };
+    if (!platform.honeypot.validId(id)) {
+        ctx.fail(400, "bad_id", "invalid session id");
+        return;
+    }
+    const paths = platform.honeypot.buildPaths(ctx.arena, ctx.app.config.data_dir) catch |err| {
+        ctx.fail(500, "honeypot_failed", @errorName(err));
+        return;
+    };
+    const path = paths.state(ctx.arena, id, "console.log") catch |err| {
+        ctx.fail(500, "honeypot_failed", @errorName(err));
+        return;
+    };
+    const raw = compat.cwd().readFileAlloc(ctx.arena, path, 2 * 1024 * 1024) catch {
+        ctx.fail(404, "not_found", "no console for this session");
+        return;
+    };
+    // The console is a boot log, not a shell: drop terminal control sequences
+    // so the panel renders text instead of escape codes.
+    var out = std.array_list.Managed(u8).init(ctx.arena);
+    var index: usize = 0;
+    while (index < raw.len) {
+        if (raw[index] == 0x1b) {
+            index += 1;
+            if (index < raw.len and raw[index] == '[') {
+                index += 1;
+                while (index < raw.len and !(raw[index] >= 0x40 and raw[index] <= 0x7e)) index += 1;
+            }
+            index += 1;
+            continue;
+        }
+        if (raw[index] == '\r') {
+            index += 1;
+            continue;
+        }
+        try out.append(raw[index]);
+        index += 1;
+    }
+    try ctx.json(.{ .id = id, .content = out.items });
+}
+
 /// SELinux status: presence, live mode, policy and tunable booleans.
 pub fn selinux(ctx: *context.Context) anyerror!void {
     const status = platform.selinux.status(ctx.arena) catch |err| {

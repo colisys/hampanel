@@ -24,6 +24,8 @@ pub fn register(manager: *tasks.Manager) !void {
     try manager.register(.{ .kind = "host.change", .lock_key = "host", .handler = hostChange });
     try manager.register(.{ .kind = "update.apply", .lock_key = "update", .handler = updateApply });
     try manager.register(.{ .kind = "security.probe", .lock_key = "security-probe", .handler = securityProbe });
+    try manager.register(.{ .kind = "security.honeypot.build", .lock_key = "honeypot", .handler = honeypotBuild });
+    try manager.register(.{ .kind = "security.honeypot.start", .lock_key = "honeypot", .handler = honeypotStart });
 }
 
 fn stringParam(ctx: *tasks.Context, key: []const u8) ![]const u8 {
@@ -520,4 +522,47 @@ fn securityProbe(ctx: *tasks.Context) !void {
         .intel = report.intel,
         .nmap_available = report.nmap_available,
     }, .{});
+}
+
+/// Building the guest initramfs copies busybox and archives it; kept off the
+/// request path because it rewrites a file tree.
+fn honeypotBuild(ctx: *tasks.Context) !void {
+    const mode_text = try stringParam(ctx, "mode");
+    const mode = platform_mod.honeypot.Mode.fromString(if (mode_text.len == 0) "web" else mode_text) orelse
+        return error.InvalidParams;
+    try ctx.setPhase("building");
+    const outcome = platform_mod.honeypot.buildImage(ctx.allocator, ctx.manager.data_dir, mode) catch |err| {
+        try ctx.write(try std.fmt.allocPrint(ctx.allocator, "构建失败：{s}\n", .{@errorName(err)}));
+        return err;
+    };
+    try ctx.write(outcome.output);
+    if (!outcome.ok) return error.BuildFailed;
+}
+
+fn honeypotStart(ctx: *tasks.Context) !void {
+    const mode_text = try stringParam(ctx, "mode");
+    const mode = platform_mod.honeypot.Mode.fromString(if (mode_text.len == 0) "web" else mode_text) orelse
+        return error.InvalidParams;
+    const port: u16 = switch (ctx.params) {
+        .object => |object| blk: {
+            const value = object.get("port") orelse break :blk 0;
+            if (value != .integer or value.integer < 0 or value.integer > 65535) break :blk 0;
+            break :blk @intCast(value.integer);
+        },
+        else => 0,
+    };
+    try ctx.setPhase("starting");
+    const outcome = platform_mod.honeypot.start(ctx.allocator, ctx.manager.data_dir, mode, port) catch |err| {
+        try ctx.write(try std.fmt.allocPrint(ctx.allocator, "启动失败：{s}\n", .{@errorName(err)}));
+        return err;
+    };
+    try ctx.write(outcome.output);
+    if (!outcome.ok) return error.StartFailed;
+    if (outcome.session_id) |id| {
+        ctx.result = try std.json.Stringify.valueAlloc(ctx.allocator, .{
+            .session_id = id,
+            .port = outcome.port,
+            .mode = mode.name(),
+        }, .{});
+    }
 }

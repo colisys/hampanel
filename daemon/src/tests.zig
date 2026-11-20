@@ -913,3 +913,45 @@ fn canAppendAsRoot(allocator: std.mem.Allocator, path: []const u8) bool {
 fn execCommandExists(name: []const u8) bool {
     return @import("shared").exec.commandExists(std.testing.allocator, name);
 }
+
+test "honeypot mirrors host identity without passing hardware through" {
+    const hp = @import("platform/mod.zig").honeypot;
+    if (@import("builtin").os.tag != .linux) return;
+    const allocator = std.testing.allocator;
+
+    const profile = try hp.hostProfile(allocator);
+    defer {
+        allocator.free(profile.cpu_model);
+        allocator.free(profile.vendor);
+        allocator.free(profile.product);
+        allocator.free(profile.board);
+        allocator.free(profile.serial);
+    }
+    // Identity is replicated from the host...
+    try std.testing.expect(profile.cpu_model.len > 0);
+    try std.testing.expect(profile.cpu_cores >= 1);
+    try std.testing.expect(profile.memory_mb >= 256);
+    // ...but the guest is capped so it cannot starve the host.
+    try std.testing.expect(profile.cpu_cores <= 8);
+    try std.testing.expect(profile.memory_mb <= 8192);
+
+    // QEMU's option syntax splits on commas, and real DMI strings contain them.
+    const escaped = try hp.qemuEscapeForTest(allocator, "CHUWI Innovation co.,Ltd");
+    defer allocator.free(escaped);
+    try std.testing.expectEqualStrings("CHUWI Innovation co.,,Ltd", escaped);
+    // A value without separators must pass through untouched.
+    const plain = try hp.qemuEscapeForTest(allocator, "FreeBook");
+    defer allocator.free(plain);
+    try std.testing.expectEqualStrings("FreeBook", plain);
+}
+
+test "honeypot session ids are restricted to safe characters" {
+    const hp = @import("platform/mod.zig").honeypot;
+    if (@import("builtin").os.tag != .linux) return;
+    try std.testing.expect(hp.validId("84c4c41fbcfc399a"));
+    try std.testing.expect(!hp.validId("../etc"));
+    try std.testing.expect(!hp.validId(""));
+    try std.testing.expect(!hp.validId("a/b"));
+    try std.testing.expect(!hp.validId("a b"));
+    try std.testing.expect(!hp.validId("a; rm -rf /"));
+}

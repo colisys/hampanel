@@ -120,3 +120,30 @@ Hampanel 管理端与受控端之间是双向 TLS（mTLS）：客户端校验服
   避免拼写错误或注入内容进入命令。
 
 接口：`GET /api/v1/security/selinux`，`POST /api/v1/security/selinux/{mode,boolean}`。
+
+## 蜜罐
+
+guest 在 QEMU/KVM 中运行，用宿主机自带内核 + busybox 构建 initramfs，不需要下载任何镜像。
+
+硬件身份复刻，设备全部模拟：
+
+- CPU 型号、核心数、内存大小与 DMI 字符串（厂商/型号/序列号）读自宿主机，作为
+  QEMU 参数传入，攻击者看到的是"一台合理的机器"。
+- 但没有任何设备透传：没有 PCI 直通，没有宿主机块设备，磁盘是自建 qcow2。
+- 网络是 QEMU 用户态（slirp），guest 只能通过转发端口被访问，无法到达宿主所在
+  局域网；每个会话生成独立的 `52:54:00` 前缀 MAC。
+- 内存与 CPU 有上限（8 核 / 8 GiB），guest 不能把宿主机拖垮。
+
+实现细节（都是实测踩出来的）：
+
+- `-smbios` 的值按逗号分隔，而真实 DMI 里就有逗号
+  （`CHUWI Innovation And Technology(ShenZhen)co.,Ltd`），不转义 QEMU 直接拒绝启动。
+- `/init` 必须可执行，否则内核报 `Failed to execute /init (error -13)` 后 panic。
+- `-nographic` 把串口接到 stdout，stdout 被管道接管时 QEMU 会立刻退出；因此改为
+  `-display none -serial file:<console>`，由 QEMU 自己写控制台。
+- 子进程必须有属主：否则会被立即回收成僵尸，控制台也拿不到。守护线程持有 Child
+  并负责 `wait`。
+
+任务：`security.honeypot.build`、`security.honeypot.start`（镜像构建与启动都不走同步请求）。
+
+接口：`GET /api/v1/security/honeypot`、`GET /honeypot/console?id=`、`POST /honeypot/stop`。
