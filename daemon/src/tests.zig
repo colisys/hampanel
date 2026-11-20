@@ -744,3 +744,29 @@ test "host probe accepts and rejects IPv6 literals" {
     }
 }
 
+
+test "scan bans treat equivalent IPv6 notations as one host" {
+    const security = @import("platform/mod.zig").security;
+    if (@import("builtin").os.tag != .linux) return;
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    defer allocator.free(dir);
+
+    // The kernel reports the expanded form; an operator unbanning the same host
+    // types the compressed one. Both must address the same entry.
+    try std.testing.expect(try security.recordBan(allocator, dir, "2001:db8:aa:0:0:0:0:1"));
+    try std.testing.expect(!(try security.recordBan(allocator, dir, "2001:db8:aa::1")));
+    try std.testing.expect(!(try security.recordBan(allocator, dir, "2001:0db8:00aa:0000:0000:0000:0000:0001")));
+
+    try security.unban(allocator, dir, "2001:db8:aa::1");
+    const remaining = try security.scanStatus(allocator, dir);
+    defer {
+        for (remaining.hits) |hit| allocator.free(hit.source);
+        allocator.free(remaining.hits);
+        for (remaining.banned) |entry| allocator.free(entry);
+        allocator.free(remaining.banned);
+    }
+    try std.testing.expectEqual(@as(usize, 0), remaining.banned.len);
+}

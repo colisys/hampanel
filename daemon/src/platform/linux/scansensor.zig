@@ -482,6 +482,14 @@ pub fn handleFromLine(allocator: std.mem.Allocator, data_dir: []const u8, line: 
     trimHits(allocator, paths.hits, 2000);
 }
 
+pub fn sameAddress(a: []const u8, b: []const u8) bool {
+    if (a.len == 0) return false;
+    if (std.mem.eql(u8, a, b)) return true;
+    const left = std.Io.net.IpAddress.parse(a, 0) catch return false;
+    const right = std.Io.net.IpAddress.parse(b, 0) catch return false;
+    return left.eql(&right);
+}
+
 pub fn recordBan(allocator: std.mem.Allocator, data_dir: []const u8, source: []const u8) !bool {
     const paths = try buildPaths(allocator, data_dir);
     defer paths.deinit(allocator);
@@ -491,7 +499,9 @@ pub fn recordBan(allocator: std.mem.Allocator, data_dir: []const u8, source: []c
     defer if (existing.len > 0) allocator.free(existing);
     var lines = std.mem.splitScalar(u8, existing, '\n');
     while (lines.next()) |line| {
-        if (std.mem.eql(u8, std.mem.trim(u8, line, " \r\t"), source)) return false;
+        // A source can be presented in several equivalent notations; compare
+        // addresses so the same host is not recorded twice.
+        if (sameAddress(std.mem.trim(u8, line, " \r\t"), source)) return false;
     }
     const updated = try std.fmt.allocPrint(allocator, "{s}{s}\n", .{ existing, source });
     defer allocator.free(updated);

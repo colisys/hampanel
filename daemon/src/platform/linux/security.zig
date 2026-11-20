@@ -102,6 +102,12 @@ pub fn ingest(allocator: std.mem.Allocator, data_dir: []const u8, line: []const 
     try sensor.handleFromLine(allocator, data_dir, line, .{});
 }
 
+/// Records a ban without denying it in the firewall; used by the sensor and by
+/// tests that only exercise the manifest.
+pub fn recordBan(allocator: std.mem.Allocator, data_dir: []const u8, source: []const u8) !bool {
+    return sensor.recordBan(allocator, data_dir, source);
+}
+
 pub fn unban(allocator: std.mem.Allocator, data_dir: []const u8, source: []const u8) !void {
     const paths = try sensor.buildPaths(allocator, data_dir);
     defer paths.deinit(allocator);
@@ -112,7 +118,9 @@ pub fn unban(allocator: std.mem.Allocator, data_dir: []const u8, source: []const
     var lines = std.mem.splitScalar(u8, existing, '\n');
     while (lines.next()) |line| {
         const text = std.mem.trim(u8, line, " \r\t");
-        if (text.len == 0 or std.mem.eql(u8, text, source)) continue;
+        // Bans are recorded in expanded form (2001:db8::1 vs 2001:db8:0:0:0:0:0:1),
+        // so entries are compared as addresses, not as text.
+        if (text.len == 0 or sameAddress(text, source)) continue;
         try updated.appendSlice(text);
         try updated.append('\n');
     }
@@ -122,6 +130,13 @@ pub fn unban(allocator: std.mem.Allocator, data_dir: []const u8, source: []const
 
 pub fn isRoot() bool {
     return std.os.linux.geteuid() == 0;
+}
+
+fn sameAddress(a: []const u8, b: []const u8) bool {
+    if (std.mem.eql(u8, a, b)) return true;
+    const left = std.Io.net.IpAddress.parse(a, 0) catch return false;
+    const right = std.Io.net.IpAddress.parse(b, 0) catch return false;
+    return left.eql(&right);
 }
 
 fn bpfSyscallAvailable(allocator: std.mem.Allocator) bool {
