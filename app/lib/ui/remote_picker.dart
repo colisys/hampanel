@@ -40,19 +40,19 @@ class HostDirectorySource implements RemotePickerSource {
   String get title => '选择远程目录';
 
   @override
-  Future<List<RemotePickerEntry>> list(String path) async {
+  Future<List<RemotePickerEntry>> list(String path, {bool includeFiles = false}) async {
     final target = path.isEmpty ? root : path;
     final json = await api.getJson('/api/v1/files', query: {'path': target});
     final map = json as Map<String, dynamic>? ?? const {};
     final entries = ((map['entries'] as List<dynamic>?) ?? const [])
         .whereType<Map<String, dynamic>>()
         .map(FileEntry.fromJson)
-        .where((entry) => entry.isDir)
+        .where((entry) => includeFiles || entry.isDir)
         .map(
           (entry) => RemotePickerEntry(
             name: entry.name,
             path: entry.path,
-            isDirectory: true,
+            isDirectory: entry.isDir,
             subtitle: entry.mode,
           ),
         )
@@ -89,10 +89,9 @@ class TreePickerSource implements RemotePickerSource {
 
   @override
   Future<List<RemotePickerEntry>> list(String path) async {
-    final node = _find(path);
-    if (node == null) return const [];
+    final children = path.isEmpty ? nodes : _find(path)?.children ?? const [];
     return [
-      for (final child in node.children)
+      for (final child in children)
         RemotePickerEntry(
           name: child.name,
           path: child.path,
@@ -135,36 +134,63 @@ Future<String?> showRemotePicker(
 }) {
   return showDialog<String>(
     context: context,
-    builder: (context) => _RemotePickerDialog(
+    builder: (context) => _RemotePickerDialog<String>(
       source: source,
       initialPath: initialPath ?? '',
       allowFiles: allowFiles,
       confirmLabel: confirmLabel,
+      result: (paths) => paths.single,
     ),
   );
 }
 
-class _RemotePickerDialog extends StatefulWidget {
+Future<List<String>?> showRemoteMultiPicker(
+  BuildContext context, {
+  required RemotePickerSource source,
+  String? initialPath,
+  bool allowFiles = false,
+  String confirmLabel = '选择',
+}) {
+  return showDialog<List<String>>(
+    context: context,
+    builder: (context) => _RemotePickerDialog<List<String>>(
+      source: source,
+      initialPath: initialPath ?? '',
+      allowFiles: allowFiles,
+      confirmLabel: confirmLabel,
+      multiple: true,
+      result: List<String>.unmodifiable,
+    ),
+  );
+}
+
+class _RemotePickerDialog<T> extends StatefulWidget {
   const _RemotePickerDialog({
     required this.source,
     required this.initialPath,
     required this.allowFiles,
     required this.confirmLabel,
+    required this.result,
+    this.multiple = false,
   });
 
   final RemotePickerSource source;
   final String initialPath;
   final bool allowFiles;
   final String confirmLabel;
+  final bool multiple;
+  final T Function(Iterable<String>) result;
 
   @override
-  State<_RemotePickerDialog> createState() => _RemotePickerDialogState();
+  State<_RemotePickerDialog<T>> createState() => _RemotePickerDialogState<T>();
 }
 
-class _RemotePickerDialogState extends State<_RemotePickerDialog> {
+class _RemotePickerDialogState<T> extends State<_RemotePickerDialog<T>> {
+  final _selected = <String>{};
   late String _path = widget.initialPath;
   List<RemotePickerEntry> _entries = const [];
   bool _loading = true;
+  int _loadId = 0;
   String? _error;
 
   @override
@@ -174,20 +200,24 @@ class _RemotePickerDialogState extends State<_RemotePickerDialog> {
   }
 
   Future<void> _load(String path) async {
+    final loadId = ++_loadId;
     setState(() {
       _path = path;
       _loading = true;
       _error = null;
     });
     try {
-      final entries = await widget.source.list(path);
-      if (!mounted) return;
+      final source = widget.source;
+      final entries = source is HostDirectorySource
+          ? await source.list(path, includeFiles: widget.allowFiles)
+          : await source.list(path);
+      if (!mounted || loadId != _loadId) return;
       setState(() {
         _entries = entries;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || loadId != _loadId) return;
       setState(() {
         _error = describeError(error);
         _loading = false;
@@ -231,10 +261,41 @@ class _RemotePickerDialogState extends State<_RemotePickerDialog> {
     }
   }
 
-  bool get _canConfirm {
+  String get _currentPath {
     final source = widget.source;
-    if (source is TreePickerSource) return source.selectable(_path);
-    return _path.isNotEmpty;
+    return source is HostDirectorySource && _path.isEmpty ? source.root : _path;
+  }
+
+  bool _selectable(String path) {
+    final source = widget.source;
+    if (source is TreePickerSource) {
+      return path.isNotEmpty && source.selectable(path);
+    }
+    return path.isNotEmpty;
+  }
+
+  bool _canSelectEntry(RemotePickerEntry entry) =>
+      _selectable(entry.path) &&
+      (entry.isDirectory ||
+          widget.allowFiles ||
+          widget.source is TreePickerSource);
+
+  void _toggle(String path) {
+    setState(() {
+      if (!_selected.remove(path)) _selected.add(path);
+    });
+  }
+
+  Widget _checkbox(String path, String label) => Semantics(
+    label: label,
+    child: Checkbox(
+      value: _selected.contains(path),
+      onChanged: (_) => _toggle(path),
+    ),
+  );
+
+  void _finish(Iterable<String> paths) {
+    Navigator.of(context).pop<T>(widget.result(paths));
   }
 
   @override
@@ -281,6 +342,22 @@ class _RemotePickerDialogState extends State<_RemotePickerDialog> {
                   ),
                 ],
               ),
+              if (widget.multiple)
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Semantics(
+                      liveRegion: true,
+                      child: Text('已选择 ${_selected.length} 项'),
+                    ),
+                    TextButton(
+                      onPressed: _selected.isEmpty
+                          ? null
+                          : () => setState(_selected.clear),
+                      child: const Text('清空选择'),
+                    ),
+                  ],
+                ),
               const Divider(height: 10),
               Expanded(
                 child: _loading
@@ -330,20 +407,40 @@ class _RemotePickerDialogState extends State<_RemotePickerDialog> {
                                       color: hampanelMuted,
                                     ),
                                   ),
-                            trailing: entry.isDirectory
+                            trailing: widget.multiple && _canSelectEntry(entry)
+                                ? Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _checkbox(entry.path, '选择 ${entry.name}'),
+                                      if (entry.isDirectory)
+                                        const Icon(Icons.chevron_right, size: 16),
+                                    ],
+                                  )
+                                : entry.isDirectory
                                 ? const Icon(Icons.chevron_right, size: 16)
                                 : null,
-                            onTap: () {
-                              if (entry.isDirectory) {
-                                _load(entry.path);
-                              } else if (widget.allowFiles) {
-                                Navigator.of(context).pop(entry.path);
-                              }
-                            },
+                            onTap: entry.isDirectory
+                                ? () => _load(entry.path)
+                                : !_canSelectEntry(entry)
+                                ? null
+                                : widget.multiple
+                                ? () => _toggle(entry.path)
+                                : () => _finish([entry.path]),
                           );
                         },
                       ),
               ),
+              if (widget.multiple &&
+                  !_loading &&
+                  _error == null &&
+                  _selectable(_currentPath))
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: const Text('选择当前位置'),
+                  value: _selected.contains(_currentPath),
+                  onChanged: (_) => _toggle(_currentPath),
+                ),
               if (!_loading && _error == null)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
@@ -368,7 +465,11 @@ class _RemotePickerDialogState extends State<_RemotePickerDialog> {
           child: const Text('取消'),
         ),
         FilledButton(
-          onPressed: _canConfirm ? () => Navigator.of(context).pop(_path) : null,
+          onPressed: widget.multiple
+              ? (_selected.isEmpty ? null : () => _finish(_selected))
+              : (!_loading && _error == null && _selectable(_currentPath)
+                    ? () => _finish([_currentPath])
+                    : null),
           child: Text(widget.confirmLabel),
         ),
       ],

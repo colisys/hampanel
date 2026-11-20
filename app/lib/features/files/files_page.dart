@@ -28,6 +28,9 @@ class _FilesPageState extends State<FilesPage> {
   String _path = '/';
   String? _error;
   bool _loading = true;
+  bool _deleting = false;
+  int _loadId = 0;
+  final _selectedPaths = <String>{};
 
   @override
   void initState() {
@@ -45,7 +48,7 @@ class _FilesPageState extends State<FilesPage> {
     } catch (_) {
       // fall back to the POSIX root
     }
-    await _load(initial);
+    if (mounted && _loadId == 0) await _load(initial);
   }
 
   @override
@@ -57,6 +60,7 @@ class _FilesPageState extends State<FilesPage> {
   ApiClient get _api => PanelScope.of(context).api;
 
   Future<void> _load(String path) async {
+    final loadId = ++_loadId;
     setState(() {
       _loading = true;
       _error = null;
@@ -68,15 +72,19 @@ class _FilesPageState extends State<FilesPage> {
           .whereType<Map<String, dynamic>>()
           .map(FileEntry.fromJson)
           .toList();
-      if (!mounted) return;
+      if (!mounted || loadId != _loadId) return;
+      final listedPath = map['path'] as String? ?? path;
+      final listedPaths = entries.map((entry) => entry.path).toSet();
       setState(() {
-        _path = map['path'] as String? ?? path;
+        if (listedPath != _path) _selectedPaths.clear();
+        _selectedPaths.retainAll(listedPaths);
+        _path = listedPath;
         _pathController.text = _path;
         _entries = entries;
         _loading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || loadId != _loadId) return;
       setState(() {
         _error = describeError(error);
         _loading = false;
@@ -217,28 +225,102 @@ class _FilesPageState extends State<FilesPage> {
     }
   }
 
-  Future<void> _delete(FileEntry entry) async {
+  Future<void> _delete(FileEntry entry) => _deletePaths(
+    [entry.path],
+    title: '删除 ${entry.name}?',
+    message: entry.isDir
+        ? '目录及其内容会移动到回收站，可在「回收站」页面恢复。'
+        : '文件会移动到回收站，可在「回收站」页面恢复。',
+  );
+
+  Future<void> _deleteSelected() => _deletePaths(
+    _selectedPaths.toList(),
+    title: '删除所选的 ${_selectedPaths.length} 项？',
+    message: '所选文件和目录（含其内容）会移动到回收站，可在「回收站」页面恢复。',
+  );
+
+  Future<void> _deletePaths(
+    List<String> paths, {
+    required String title,
+    required String message,
+  }) async {
+    if (_deleting || paths.isEmpty) return;
+    final directory = _path;
     final ok = await confirmDialog(
       context,
-      title: '删除 ${entry.name}?',
-      message: entry.isDir
-          ? '目录及其内容会移动到回收站，可在「回收站」页面恢复。'
-          : '文件会移动到回收站，可在「回收站」页面恢复。',
+      title: title,
+      message: message,
       confirmLabel: '移入回收站',
       danger: true,
     );
-    if (!ok) return;
+    if (!mounted || !ok || _deleting) return;
+    setState(() => _deleting = true);
     try {
       final result = await _api.postJson('/api/v1/files/delete', {
-        'paths': [entry.path],
+        'paths': paths,
       });
-      await _load(_path);
-      requireDeleted(result, [entry.path]);
+      if (!mounted) return;
+      if (!_loading && _path == directory) await _load(directory);
+      requireDeleted(result, paths);
       _toast('已移入回收站');
     } catch (error) {
       _toast(describeError(error));
+    } finally {
+      if (mounted) setState(() => _deleting = false);
     }
   }
+
+  Widget _selectionControls(double horizontal) => Padding(
+    padding: EdgeInsets.fromLTRB(horizontal, 0, horizontal, 8),
+    child: Wrap(
+      spacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Semantics(
+          liveRegion: true,
+          child: Text('已选择 ${_selectedPaths.length} 项'),
+        ),
+        TextButton(
+          onPressed: _deleting ||
+                  _entries.every((entry) => _selectedPaths.contains(entry.path))
+              ? null
+              : () => setState(() {
+                  _selectedPaths.addAll(_entries.map((entry) => entry.path));
+                }),
+          child: const Text('全选'),
+        ),
+        TextButton(
+          onPressed: _deleting || _selectedPaths.isEmpty
+              ? null
+              : () => setState(_selectedPaths.clear),
+          child: const Text('清空选择'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _deleting || _selectedPaths.isEmpty
+              ? null
+              : _deleteSelected,
+          icon: const Icon(Icons.delete_outline, size: 16),
+          label: const Text('移入回收站'),
+        ),
+      ],
+    ),
+  );
+
+  Widget _selectionCheckbox(FileEntry entry) => Semantics(
+    label: '选择 ${entry.name}',
+    child: Checkbox(
+      value: _selectedPaths.contains(entry.path),
+      onChanged: _deleting
+          ? null
+          : (selected) => setState(() {
+              if (selected == true) {
+                _selectedPaths.add(entry.path);
+              } else {
+                _selectedPaths.remove(entry.path);
+              }
+            }),
+    ),
+  );
 
   Future<void> _versions(FileEntry entry) async {
     try {
@@ -546,6 +628,8 @@ class _FilesPageState extends State<FilesPage> {
         ),
         if (_error != null)
           ErrorBanner(message: _error!, onRetry: () => _load(_path)),
+        if (!_loading && _error == null && _entries.isNotEmpty)
+          _selectionControls(horizontal),
         Expanded(
           child: _loading
               ? const LoadingView()
@@ -628,6 +712,7 @@ class _FilesPageState extends State<FilesPage> {
         padding: const EdgeInsets.fromLTRB(12, 9, 4, 9),
         child: Row(
           children: [
+            _selectionCheckbox(entry),
             Icon(icon, size: 18, color: color),
             const SizedBox(width: 10),
             Expanded(
@@ -697,7 +782,11 @@ class _FilesPageState extends State<FilesPage> {
         const PopupMenuItem(value: 'rename', child: Text('重命名')),
         if (!entry.isDir)
           const PopupMenuItem(value: 'download', child: Text('下载')),
-        const PopupMenuItem(value: 'delete', child: Text('删除')),
+        PopupMenuItem(
+          value: 'delete',
+          enabled: !_deleting,
+          child: const Text('删除'),
+        ),
       ],
     );
   }
@@ -708,7 +797,7 @@ class _FilesPageState extends State<FilesPage> {
       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          SizedBox(width: 28),
+          SizedBox(width: 66),
           SizedBox(width: 10),
           Expanded(flex: 5, child: Text('名称', style: style)),
           Expanded(flex: 2, child: Text('大小', style: style)),
@@ -734,7 +823,7 @@ class _FilesPageState extends State<FilesPage> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           children: [
-            const SizedBox(width: 28),
+            _selectionCheckbox(entry),
             Icon(icon, size: 18, color: color),
             const SizedBox(width: 10),
             Expanded(
