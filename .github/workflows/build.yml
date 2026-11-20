@@ -318,35 +318,38 @@ jobs:
         shell: pwsh
         run: |
           $root = if ($env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_INSTALLATION_ROOT } else { Split-Path (Get-Command vcpkg).Source }
-          $rev = if (Test-Path "$root\.git") { (git -C $root rev-parse --short HEAD) } else { "static" }
           "root=$root" >> $env:GITHUB_OUTPUT
-          "rev=$rev" >> $env:GITHUB_OUTPUT
+          $prefix = "vcpkg-openssl-binary-v1-x64-windows-$env:ImageOS-"
+          "prefix=$prefix" >> $env:GITHUB_OUTPUT
+          $rev = if (Test-Path "$root\.git") { git -C $root rev-parse --short HEAD } else { 'bundled' }
+          "key=$prefix$env:ImageVersion-$rev" >> $env:GITHUB_OUTPUT
 
-      - name: Restore OpenSSL cache
+      - name: Restore OpenSSL binary cache
         id: openssl-cache
         uses: actions/cache/restore@v4
         with:
-          path: |
-            ${{ steps.vcpkg.outputs.root }}\installed
-            ${{ steps.vcpkg.outputs.root }}\downloads
-          key: vcpkg-openssl-x64-windows-${{ steps.vcpkg.outputs.rev }}
+          path: ${{ runner.temp }}/vcpkg-openssl-binaries
+          key: ${{ steps.vcpkg.outputs.key }}
+          restore-keys: ${{ steps.vcpkg.outputs.prefix }}
 
       - name: Install OpenSSL
-        if: steps.openssl-cache.outputs.cache-hit != 'true'
         shell: pwsh
+        env:
+          VCPKG_BINARY_SOURCES: clear;files,${{ runner.temp }}/vcpkg-openssl-binaries,readwrite
+          VCPKG_ROOT: ${{ steps.vcpkg.outputs.root }}
+          VCPKG_CACHE_DIR: ${{ runner.temp }}/vcpkg-openssl-binaries
         run: |
-          vcpkg install openssl:x64-windows
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_CACHE_DIR | Out-Null
+          & "$env:VCPKG_ROOT\vcpkg.exe" install openssl:x64-windows
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Save OpenSSL cache
+      - name: Save OpenSSL binary cache
         if: steps.openssl-cache.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
-          path: |
-            ${{ steps.vcpkg.outputs.root }}\installed
-            ${{ steps.vcpkg.outputs.root }}\downloads
-          key: vcpkg-openssl-x64-windows-${{ steps.vcpkg.outputs.rev }}
+          path: ${{ runner.temp }}/vcpkg-openssl-binaries
+          key: ${{ steps.vcpkg.outputs.key }}
 
       - name: Build daemon
         working-directory: daemon
