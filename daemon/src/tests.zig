@@ -596,3 +596,37 @@ test "security recording a ban is idempotent" {
     }
     try std.testing.expectEqual(@as(usize, 2), banned.len);
 }
+
+test "brute containment config maps seconds to gateway milliseconds" {
+    const waf = @import("platform/mod.zig").waf;
+    if (@hasDecl(waf, "bruteForConfig")) {
+        const enabled = waf.bruteForConfig(.{
+            .mode = "detect",
+            .listen_host = "127.0.0.1",
+            .listen_port = 8088,
+            .upstream_host = "127.0.0.1",
+            .upstream_port = 80,
+            .brute_enabled = true,
+            .brute_threshold = 7,
+            .brute_window_seconds = 30,
+            .brute_ban_seconds = 900,
+        });
+        try std.testing.expect(enabled.enabled);
+        try std.testing.expectEqual(@as(u16, 7), enabled.threshold);
+        try std.testing.expectEqual(@as(u32, 30_000), enabled.window_ms);
+        try std.testing.expectEqual(@as(u32, 900_000), enabled.ban_ms);
+
+        // A zero threshold must never leave the gateway armed: the guard would
+        // otherwise ban on the first request.
+        const disabled = waf.bruteForConfig(.{
+            .mode = "detect",
+            .listen_host = "127.0.0.1",
+            .listen_port = 8088,
+            .upstream_host = "127.0.0.1",
+            .upstream_port = 80,
+            .brute_enabled = true,
+            .brute_threshold = 0,
+        });
+        try std.testing.expect(!disabled.enabled);
+    }
+}

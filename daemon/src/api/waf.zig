@@ -43,11 +43,24 @@ pub fn configure(ctx: *context.Context) anyerror!void {
         tls_enabled: bool = false,
         tls_mode: []const u8 = "internal",
         tls_email: []const u8 = "",
+        brute_enabled: bool = true,
+        brute_threshold: u16 = 5,
+        brute_window_seconds: u32 = 60,
+        brute_ban_seconds: u32 = 600,
     };
     const body = ctx.requireJson(Body) catch {
         ctx.fail(400, "bad_request", "expected WAF configuration");
         return;
     };
+    // 0 disables containment; beyond 1000 the window is meaningless.
+    if (body.brute_threshold > 1000) {
+        ctx.fail(400, "bad_brute", "brute threshold must be 0..1000");
+        return;
+    }
+    if (body.brute_window_seconds > 86_400 or body.brute_ban_seconds > 2_592_000) {
+        ctx.fail(400, "bad_brute", "brute window or ban duration is out of range");
+        return;
+    }
     const outcome = platform.waf.configure(ctx.arena, ctx.app.config.data_dir, .{
         .mode = body.mode,
         .listen_host = body.listen_host,
@@ -68,6 +81,10 @@ pub fn configure(ctx: *context.Context) anyerror!void {
         .tls_enabled = body.tls_enabled,
         .tls_mode = body.tls_mode,
         .tls_email = body.tls_email,
+        .brute_enabled = body.brute_enabled and body.brute_threshold > 0,
+        .brute_threshold = body.brute_threshold,
+        .brute_window_seconds = body.brute_window_seconds,
+        .brute_ban_seconds = body.brute_ban_seconds,
     }) catch |err| {
         fail(ctx, err);
         return;

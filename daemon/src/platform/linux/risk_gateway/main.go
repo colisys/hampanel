@@ -62,6 +62,7 @@ type Config struct {
 	TypeSafe TypeSafeConfig `json:"typesafe"`
 	Geo      GeoConfig      `json:"geo"`
 	Routes   []Route        `json:"routes"`
+	Brute    bruteConfig    `json:"brute"`
 }
 
 type domainSet struct {
@@ -87,6 +88,7 @@ type routeProxy struct {
 
 type gateway struct {
 	cfg     Config
+	brute   *bruteGuard
 	proxy   *httputil.ReverseProxy
 	routes  []routeProxy
 	geoSets []geoRuleSet
@@ -135,7 +137,7 @@ func main() {
 		log.Fatalf("invalid upstream %q", cfg.Upstream)
 	}
 
-	g := &gateway{cfg: cfg}
+	g := &gateway{cfg: cfg, brute: newBruteGuard(cfg.Brute)}
 	if cfg.TypeSafe.Enabled && cfg.TypeSafe.Credential != "" {
 		g.apiKey, err = decryptCredential(cfg.TypeSafe.Credential, cfg.TypeSafe.CredentialName)
 		if err != nil {
@@ -214,6 +216,7 @@ func makeProxy(upstream *url.URL) *httputil.ReverseProxy {
 		original(req)
 		req.Host = host
 	}
+	proxy.ModifyResponse = injectFingerprint
 	return proxy
 }
 
@@ -262,6 +265,19 @@ func (g *gateway) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fingerprint := fingerprintOf(map[string]string{
+		"Accept-Language":    r.Header.Get("Accept-Language"),
+		"Sec-Ch-Ua":          r.Header.Get("Sec-Ch-Ua"),
+		"Sec-Ch-Ua-Platform": r.Header.Get("Sec-Ch-Ua-Platform"),
+		"Sec-Ch-Ua-Mobile":   r.Header.Get("Sec-Ch-Ua-Mobile"),
+		"Cookie":             cookieValue(r, fingerprintCookie),
+	})
+	if g.brute.Banned(clientIP, fingerprint) {
+		g.audit(r, clientIP, host, "block", "brute:banned", 0, start)
+		writeBlocked(w, "brute:banned")
+		return
+	}
+
 	body, truncated := readBody(r, g.cfg.MaxBody)
 	inspect := g.shouldInspect(r)
 	prob := 0.0
@@ -292,6 +308,9 @@ func (g *gateway) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if decision == "block" {
+		if g.brute.RecordFailure(clientIP, fingerprint) {
+			g.audit(r, clientIP, host, "ban", "brute:threshold", prob, start)
+		}
 		g.audit(r, clientIP, host, "block", reason, prob, start)
 		writeBlocked(w, reason)
 		return

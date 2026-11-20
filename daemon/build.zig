@@ -229,6 +229,14 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&test_cmd.step);
 
+    // The WAF risk gateway is Go; keep it separate from `test` so the Zig test
+    // suite does not require a Go toolchain, but expose one entry point for it.
+    const go_test = b.addSystemCommand(&.{ "sh", "-c",
+        \\cd src/platform/linux/risk_gateway && GO111MODULE=off go test .
+    });
+    const go_test_step = b.step("test-go", "Run WAF risk gateway tests");
+    go_test_step.dependOn(&go_test.step);
+
     const windows_target = b.resolveTargetQuery(.{
         .cpu_arch = .x86_64,
         .os_tag = .windows,

@@ -35,6 +35,10 @@ pub const Config = struct {
     tls_enabled: bool = false,
     tls_mode: []const u8 = "internal",
     tls_email: []const u8 = "",
+    brute_enabled: bool = true,
+    brute_threshold: u16 = 5,
+    brute_window_seconds: u32 = 60,
+    brute_ban_seconds: u32 = 600,
 };
 
 pub const Status = struct {
@@ -70,6 +74,11 @@ pub const Status = struct {
     tls_enabled: bool,
     tls_mode: []const u8,
     tls_email: []const u8,
+    /// Login brute-force containment.
+    brute_enabled: bool,
+    brute_threshold: u16,
+    brute_window_seconds: u32,
+    brute_ban_seconds: u32,
 };
 
 pub const Outcome = struct {
@@ -143,6 +152,10 @@ pub fn status(allocator: std.mem.Allocator, data_dir: []const u8) !Status {
         .tls_enabled = cfg.tls_enabled,
         .tls_mode = cfg.tls_mode,
         .tls_email = cfg.tls_email,
+        .brute_enabled = cfg.brute_enabled,
+        .brute_threshold = cfg.brute_threshold,
+        .brute_window_seconds = cfg.brute_window_seconds,
+        .brute_ban_seconds = cfg.brute_ban_seconds,
     };
 }
 
@@ -619,6 +632,14 @@ const RiskGeo = struct {
     geosite: []const GeoRule,
 };
 
+pub const RiskBrute = struct {
+    enabled: bool,
+    threshold: u16,
+    window_ms: u32,
+    ban_ms: u32,
+    max_sources: u32,
+};
+
 const RiskConfig = struct {
     listen: []const u8,
     upstream: []const u8,
@@ -628,7 +649,20 @@ const RiskConfig = struct {
     typesafe: RiskTypeSafe,
     geo: RiskGeo,
     routes: []const RiskRoute,
+    brute: RiskBrute,
 };
+
+/// The gateway speaks milliseconds; the panel stores seconds.
+pub fn bruteForConfig(config: Config) RiskBrute {
+    const threshold: u16 = if (config.brute_enabled) config.brute_threshold else 0;
+    return .{
+        .enabled = config.brute_enabled and threshold > 0,
+        .threshold = threshold,
+        .window_ms = config.brute_window_seconds * 1000,
+        .ban_ms = config.brute_ban_seconds * 1000,
+        .max_sources = 10_000,
+    };
+}
 
 fn writeRiskConfig(allocator: std.mem.Allocator, paths_value: Paths, config: Config) !void {
     const listen = try std.fmt.allocPrint(allocator, "127.0.0.1:{d}", .{config.risk_port});
@@ -669,6 +703,7 @@ fn writeRiskConfig(allocator: std.mem.Allocator, paths_value: Paths, config: Con
             .geosite = config.geosite_rules,
         },
         .routes = risk_routes.items,
+        .brute = bruteForConfig(config),
     };
     const json = try std.json.Stringify.valueAlloc(allocator, risk, .{ .whitespace = .indent_2 });
     try writeFile(paths_value.risk_config, json, 0o600);

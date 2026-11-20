@@ -32,6 +32,10 @@ class WafStatus {
     required this.tlsEnabled,
     required this.tlsMode,
     required this.tlsEmail,
+    this.bruteEnabled = false,
+    this.bruteThreshold = 5,
+    this.bruteWindowSeconds = 60,
+    this.bruteBanSeconds = 600,
   });
 
   final bool installed;
@@ -66,6 +70,10 @@ class WafStatus {
   final bool tlsEnabled;
   final String tlsMode;
   final String tlsEmail;
+  final bool bruteEnabled;
+  final int bruteThreshold;
+  final int bruteWindowSeconds;
+  final int bruteBanSeconds;
 
   factory WafStatus.fromJson(Map<String, dynamic> json) => WafStatus(
     installed: json['installed'] as bool? ?? false,
@@ -111,6 +119,10 @@ class WafStatus {
     tlsEnabled: json['tls_enabled'] as bool? ?? false,
     tlsMode: json['tls_mode'] as String? ?? 'internal',
     tlsEmail: json['tls_email'] as String? ?? '',
+    bruteEnabled: json['brute_enabled'] as bool? ?? false,
+    bruteThreshold: (json['brute_threshold'] as num?)?.toInt() ?? 5,
+    bruteWindowSeconds: (json['brute_window_seconds'] as num?)?.toInt() ?? 60,
+    bruteBanSeconds: (json['brute_ban_seconds'] as num?)?.toInt() ?? 600,
   );
 }
 

@@ -33,6 +33,10 @@ pub const Config = struct {
     tls_enabled: bool = false,
     tls_mode: []const u8 = "internal",
     tls_email: []const u8 = "",
+    brute_enabled: bool = false,
+    brute_threshold: u16 = 5,
+    brute_window_seconds: u32 = 60,
+    brute_ban_seconds: u32 = 600,
 };
 
 pub const Status = struct {

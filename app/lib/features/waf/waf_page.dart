@@ -39,9 +39,13 @@ class _WafPageState extends State<WafPage>
   final _typesafeTimeout = TextEditingController(text: '800');
   final _typesafeKey = TextEditingController();
   final _tlsEmail = TextEditingController();
+  final _bruteThreshold = TextEditingController(text: '5');
+  final _bruteWindow = TextEditingController(text: '60');
+  final _bruteBan = TextEditingController(text: '600');
   String _mode = 'detect';
   final List<WafRoute> _routes = [];
   bool _tlsEnabled = false;
+  bool _bruteEnabled = false;
   String _tlsMode = 'internal';
   bool _riskEnabled = true;
   bool _typesafeEnabled = false;
@@ -79,6 +83,9 @@ class _WafPageState extends State<WafPage>
     _typesafeTimeout.dispose();
     _typesafeKey.dispose();
     _tlsEmail.dispose();
+    _bruteThreshold.dispose();
+    _bruteWindow.dispose();
+    _bruteBan.dispose();
     super.dispose();
   }
 
@@ -102,6 +109,16 @@ class _WafPageState extends State<WafPage>
         _upstreamPort.text = status.upstreamPort > 0
             ? '${status.upstreamPort}'
             : '80';
+        _bruteEnabled = status.bruteEnabled;
+        if (status.bruteThreshold > 0) {
+          _bruteThreshold.text = '${status.bruteThreshold}';
+        }
+        if (status.bruteWindowSeconds > 0) {
+          _bruteWindow.text = '${status.bruteWindowSeconds}';
+        }
+        if (status.bruteBanSeconds > 0) {
+          _bruteBan.text = '${status.bruteBanSeconds}';
+        }
         _loading = false;
       });
     } catch (error) {
@@ -161,6 +178,25 @@ class _WafPageState extends State<WafPage>
       );
       if (!ok) return;
     }
+    final bruteThreshold = int.tryParse(_bruteThreshold.text.trim());
+    final bruteWindow = int.tryParse(_bruteWindow.text.trim());
+    final bruteBan = int.tryParse(_bruteBan.text.trim());
+    if (bruteThreshold == null || bruteWindow == null || bruteBan == null) {
+      _toast('爆破阈值/统计窗口/封禁时长必须是整数');
+      return;
+    }
+    if (bruteThreshold < 0 || bruteThreshold > 1000) {
+      _toast('爆破阈值需在 0..1000 之间，0 表示关闭');
+      return;
+    }
+    if (bruteWindow <= 0 || bruteWindow > 86400) {
+      _toast('统计窗口需在 1..86400 秒之间');
+      return;
+    }
+    if (bruteBan <= 0 || bruteBan > 2592000) {
+      _toast('封禁时长需在 1..2592000 秒之间');
+      return;
+    }
     setState(() => _busy = true);
     try {
       final riskPort = int.tryParse(_riskPort.text.trim());
@@ -195,6 +231,10 @@ class _WafPageState extends State<WafPage>
         'tls_enabled': _tlsEnabled,
         'tls_mode': _tlsMode,
         'tls_email': _tlsEmail.text.trim(),
+        'brute_enabled': _bruteEnabled,
+        'brute_threshold': bruteThreshold,
+        'brute_window_seconds': bruteWindow,
+        'brute_ban_seconds': bruteBan,
       });
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
@@ -831,6 +871,79 @@ class _WafPageState extends State<WafPage>
               icon: const Icon(Icons.save_outlined, size: 16),
               label: const Text('校验并保存配置'),
             ),
+          ],
+        ),
+      ),
+      PanelCard(
+        title: '爆破封禁',
+        trailing: StatusPill(
+          text: _bruteEnabled ? '已启用' : '未启用',
+          good: _bruteEnabled,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('多次违规后自动封禁'),
+              subtitle: const Text(
+                '同一客户端在统计窗口内违反安全规则达到阈值后，'
+                '自动拉入 WAF 黑名单并连坐其浏览器指纹。',
+              ),
+              value: _bruteEnabled,
+              onChanged: _busy
+                  ? null
+                  : (value) => setState(() => _bruteEnabled = value),
+            ),
+            if (_bruteEnabled)
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final threshold = TextField(
+                    controller: _bruteThreshold,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '触发阈值（次）',
+                      helperText: '0 表示关闭',
+                    ),
+                  );
+                  final window = TextField(
+                    controller: _bruteWindow,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '统计窗口（秒）',
+                    ),
+                  );
+                  final ban = TextField(
+                    controller: _bruteBan,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '封禁时长（秒）',
+                    ),
+                  );
+                  if (constraints.maxWidth < 600) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        threshold,
+                        const SizedBox(height: 10),
+                        window,
+                        const SizedBox(height: 10),
+                        ban,
+                      ],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: threshold),
+                      const SizedBox(width: 10),
+                      Expanded(child: window),
+                      const SizedBox(width: 10),
+                      Expanded(child: ban),
+                    ],
+                  );
+                },
+              ),
           ],
         ),
       ),
