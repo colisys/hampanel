@@ -147,3 +147,21 @@ guest 在 QEMU/KVM 中运行，用宿主机自带内核 + busybox 构建 initram
 任务：`security.honeypot.build`、`security.honeypot.start`（镜像构建与启动都不走同步请求）。
 
 接口：`GET /api/v1/security/honeypot`、`GET /honeypot/console?id=`、`POST /honeypot/stop`。
+
+### 诱饵内容
+
+guest 里不是空的：每次构建都会生成一套"看起来像真机器"的内容，全部为伪造。
+
+- 身份：随机主机名（如 `cache-prod-07`、`edge-us-east-11`）、发行版、
+  `/etc/hostname`、`/etc/hosts`、`/etc/os-release`。
+- 账户：`/etc/passwd`、`/etc/shadow`（随机但格式合法的哈希）、`/etc/group`、
+  `root/.ssh/authorized_keys`、`root/.bash_history`（真实运维命令）。
+- Web：随机主题的登录页、`robots.txt` 指向 `/admin/` 与 `/backup/`、
+  以及一个"忘了删"的 `backup/config.php.bak` 含假数据库口令。
+- 日志：`/var/log/nginx/access.log` 用标准 combined 格式
+  （`26/Sep/2026:12:10:07 +0000`），`/var/log/auth.log` 用 `Sep  2` 格式，
+  夹杂扫描路径与失败登录，来源地址取公共段且避开文档/私有网段。
+- 配置：`/srv/app/.env`、`/etc/crontab`、nginx 站点配置与主机名一致。
+
+同一次构建共用单个随机生成器，因此主机名、站点名与 nginx 配置互相吻合；
+不同构建的镜像哈希不同，不会让攻击者在多次会话间看出是同一套模板。

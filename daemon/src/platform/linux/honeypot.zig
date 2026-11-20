@@ -1,6 +1,7 @@
 const std = @import("std");
 const compat = @import("compat");
 const exec = @import("shared").exec;
+pub const decoys = @import("honeypot_decoys.zig");
 
 /// SSH / Web honeypot.
 ///
@@ -211,11 +212,16 @@ pub fn buildImage(allocator: std.mem.Allocator, data_dir: []const u8, mode: Mode
     defer allocator.free(busybox_copy);
     try copyFile(busybox, busybox_copy);
 
+    // Decoy content is generated per build, so two honeypots do not look like
+    // copies of each other. Everything in it is fabricated.
+    const hostname = try decoys.populate(allocator, rootfs, mode.name());
+    defer allocator.free(hostname);
+
     const init = try compat.path.join(allocator, &.{ rootfs, "init" });
     defer allocator.free(init);
     // /init must be executable: the kernel refuses it otherwise with
     // "Failed to execute /init (error -13)" and panics.
-    try writeFileMode(init, try renderInit(allocator, mode), 0o755);
+    try writeFileMode(init, try renderInit(allocator, mode, hostname), 0o755);
 
     // `cpio` is the only archiver assumed; the image stays inspectable by hand.
     const archive = try paths.image(allocator);
@@ -237,7 +243,7 @@ pub fn buildImage(allocator: std.mem.Allocator, data_dir: []const u8, mode: Mode
     return .{ .ok = true, .output = "guest 镜像已构建" };
 }
 
-fn renderInit(allocator: std.mem.Allocator, mode: Mode) ![]const u8 {
+fn renderInit(allocator: std.mem.Allocator, mode: Mode, hostname: []const u8) ![]const u8 {
     var out: std.Io.Writer.Allocating = .init(allocator);
     const w = &out.writer;
     try w.print(
@@ -251,7 +257,7 @@ fn renderInit(allocator: std.mem.Allocator, mode: Mode) ![]const u8 {
         \\hostname {s}
         \\ip link set lo up 2>/dev/null
         \\
-    , .{if (mode == .web) "web-honeypot" else "ssh-honeypot"});
+    , .{hostname});
     // QEMU user-mode networking is always 10.0.2.0/24 with gateway 10.0.2.2.
     // The guest is configured statically because this image carries no DHCP
     // helper script and must not depend on one.
@@ -262,13 +268,9 @@ fn renderInit(allocator: std.mem.Allocator, mode: Mode) ![]const u8 {
         \\
     );
     if (mode == .web or mode == .both) {
+        // Serve the generated site, not a placeholder page.
         try w.writeAll(
-            \\mkdir -p /www
-            \\cat > /www/index.html <<'HTML'
-            \\<html><head><title>Welcome</title></head>
-            \\<body><h1>It works!</h1><p>nginx</p></body></html>
-            \\HTML
-            \\httpd -p 80 -h /www
+            \\httpd -p 80 -h /var/www/html
             \\echo "[honeypot] http listening on 80"
             \\
         );

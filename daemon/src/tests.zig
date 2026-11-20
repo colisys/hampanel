@@ -955,3 +955,59 @@ test "honeypot session ids are restricted to safe characters" {
     try std.testing.expect(!hp.validId("a b"));
     try std.testing.expect(!hp.validId("a; rm -rf /"));
 }
+
+test "honeypot decoys are varied and self-consistent" {
+    if (@import("builtin").os.tag != .linux) return;
+    const allocator = std.testing.allocator;
+    const decoys = @import("platform/mod.zig").honeypot.decoys;
+
+    // Hostnames must look like deployments and differ between builds: an
+    // intruder noticing identical hosts across sessions is a dead giveaway.
+    var first = decoys.Generator.init(allocator);
+    const a = try first.hostname(allocator);
+    defer allocator.free(a);
+    var second = decoys.Generator.init(allocator);
+    const b = try second.hostname(allocator);
+    defer allocator.free(b);
+    try std.testing.expect(a.len > 0);
+    try std.testing.expect(b.len > 0);
+    try std.testing.expect(!std.mem.eql(u8, a, b));
+    // No "honeypot"/"decoy" giveaway in the identity itself.
+    try std.testing.expect(std.mem.indexOf(u8, a, "honeypot") == null);
+}
+
+test "honeypot decoy log lines match the formats they imitate" {
+    if (@import("builtin").os.tag != .linux) return;
+    const allocator = std.testing.allocator;
+    const decoys = @import("platform/mod.zig").honeypot.decoys;
+
+    // nginx: 12/Mar/2024:07:31:04 +0000
+    const stamp = try decoys.nginxStampForTest(allocator, 1795188367);
+    defer allocator.free(stamp);
+    try std.testing.expect(std.mem.indexOf(u8, stamp, "/") != null);
+    try std.testing.expect(std.mem.indexOf(u8, stamp, " +0000") != null);
+    try std.testing.expect(std.mem.indexOf(u8, stamp, "2026") != null);
+
+    // auth.log: "Sep  2"
+    const day = try decoys.monthDayForTest(allocator, 1795188367);
+    defer allocator.free(day);
+    try std.testing.expect(day.len >= 5);
+    try std.testing.expect(std.mem.indexOf(u8, day, " ") != null);
+}
+
+test "honeypot decoy addresses avoid documentation and private ranges" {
+    if (@import("builtin").os.tag != .linux) return;
+    const allocator = std.testing.allocator;
+    const decoys = @import("platform/mod.zig").honeypot.decoys;
+    var gen = decoys.Generator.init(allocator);
+    var index: usize = 0;
+    while (index < 32) : (index += 1) {
+        const address = try gen.sourceAddressForTest(allocator);
+        defer allocator.free(address);
+        // Never point at real infrastructure examples or the local network.
+        try std.testing.expect(!std.mem.startsWith(u8, address, "192.168."));
+        try std.testing.expect(!std.mem.startsWith(u8, address, "10."));
+        try std.testing.expect(!std.mem.startsWith(u8, address, "127."));
+        try std.testing.expect(!std.mem.startsWith(u8, address, "203.0.113."));
+    }
+}
