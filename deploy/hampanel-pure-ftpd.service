@@ -1,0 +1,16 @@
+[Unit]
+Description=Hampanel private explicit FTPS instance
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I /usr/local/libexec/hampanel/pure_ftpd.py start /var/lib/hampanel-ftps
+UMask=0077
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/hampanel-ftps
+ProtectHome=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

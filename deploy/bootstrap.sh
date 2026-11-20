@@ -251,6 +251,39 @@ else
   fi
 fi
 
+# Private FTPS files are optional in older release archives. Never enable or
+# start the dedicated unit during installation; initialization is explicit.
+if [[ "$ROOT" == "1" && "$NO_SYSTEMD" == "0" ]]; then
+  ASSETS="$SOURCE_DIR"
+  if [[ "$MODE" == "source" ]]; then ASSETS="$BUILD_DIR"; fi
+  if [[ -f "$ASSETS/daemon/libexec/pure_ftpd.py" && -f "$ASSETS/deploy/hampanel-pure-ftpd.service" ]]; then
+    if ! id -u hampanel-ftps >/dev/null 2>&1; then
+      useradd --system --no-create-home --home-dir /var/lib/hampanel-ftps --shell /usr/sbin/nologin hampanel-ftps
+    fi
+    install -d -m 0711 -o root -g root /var/lib/hampanel-ftps
+    install -d -m 0755 /usr/local/libexec/hampanel
+    install -m 0755 "$ASSETS/daemon/libexec/pure_ftpd.py" /usr/local/libexec/hampanel/pure_ftpd.py
+    install -m 0644 "$ASSETS/deploy/hampanel-pure-ftpd.service" /etc/systemd/system/hampanel-pure-ftpd.service
+    systemctl daemon-reload
+  else
+    log "private FTPS assets missing from archive; skipping optional unit"
+  fi
+fi
+
+# ClamAV helper must run as a dedicated non-root identity, not the daemon.
+if [[ "$ROOT" == "1" ]]; then
+  ASSETS="$SOURCE_DIR"
+  if [[ "$MODE" == "source" ]]; then ASSETS="$BUILD_DIR"; fi
+  if [[ -f "$ASSETS/tool/clamav.py" ]]; then
+    install -d -m 0755 /usr/libexec/hampanel
+    install -m 0755 "$ASSETS/tool/clamav.py" /usr/libexec/hampanel/clamav.py
+    if ! getent passwd hampanel-clamav >/dev/null; then
+      useradd --system --home-dir /var/lib/hampanel-clamav --shell /usr/sbin/nologin hampanel-clamav
+    fi
+    install -d -m 0700 -o hampanel-clamav -g "$(id -gn hampanel-clamav)" /var/lib/hampanel-clamav
+  fi
+fi
+
 # ---------------------------------------------------------------- initialize
 SAN_ARGS=()
 for san in ${SANS[@]+"${SANS[@]}"}; do

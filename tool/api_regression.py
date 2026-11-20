@@ -323,6 +323,21 @@ try:
     task('host.change',{'op':'swap-device'},error='InvalidParams')
     task('service.action',{'unit':'fixture.service','action':'unknown'},error='InvalidParams')
     task('software.initialize',{'id':'missing'},error='UnknownSoftware')
+    # Linux-only software handlers: validate bodies and fail closed inside the chroot.
+    reject('POST','/clamav/initialize','/clamav/initialize',400,'bad_request',{})
+    reject('POST','/clamav/scan','/clamav/scan',400,'bad_request',{})
+    for suffix,body in (('/clamav',None),('/clamav/initialize',{'database':'official','threads':1}),
+                        ('/clamav/scan',{'path':'/work'})):
+        test('GET' if body is None else 'POST',suffix,body,503,
+             lambda d:d.get('code')=='clamav_unavailable',scenario='dependency-failure')
+    reject('POST','/supervisord/action','/supervisord/action',400,'invalid_action',{'action':'unknown'})
+    for suffix,body in (('/supervisord',None),('/supervisord/action',{'action':'logs','name':'fixture:app'})):
+        test('GET' if body is None else 'POST',suffix,body,500,
+             lambda d:d.get('code')=='internal' and d.get('message')=='SpawnFailed',scenario='dependency-failure')
+    reject('POST','/pure-ftpd/add','/pure-ftpd/add',400,'bad_request',{})
+    reject('POST','/pure-ftpd/delete','/pure-ftpd/delete',400,'bad_request',{})
+    for suffix,body in (('/pure-ftpd/initialize',None),('/pure-ftpd/delete',{'name':'fixture'})):
+        test('POST',suffix,body,500,lambda d:d.get('code')=='ftps_failed',scenario='dependency-failure')
     task('package.custom',error='InvalidParams')
     task('package.install',{'id':'missing'},error='UnknownTool')
     for suffix in ('/ssh/config','/waf/config','/fail2ban/config'):

@@ -10,6 +10,7 @@ class SoftwareCard extends StatelessWidget {
     required this.item,
     required this.initializing,
     required this.onInitialize,
+    this.dedicatedControls = false,
     required this.configPaths,
     required this.onEditConfig,
   });
@@ -17,6 +18,7 @@ class SoftwareCard extends StatelessWidget {
   final SoftwareItem item;
   final bool initializing;
   final VoidCallback onInitialize;
+  final bool dedicatedControls;
   final List<String> configPaths;
   final ValueChanged<String> onEditConfig;
 
@@ -66,7 +68,7 @@ class SoftwareCard extends StatelessWidget {
                   '请先在「应用商店 → 系统工具」安装',
                   style: TextStyle(fontSize: 11.5, color: hampanelMuted),
                 )
-              else if (item.needsInitialization)
+              else if (item.needsInitialization && !dedicatedControls)
                 FilledButton.icon(
                   onPressed: initializing ? null : onInitialize,
                   icon: initializing

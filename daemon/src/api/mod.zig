@@ -26,6 +26,9 @@ const logs = @import("logs.zig");
 const store = @import("store.zig");
 const ssh = @import("ssh.zig");
 const software = @import("software.zig");
+const clamav = if (@import("builtin").os.tag == .linux) @import("clamav.zig") else struct {};
+const pure_ftpd = if (@import("builtin").os.tag == .linux) @import("pure_ftpd.zig") else struct {};
+const supervisord = if (@import("builtin").os.tag == .linux) @import("supervisord.zig") else struct {};
 const recycle = @import("recycle.zig");
 const versions = @import("versions.zig");
 const waf = @import("waf.zig");
@@ -234,7 +237,16 @@ pub const routes = [_]router.Route{
     .{ .method = .POST, .pattern = "/api/v1/waf/typesafe/key", .handler = waf.setTypesafeKey },
     .{ .method = .DELETE, .pattern = "/api/v1/waf/typesafe/key", .handler = waf.clearTypesafeKey },
     .{ .method = .GET, .pattern = "/api/v1/waf/geo/catalog", .handler = waf.geoCatalog },
-};
+} ++ (if (@import("builtin").os.tag == .linux) [_]router.Route{
+    .{ .method = .GET, .pattern = "/api/v1/clamav", .handler = clamav.status },
+    .{ .method = .POST, .pattern = "/api/v1/clamav/initialize", .handler = clamav.initialize },
+    .{ .method = .POST, .pattern = "/api/v1/clamav/scan", .handler = clamav.scan },
+    .{ .method = .GET, .pattern = "/api/v1/supervisord", .handler = supervisord.list },
+    .{ .method = .POST, .pattern = "/api/v1/supervisord/action", .handler = supervisord.action },
+    .{ .method = .POST, .pattern = "/api/v1/pure-ftpd/initialize", .handler = pure_ftpd.initialize },
+    .{ .method = .POST, .pattern = "/api/v1/pure-ftpd/add", .handler = pure_ftpd.add },
+    .{ .method = .POST, .pattern = "/api/v1/pure-ftpd/delete", .handler = pure_ftpd.remove },
+} else [_]router.Route{});
 
 test "routes are unique" {
     for (routes, 0..) |a, i| {

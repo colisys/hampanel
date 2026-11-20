@@ -11,7 +11,10 @@ import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../store/deploy_dialog.dart';
+import 'clamav_panel.dart';
+import 'pure_ftpd_controls.dart';
 import 'software_card.dart';
+import 'supervisord_panel.dart';
 
 class SoftwarePage extends StatefulWidget {
   const SoftwarePage({super.key});
@@ -438,9 +441,40 @@ class _SoftwarePageState extends State<SoftwarePage>
           item: item,
           initializing: _initializingId == item.id,
           onInitialize: () => _initialize(item),
+          dedicatedControls: const {'clamav', 'supervisord', 'pure-ftpd'}
+              .contains(item.id),
           configPaths: _configPaths(item.id),
           onEditConfig: _editConfig,
         ),
+        if (item.installed && item.id == 'clamav') ...[
+          const SizedBox(height: 12),
+          PanelCard(title: 'ClamAV 管理', child: ClamavPanel(client: _api, onInitialized: _load)),
+        ],
+        if (item.installed && item.id == 'supervisord') ...[
+          const SizedBox(height: 12),
+          PanelCard(title: 'Supervisord 进程', child: SupervisordPanel.connected(_api, onLaunched: _load)),
+        ],
+        if (item.installed && item.id == 'pure-ftpd') ...[
+          const SizedBox(height: 12),
+          PanelCard(
+            title: 'Pure-FTPD 账号',
+            child: PureFtpdControls(
+              initialized: item.initialized && item.active,
+              initialize: () async {
+                await _api.postJson('/api/v1/pure-ftpd/initialize', const {});
+                if (mounted) await _load();
+              },
+              add: (name, password) async {
+                await _api.postJson('/api/v1/pure-ftpd/add', {
+                  'name': name, 'password': password,
+                });
+              },
+              remove: (name) async {
+                await _api.postJson('/api/v1/pure-ftpd/delete', {'name': name});
+              },
+            ),
+          ),
+        ],
         if (item.id == 'fail2ban' && item.initialized) ...[
           const SizedBox(height: 12),
           _fail2banSection(),
@@ -453,15 +487,8 @@ class _SoftwarePageState extends State<SoftwarePage>
     switch (id) {
       case 'fail2ban':
         return const ['/etc/fail2ban/jail.d/99-hampanel.local'];
-      case 'clamav':
-        return const [
-          '/etc/clamav/clamd.conf',
-          '/etc/clamav/freshclam.conf',
-        ];
-      case 'supervisord':
-        return const ['/etc/supervisor/supervisord.conf'];
-      case 'pure-ftpd':
-        return const ['/etc/pure-ftpd/pure-ftpd.conf'];
+      // Dedicated instances use private, helper-managed configs rather than
+      // the distribution's config files. Do not offer misleading edits here.
       default:
         return const [];
     }

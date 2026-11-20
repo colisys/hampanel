@@ -39,48 +39,47 @@ pub fn list(allocator: std.mem.Allocator, data_dir: []const u8) ![]Item {
     });
 
     const clam_version = commandVersion(allocator, "clamdscan", &.{"--version"});
-    const clam_active = serviceActive(allocator, "clamav-daemon");
+    const clam_installed = clam_version.len > 0 and commandAvailable(allocator, "clamd", &.{"--help"});
+    const clam_initialized = pathExists("/var/lib/hampanel-clamav/clamd.conf");
+    const clam_active = blk: {
+        const r = exec.run(allocator, &.{ "runuser", "-u", "hampanel-clamav", "--", "clamdscan", "--config-file", "/var/lib/hampanel-clamav/clamd.conf", "--ping=1" }, 4096) catch break :blk false;
+        break :blk r.ok();
+    };
     try items.append(.{
-        .id = "clamav",
-        .name = "ClamAV",
-        .description = "开源杀毒引擎，管理 clamd/freshclam 服务与配置。",
-        .installed = clam_version.len > 0,
-        .initialized = clam_active,
-        .needs_initialization = clam_version.len > 0 and !clam_active,
-        .active = clam_active,
-        .version = clam_version,
-        .service = "clamav-daemon",
-        .manage_hint = "初始化后可以直接编辑 clamd.conf / freshclam.conf。",
+        .id = "clamav", .name = "ClamAV", .description = "面板专用 ClamAV 实例。",
+        .installed = clam_installed, .initialized = clam_initialized,
+        .needs_initialization = clam_installed and !clam_initialized,
+        .active = clam_active, .version = clam_version, .service = "",
+        .manage_hint = "通过 ClamAV 面板初始化私有 clamd；不操作发行版服务。",
     });
 
     const supervisor_version = commandVersion(allocator, "supervisord", &.{"--version"});
-    const supervisor_active = serviceActive(allocator, "supervisor");
+    const supervisor_conf = try compat.path.join(allocator, &.{ data_dir, "supervisord", "supervisord.conf" });
+    const supervisor_initialized = pathExists(supervisor_conf);
+    const supervisor_active = blk: {
+        if (!supervisor_initialized) break :blk false;
+        const r = exec.run(allocator, &.{ "supervisorctl", "-c", supervisor_conf, "pid" }, 4096) catch break :blk false;
+        break :blk r.ok();
+    };
     try items.append(.{
-        .id = "supervisord",
-        .name = "Supervisord",
-        .description = "进程监督器，管理 supervisord 服务与 conf.d 配置。",
-        .installed = supervisor_version.len > 0,
-        .initialized = supervisor_active,
-        .needs_initialization = supervisor_version.len > 0 and !supervisor_active,
-        .active = supervisor_active,
-        .version = supervisor_version,
-        .service = "supervisor",
-        .manage_hint = "初始化后可以直接编辑 supervisord.conf 与 conf.d。",
+        .id = "supervisord", .name = "Supervisord", .description = "面板专用 Supervisord 实例。",
+        .installed = supervisor_version.len > 0, .initialized = supervisor_initialized,
+        .needs_initialization = supervisor_version.len > 0 and !supervisor_initialized,
+        .active = supervisor_active, .version = supervisor_version, .service = "",
+        .manage_hint = "使用专用面板启动实例；不操作系统 supervisor 服务。",
     });
 
-    const pureftpd_version = commandVersion(allocator, "pure-ftpd", &.{"--version"});
-    const pureftpd_active = serviceActive(allocator, "pure-ftpd");
+    const pureftpd_version = commandVersion(allocator, "pure-ftpd", &.{"--help"});
+    const pureftpd_installed = pureftpd_version.len > 0 and commandAvailable(allocator, "pure-pw", &.{"--help"});
+    const pureftpd_initialized = pathExists("/var/lib/hampanel-ftps/pure-ftpd.conf");
+    const pureftpd_active = serviceActive(allocator, "hampanel-pure-ftpd.service");
     try items.append(.{
-        .id = "pure-ftpd",
-        .name = "Pure-FTPD",
-        .description = "轻量 FTP 服务，管理 pure-ftpd 服务与配置文件。",
-        .installed = pureftpd_version.len > 0,
-        .initialized = pureftpd_active,
-        .needs_initialization = pureftpd_version.len > 0 and !pureftpd_active,
-        .active = pureftpd_active,
-        .version = pureftpd_version,
-        .service = "pure-ftpd",
-        .manage_hint = "初始化后可以直接编辑 pure-ftpd.conf。",
+        .id = "pure-ftpd", .name = "Pure-FTPD", .description = "面板专用显式 FTPS 实例。",
+        .installed = pureftpd_installed,
+        .initialized = pureftpd_initialized,
+        .needs_initialization = pureftpd_installed and !pureftpd_initialized,
+        .active = pureftpd_active, .version = pureftpd_version, .service = "",
+        .manage_hint = "使用独立 hampanel-pure-ftpd unit；不操作发行版 pure-ftpd 服务。",
     });
 
     return items.toOwnedSlice();
@@ -91,15 +90,10 @@ pub fn initialize(allocator: std.mem.Allocator, data_dir: []const u8, id: []cons
         const result = try fail2ban.initialize(allocator, data_dir);
         return .{ .ok = result.ok, .output = result.output };
     }
-    if (std.mem.eql(u8, id, "clamav")) {
-        return initializeService(allocator, "clamav-daemon", "clamdscan");
-    }
-    if (std.mem.eql(u8, id, "supervisord")) {
-        return initializeService(allocator, "supervisor", "supervisord");
-    }
-    if (std.mem.eql(u8, id, "pure-ftpd")) {
-        return initializeService(allocator, "pure-ftpd", "pure-ftpd");
-    }
+    // Dedicated instances are initialized only by their authenticated API routes.
+    // Never fall back to the distribution's service manager for these IDs.
+    if (std.mem.eql(u8, id, "clamav") or std.mem.eql(u8, id, "supervisord") or std.mem.eql(u8, id, "pure-ftpd"))
+        return error.DedicatedInitializationRequired;
     return error.UnknownSoftware;
 }
 
@@ -158,9 +152,18 @@ fn commandVersion(allocator: std.mem.Allocator, command: []const u8, args: []con
     argv.append(command) catch return "";
     argv.appendSlice(args) catch return "";
     const result = exec.run(allocator, argv.items, 64 * 1024) catch return "";
+    if (!result.ok()) return "";
     const raw = if (result.stderr.len > 0) result.stderr else result.stdout;
     const line_end = std.mem.indexOfScalar(u8, raw, '\n') orelse raw.len;
     return std.mem.trim(u8, raw[0..line_end], " \t\r");
+}
+
+fn commandAvailable(allocator: std.mem.Allocator, command: []const u8, args: []const []const u8) bool {
+    var argv = std.array_list.Managed([]const u8).init(allocator);
+    argv.append(command) catch return false;
+    argv.appendSlice(args) catch return false;
+    const result = exec.run(allocator, argv.items, 64 * 1024) catch return false;
+    return result.ok();
 }
 
 fn nginxVersion(allocator: std.mem.Allocator) []const u8 {
@@ -177,6 +180,11 @@ fn dockerVersion(allocator: std.mem.Allocator) []const u8 {
     const result = exec.run(allocator, &.{ "docker", "version", "--format", "{{.Server.Version}}" }, 64 * 1024) catch return "";
     if (!result.ok()) return "";
     return std.mem.trim(u8, result.stdout, " \t\r\n");
+}
+
+fn pathExists(path: []const u8) bool {
+    compat.cwd().access(path, .{}) catch return false;
+    return true;
 }
 
 fn serviceActive(allocator: std.mem.Allocator, service: []const u8) bool {

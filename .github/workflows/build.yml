@@ -804,14 +804,24 @@ jobs:
 
           cp artifacts/hampaneld-linux-x86_64/hampaneld daemon-linux/
           cp artifacts/hampaneld-linux-x86_64/hampanel-risk daemon-linux/
-          cp deploy/bootstrap.sh deploy/install.sh LICENSE daemon-linux/
+          cp deploy/bootstrap.sh deploy/install.sh deploy/hampanel-pure-ftpd.service LICENSE daemon-linux/
+          mkdir -p daemon-linux/daemon/libexec daemon-linux/deploy
+          mkdir -p daemon-linux/tool
+          cp tool/clamav.py daemon-linux/tool/
+          cp daemon/libexec/pure_ftpd.py daemon-linux/daemon/libexec/
+          cp deploy/hampanel-pure-ftpd.service daemon-linux/deploy/
           chmod +x daemon-linux/hampaneld daemon-linux/hampanel-risk \
             daemon-linux/bootstrap.sh daemon-linux/install.sh
           tar -C daemon-linux -czf dist/hampanel-daemon-linux-x86_64.tar.gz .
 
           cp artifacts/hampaneld-linux-musl-x86_64/hampaneld daemon-linux-musl/
           cp artifacts/hampaneld-linux-musl-x86_64/hampanel-risk daemon-linux-musl/
-          cp deploy/bootstrap.sh deploy/install.sh LICENSE daemon-linux-musl/
+          cp deploy/bootstrap.sh deploy/install.sh deploy/hampanel-pure-ftpd.service LICENSE daemon-linux-musl/
+          mkdir -p daemon-linux-musl/daemon/libexec daemon-linux-musl/deploy
+          mkdir -p daemon-linux-musl/tool
+          cp tool/clamav.py daemon-linux-musl/tool/
+          cp daemon/libexec/pure_ftpd.py daemon-linux-musl/daemon/libexec/
+          cp deploy/hampanel-pure-ftpd.service daemon-linux-musl/deploy/
           chmod +x daemon-linux-musl/hampaneld daemon-linux-musl/hampanel-risk \
             daemon-linux-musl/bootstrap.sh daemon-linux-musl/install.sh
           tar -C daemon-linux-musl -czf dist/hampanel-daemon-linux-musl-x86_64.tar.gz .
