@@ -1,14 +1,16 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
-import '../../core/models/security.dart';
 import '../../core/session.dart';
 import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 
-/// SELinux. The host capability is probed first: when the required component is
-/// absent this page explains what is missing instead of showing empty controls.
+/// SELinux policy control.
+///
+/// The host is probed first: a machine running AppArmor has no SELinux
+/// filesystem, so the page explains that instead of showing switches which
+/// could never take effect.
 class SelinuxPage extends StatefulWidget {
   const SelinuxPage({super.key});
 
@@ -17,8 +19,9 @@ class SelinuxPage extends StatefulWidget {
 }
 
 class _SelinuxPageState extends State<SelinuxPage> {
-  SecurityCapabilities? _capabilities;
+  Map<String, dynamic>? _status;
   bool _loading = true;
+  bool _busy = false;
   String? _error;
 
   ApiClient get _api => PanelScope.of(context).api;
@@ -35,12 +38,10 @@ class _SelinuxPageState extends State<SelinuxPage> {
       _error = null;
     });
     try {
-      final json = await _api.getJson('/api/v1/security/capabilities');
+      final json = await _api.getJson('/api/v1/security/selinux');
       if (!mounted) return;
       setState(() {
-        _capabilities = SecurityCapabilities.fromJson(
-          json as Map<String, dynamic>? ?? const {},
-        );
+        _status = json as Map<String, dynamic>? ?? const {};
         _loading = false;
       });
     } catch (error) {
@@ -52,20 +53,77 @@ class _SelinuxPageState extends State<SelinuxPage> {
     }
   }
 
-  bool get _ready {
-    final caps = _capabilities;
-    if (caps == null) return false;
-    return switch ('selinux') {
-      'qemu' => caps.qemu,
-      'chattr' => caps.chattr,
-      'selinux' => caps.selinux,
-      _ => false,
-    };
+  Future<void> _setMode(String mode) async {
+    if (mode == 'disabled') {
+      final ok = await confirmDialog(
+        context,
+        title: '禁用 SELinux？',
+        message:
+            '将写入 /etc/selinux/config，重启主机后才生效。'
+            '禁用后访问控制不再强制，请确认你知道这样做的后果。',
+        confirmLabel: '写入配置',
+        danger: true,
+      );
+      if (!ok) return;
+    }
+    await _post('/api/v1/security/selinux/mode', {'mode': mode}, mode: mode);
+  }
+
+  Future<void> _toggleBoolean(String name, bool enabled) async {
+    await _post('/api/v1/security/selinux/boolean', {
+      'name': name,
+      'enabled': enabled,
+    });
+  }
+
+  Future<void> _post(
+    String path,
+    Map<String, Object?> body, {
+    String? mode,
+  }) async {
+    setState(() => _busy = true);
+    try {
+      final json = await _api.postJson(path, body);
+      final map = json as Map<String, dynamic>? ?? const {};
+      if (!mounted) return;
+      final reboot = map['reboot_required'] == true;
+      final ok = map['ok'] != false;
+      showAppSnackBar(
+        context,
+        SnackBar(
+          content: Text(
+            reboot
+                ? '${map['output'] ?? '已写入配置'}\n需要重启主机后生效。'
+                : ok
+                ? (mode != null ? '已切换为 $mode' : '已更新')
+                : (map['output'] as String? ?? '操作失败'),
+          ),
+        ),
+      );
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      showAppSnackBar(
+        context,
+        SnackBar(content: Text(describeError(error))),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final ready = _ready;
+    final status = _status ?? const <String, dynamic>{};
+    final present = status['present'] == true;
+    final tooling = status['tooling'] == true;
+    final enforcing = status['enforcing'] as bool?;
+    final configured = status['configured'] as String? ?? '';
+    final policy = status['policy'] as String? ?? '';
+    final booleans = ((status['booleans'] as List<dynamic>?) ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('SELinux'),
@@ -87,35 +145,123 @@ class _SelinuxPageState extends State<SelinuxPage> {
                 PanelCard(
                   title: '本机状态',
                   trailing: StatusPill(
-                    text: ready ? '可配置' : '不可用',
-                    good: ready,
+                    text: !present
+                        ? '未启用'
+                        : (enforcing == true ? 'enforcing' : 'permissive'),
+                    good: !present ? false : enforcing == true,
                   ),
-                  child: Text(
-                    '强制访问控制（MAC）策略配置与管理。',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: hampanelMuted,
-                      height: 1.6,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        status['message'] as String? ?? '',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: hampanelMuted,
+                          height: 1.6,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _row('SELinux 文件系统', present ? '存在' : '不存在'),
+                      _row('当前模式', enforcing == null
+                          ? '—'
+                          : (enforcing ? 'enforcing' : 'permissive')),
+                      _row('开机配置', configured.isEmpty ? '—' : configured),
+                      _row('策略类型', policy.isEmpty ? '—' : policy),
+                      _row('管理工具', tooling ? '已安装' : '未安装'),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                PanelCard(
-                  title: ready ? '说明' : '缺少依赖',
-                  child: Text(
-                    ready
-                        ? '功能入口已就绪，具体策略随对应后端能力开放。'
-                        : '当前主机不具备该能力，因此不会展示无法生效的开关。'
-                              '依赖可在「设置 → 安全组件」中一键安装。',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: hampanelMuted,
-                      height: 1.6,
+                if (present) ...[
+                  const SizedBox(height: 12),
+                  PanelCard(
+                    title: '运行模式',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'enforcing / permissive 立即生效；disabled 只写入配置，'
+                          '需要重启主机。',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: hampanelMuted,
+                            height: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final mode in const [
+                              'enforcing',
+                              'permissive',
+                              'disabled',
+                            ])
+                              OutlinedButton(
+                                onPressed: _busy || !tooling
+                                    ? null
+                                    : () => _setMode(mode),
+                                child: Text(mode),
+                              ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                ),
+                  if (booleans.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    PanelCard(
+                      title: '布尔开关',
+                      trailing: Text(
+                        '${booleans.length} 项',
+                        style: TextStyle(fontSize: 11, color: hampanelMuted),
+                      ),
+                      child: Column(
+                        children: [
+                          for (final entry in booleans)
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              dense: true,
+                              title: Text(
+                                entry['name'] as String? ?? '',
+                                style: monospace.copyWith(fontSize: 11.5),
+                              ),
+                              value: entry['enabled'] == true,
+                              onChanged: _busy || !tooling
+                                  ? null
+                                  : (value) => _toggleBoolean(
+                                      entry['name'] as String? ?? '',
+                                      value,
+                                    ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
               ],
             ),
+    );
+  }
+
+  Widget _row(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 12, color: hampanelMuted),
+            ),
+          ),
+          Expanded(
+            child: Text(value, style: const TextStyle(fontSize: 12)),
+          ),
+        ],
+      ),
     );
   }
 }

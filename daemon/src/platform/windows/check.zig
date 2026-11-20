@@ -79,6 +79,9 @@ comptime {
     _ = &backend.security.stopScan;
     _ = &backend.security.ingest;
     _ = &backend.security.unban;
+    _ = &backend.selinux.status;
+    _ = &backend.selinux.setMode;
+    _ = &backend.selinux.setBoolean;
     _ = &backend.tamper.status;
     _ = &backend.tamper.protect;
     _ = &backend.tamper.unprotect;

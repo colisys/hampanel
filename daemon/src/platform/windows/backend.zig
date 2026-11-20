@@ -17,4 +17,5 @@ pub const fail2ban = @import("fail2ban.zig");
 pub const waf = @import("waf.zig");
 pub const security = @import("security.zig");
 pub const tamper = @import("tamper.zig");
+pub const selinux = @import("selinux.zig");
 pub const hostprobe = @import("hostprobe.zig");

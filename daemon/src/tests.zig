@@ -40,6 +40,12 @@ test {
     _ = @import("store/apps.zig");
     if (@import("builtin").os.tag == .linux) {
         const security = @import("platform/mod.zig").security;
+        const selinux = @import("platform/mod.zig").selinux;
+        _ = &selinux.status;
+        _ = &selinux.setMode;
+        _ = &selinux.setBoolean;
+        _ = &selinux.parseBooleans;
+        _ = &selinux.parseConfigValue;
         _ = &security.scanStatus;
     }
     _ = @import("tasks.zig");
@@ -769,4 +775,68 @@ test "scan bans treat equivalent IPv6 notations as one host" {
         allocator.free(remaining.banned);
     }
     try std.testing.expectEqual(@as(usize, 0), remaining.banned.len);
+}
+
+test "selinux parses config and booleans" {
+    const selinux = @import("platform/mod.zig").selinux;
+    if (@import("builtin").os.tag != .linux) return;
+    const allocator = std.testing.allocator;
+
+    const config =
+        \\# This file controls the state of SELinux.
+        \\SELINUX=enforcing
+        \\SELINUXTYPE=targeted
+    ;
+    const mode = try selinux.parseConfigValue(allocator, config, "SELINUX=");
+    defer if (mode) |value| allocator.free(value);
+    try std.testing.expectEqualStrings("enforcing", mode.?);
+
+    const policy = try selinux.parseConfigValue(allocator, config, "SELINUXTYPE=");
+    defer if (policy) |value| allocator.free(value);
+    try std.testing.expectEqualStrings("targeted", policy.?);
+
+    // Comments must not be read as values.
+    try std.testing.expect((try selinux.parseConfigValue(allocator, "#SELINUX=disabled", "SELINUX=")) == null);
+
+    const output =
+        \\abrt_anon_write --> off
+        \\httpd_can_network_connect --> on
+        \\zebra_write_config --> off
+    ;
+    const booleans = try selinux.parseBooleans(allocator, output);
+    defer {
+        for (booleans) |entry| allocator.free(entry.name);
+        allocator.free(booleans);
+    }
+    try std.testing.expectEqual(@as(usize, 3), booleans.len);
+    try std.testing.expectEqualStrings("abrt_anon_write", booleans[0].name);
+    try std.testing.expect(!booleans[0].enabled);
+    try std.testing.expectEqualStrings("httpd_can_network_connect", booleans[1].name);
+    try std.testing.expect(booleans[1].enabled);
+
+    try std.testing.expect(selinux.validBooleanName("httpd_can_network_connect"));
+    try std.testing.expect(!selinux.validBooleanName("httpd; rm -rf /"));
+    try std.testing.expect(!selinux.validBooleanName("UpperCase"));
+}
+
+test "selinux reports absence instead of pretending" {
+    const selinux = @import("platform/mod.zig").selinux;
+    if (@import("builtin").os.tag != .linux) return;
+    const allocator = std.testing.allocator;
+    const status = try selinux.status(allocator);
+    defer {
+        allocator.free(status.configured);
+        allocator.free(status.policy);
+        for (status.booleans) |entry| allocator.free(entry.name);
+        allocator.free(status.booleans);
+    }
+    if (!status.present) {
+        // The host has no SELinux filesystem: the API must say so and refuse
+        // to change modes rather than silently succeeding.
+        try std.testing.expect(status.enforcing == null);
+        try std.testing.expect(std.mem.indexOf(u8, status.message, "未启用") != null);
+        try std.testing.expectError(error.NotPresent, selinux.setMode(allocator, "permissive"));
+    } else {
+        try std.testing.expect(status.enforcing != null);
+    }
 }

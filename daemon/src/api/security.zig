@@ -104,6 +104,57 @@ pub fn unprotect(ctx: *context.Context) anyerror!void {
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
+/// SELinux status: presence, live mode, policy and tunable booleans.
+pub fn selinux(ctx: *context.Context) anyerror!void {
+    const status = platform.selinux.status(ctx.arena) catch |err| {
+        ctx.fail(500, "selinux_failed", @errorName(err));
+        return;
+    };
+    try ctx.json(status);
+}
+
+pub fn selinuxMode(ctx: *context.Context) anyerror!void {
+    const Body = struct { mode: []const u8 };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected mode");
+        return;
+    };
+    const outcome = platform.selinux.setMode(ctx.arena, body.mode) catch |err| {
+        ctx.fail(mapSelinuxError(err), "selinux_failed", @errorName(err));
+        return;
+    };
+    if (!outcome.ok) ctx.response.status = 502;
+    log.info("security: selinux mode -> {s} ok={}", .{ body.mode, outcome.ok });
+    try ctx.json(.{
+        .ok = outcome.ok,
+        .output = outcome.output,
+        .reboot_required = outcome.reboot_required,
+    });
+}
+
+pub fn selinuxBoolean(ctx: *context.Context) anyerror!void {
+    const Body = struct { name: []const u8, enabled: bool };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected name and enabled");
+        return;
+    };
+    const outcome = platform.selinux.setBoolean(ctx.arena, body.name, body.enabled) catch |err| {
+        ctx.fail(mapSelinuxError(err), "selinux_failed", @errorName(err));
+        return;
+    };
+    if (!outcome.ok) ctx.response.status = 502;
+    log.info("security: selinux boolean updated ok={}", .{outcome.ok});
+    try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+}
+
+fn mapSelinuxError(err: anyerror) u16 {
+    const name = @errorName(err);
+    if (std.mem.eql(u8, name, "InvalidMode") or std.mem.eql(u8, name, "InvalidBoolean")) return 400;
+    if (std.mem.eql(u8, name, "NotPresent")) return 409;
+    if (std.mem.eql(u8, name, "ToolingUnavailable") or std.mem.eql(u8, name, "Unsupported")) return 501;
+    return 500;
+}
+
 /// Passive scan sensing: probe state, recent observations and bans.
 pub fn scan(ctx: *context.Context) anyerror!void {
     const data_dir = ctx.app.config.data_dir;
@@ -208,12 +259,11 @@ fn exists(path: []const u8) bool {
     return true;
 }
 
-/// SELinux is a probe, not an assumption: a host that runs AppArmor must not
-/// be shown an enforcing toggle it cannot honour.
+/// SELinux is a probe, not an assumption: a host that runs AppArmor has no
+/// `/sys/fs/selinux`, and a missing `getenforce` must not be read as "present".
 fn selinuxCapability(a: std.mem.Allocator) bool {
-    compat.cwd().access("/sys/fs/selinux/enforce", .{}) catch return false;
-    const probe = exec.run(a, &.{ "getenforce" }, 16 * 1024) catch return true;
-    _ = probe;
+    _ = a;
+    compat.cwd().access("/sys/fs/selinux", .{}) catch return false;
     return true;
 }
 
