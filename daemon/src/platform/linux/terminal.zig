@@ -51,6 +51,24 @@ pub fn spawnArgv(
     cols: u16,
     rows: u16,
 ) !Terminal {
+    return spawnArgvEnv(allocator, argv, cols, rows, null);
+}
+
+pub fn spawnArgvEnv(allocator: std.mem.Allocator, argv: []const []const u8, cols: u16, rows: u16, env: ?*const std.process.Environ.Map) !Terminal {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const envp = if (env) |map| blk: {
+        const entries = try a.allocSentinel(?[*:0]const u8, map.keys().len, null);
+        for (map.keys(), map.values(), 0..) |key, value, idx| entries[idx] = blk_entry: {
+            const entry = try a.allocSentinel(u8, key.len + 1 + value.len, 0);
+            @memcpy(entry[0..key.len], key);
+            entry[key.len] = '=';
+            @memcpy(entry[key.len + 1 ..], value);
+            break :blk_entry entry.ptr;
+        };
+        break :blk entries;
+    } else null;
     if (argv.len == 0) return error.ForkFailed;
 
     var winsize = c.struct_winsize{
@@ -76,7 +94,11 @@ pub fn spawnArgv(
     if (pid < 0) return error.ForkFailed;
 
     if (pid == 0) {
-        _ = c.execvp(args[0].?, @ptrCast(args.ptr));
+        if (envp) |entries| {
+            _ = c.execve(args[0].?, @ptrCast(args.ptr), @ptrCast(entries.ptr));
+        } else {
+            _ = c.execvp(args[0].?, @ptrCast(args.ptr));
+        }
         c._exit(127);
     }
 

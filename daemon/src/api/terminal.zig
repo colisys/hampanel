@@ -22,7 +22,38 @@ pub fn ws(ctx: *context.Context) anyerror!void {
     const cols = parseDimension(try ctx.query("cols"), 120, 20, 500);
     const rows = parseDimension(try ctx.query("rows"), 32, 5, 200);
 
-    var term = platform.spawnTerminal(cols, rows) catch |err| {
+    var term = if (try ctx.query("redis_id")) |id| blk: {
+        const database = @import("../database.zig");
+        const i = database.find(try database.load(ctx.arena, ctx.app.db), id) orelse {
+            ctx.fail(404, "not_found", "Redis instance not found");
+            return;
+        };
+        if (i.engine != .redis or database.validate(i) != null) {
+            ctx.fail(400, "invalid_instance", "Expected a valid registered Redis instance");
+            return;
+        }
+        if (!platform.is_linux) {
+            ctx.fail(501, "unsupported", "Redis PTY sessions require Linux");
+            return;
+        }
+        const engine = @import("../runtime/engine.zig");
+        const socket = engine.socketFromDb(ctx.arena, ctx.app.db);
+        const runtime = if (i.mode == .container) engine.detect(ctx.arena, socket) catch {
+            ctx.fail(502, "engine_unavailable", "Container runtime unavailable");
+            return;
+        } else null;
+        const argv = try database.redisArgv(ctx.arena, i, runtime);
+        var env = try compat.cloneEnv(ctx.arena);
+        defer env.deinit();
+        if (i.password.len != 0) try env.put("REDISCLI_AUTH", i.password) else _ = env.swapRemove("REDISCLI_AUTH");
+        if (runtime) |r| {
+            if (socket.len != 0) try env.put(engine.hostVariable(r, argv[1..]), socket);
+        }
+        break :blk platform.terminal.spawnArgvEnv(ctx.arena, argv, cols, rows, &env) catch {
+            ctx.fail(500, "terminal_failed", "Unable to start Redis terminal");
+            return;
+        };
+    } else platform.spawnTerminal(cols, rows) catch |err| {
         log.err("terminal spawn failed: {s}", .{@errorName(err)});
         ctx.fail(500, "terminal_failed", "unable to start a shell");
         return;

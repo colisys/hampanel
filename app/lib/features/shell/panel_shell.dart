@@ -12,8 +12,10 @@ import '../hosts/hosts_page.dart';
 import '../cron/cron_page.dart';
 import '../dashboard/dashboard_page.dart';
 import '../docker/docker_page.dart';
+import '../databases/databases_page.dart';
 import '../files/files_page.dart';
 import '../firewall/firewall_page.dart';
+import '../graphql/graphql_page.dart';
 import '../logs/logs_page.dart';
 import '../processes/processes_page.dart';
 import '../services/services_page.dart';
@@ -88,10 +90,8 @@ class _PanelShellState extends State<PanelShell> {
     if (_heartbeatInFlight || !mounted) return;
     _heartbeatInFlight = true;
     try {
-      await PanelScope.of(context).api.getJson(
-        '/api/v1/health',
-        timeout: const Duration(seconds: 4),
-      );
+      await PanelScope.of(context).api
+          .getJson('/api/v1/health', timeout: const Duration(seconds: 4));
       if (!mounted) return;
       if (_link != _LinkState.connected || _heartbeatFailures != 0) {
         setState(() {
@@ -142,6 +142,12 @@ class _PanelShellState extends State<PanelShell> {
       Icons.settings_suggest_outlined,
       (_, _) => const ServicesPage(),
     ),
+    _Destination(
+      '数据库',
+      Icons.storage_outlined,
+      (_, active) => active ? const DatabasesPage() : const SizedBox.shrink(),
+    ),
+    _Destination('GraphQL', Icons.code, (_, _) => const GraphqlPage()),
     _Destination('网站', Icons.public_outlined, (_, _) => const SitesPage()),
     _Destination(
       '容器',

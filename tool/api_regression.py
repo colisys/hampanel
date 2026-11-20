@@ -27,7 +27,7 @@ def call(method,path,body=None):
         c.request(method,'/regression'+path,body=body if isinstance(body,bytes) else json.dumps(body) if body is not None else None,headers={'Content-Type':'application/octet-stream' if isinstance(body,bytes) else 'application/json'})
         r=c.getresponse(); raw=r.read()
         if 'application/json' in r.getheader('Content-Type', ''):
-            return r.status,json.loads(raw)
+            return r.status,json.loads(raw) if raw else {}
         return r.status,{'raw_hex':raw.hex(), 'content_type':r.getheader('Content-Type', '')}
     finally: c.close()
 def check(method,route,path,expected,body=None,predicate=lambda x: True,scenario='success'):
@@ -60,6 +60,13 @@ try:
         full='/api/v1'+suffix
         check(method, '/api/v1'+(route or suffix.split('?')[0]), full, expected, body, predicate, scenario)
         return results[-1].get('response', {})
+    snapshot=test('GET','/system',predicate=lambda d:all(k in d for k in ('hostname','arch','cores')))
+    test('POST','/graphql',{'query':'query Host { __typename system { arch cores hostname __typename } }'},
+         predicate=lambda d:d=={'data':{'__typename':'Query','system':dict(__typename='System', **{k:snapshot[k] for k in ('arch','cores','hostname')})}})
+    test('POST','/graphql',{'query':'{system{arch}}'},predicate=lambda d:d=={'data':{'system':{'arch':snapshot['arch']}}})
+    for body in ({'query':'mutation { system { cores } }'}, {'query':'{system{cores unknown}}'},
+                 {'query':'{__typename} trailing'}, {'query':'{__typename}', 'variables':{}}, {'query':42}):
+        test('POST','/graphql',body,400,lambda d:'data' not in d and bool(d['errors'][0]['message']),scenario='invalid')
     def task(kind, params=None, error=None, output=None):
         scenario=kind+(':'+error if error else '')
         submitted=test('POST','/tasks',{'kind':kind,'params':params or {}},202,
@@ -248,6 +255,47 @@ try:
     def reject(method,route,path,status,code,body=None):
         test(method,path,body,status,lambda d:d.get('code')==code,route,
              {400:'invalid',404:'missing',409:'configuration-conflict',501:'unsupported',502:'dependency-failure'}[status])
+    db_base='/databases/instances'
+    db_route=db_base+'/:id'
+    db_name='/databases/:name'
+    fixture_db=dict(name='regression-db',engine='mysql',mode='host',host='localhost',
+                    port=3306,user='root',password='regression-only-password')
+    listed=lambda d:isinstance(d['items'],list) and fixture_db['password'] not in json.dumps(d)
+    test('GET',db_base,predicate=listed)
+    for method,suffix,body in [
+        ('PUT','',fixture_db),('DELETE','',None),('GET','/overview',None),
+        ('GET',db_name+'/tables',None),('POST','/databases',{'name':'fixture'}),
+        ('DELETE',db_name+'?confirm=fixture',None),('POST','/users',{'name':'fixture','password':'fixture-only'}),
+        ('POST','/password',{'password':'fixture-only'}),
+        ('POST',db_name+'/backup',{}),('GET','/backups',None),
+        ('GET','/backups/:backup/download',None),('POST',db_name+'/restore',{'backup':'absent.sql','confirm':'fixture'}),
+    ]:
+        template=db_route+suffix.split('?')[0]
+        registered=(method,'/api/v1'+template) in routes
+        test(method,(db_route+suffix).replace(':id','regression-absent').replace(':name','fixture').replace(':backup','absent.sql'),body,404,
+             lambda d:registered and d.get('code')=='not_found',template,'missing')
+    test('POST',db_base,dict(fixture_db,engine='invalid'),400,scenario='invalid')
+    created=test('POST',db_base,fixture_db,200,predicate=lambda d:bool(d.get('id')) and fixture_db['password'] not in json.dumps(d))
+    iid=created.get('id')
+    if iid:
+        path=db_base+'/'+urllib.parse.quote(iid,safe='')
+        test('GET',db_base,predicate=lambda d:listed(d) and any(i['id']==iid for i in d['items']),scenario='registered-instance')
+        test('PUT',path,dict(fixture_db,name='renamed-db',password=''),route=db_route)
+        test('GET',db_base,predicate=lambda d:listed(d) and any(
+            i['id']==iid and i['name']=='renamed-db' for i in d['items']),scenario='update-roundtrip')
+        test('GET',path+'/backups',route=db_route+'/backups',predicate=lambda d:d['items']==[])
+        test('DELETE',path,expected=204,route=db_route)
+        test('GET',db_base,predicate=lambda d:listed(d) and all(i['id']!=iid for i in d['items']),scenario='delete-roundtrip')
+    redis=dict(name='regression-redis',engine='redis',mode='host',host='localhost',
+               port=6379,user='',password='regression-redis-secret')
+    registered=test('POST',db_base,redis,200,predicate=lambda d:bool(d.get('id')) and redis['password'] not in json.dumps(d),scenario='redis-register')
+    redis_id=registered.get('id')
+    if redis_id:
+        path=db_base+'/'+urllib.parse.quote(redis_id,safe='')
+        test('GET',db_base,predicate=lambda d:any(i['id']==redis_id and i['engine']=='redis' and i['port']==6379 for i in d['items']) and redis['password'] not in json.dumps(d),scenario='redis-list')
+        reject('GET',db_route+'/overview',path+'/overview',400,'sql_unsupported')
+        test('DELETE',path,expected=204,route=db_route,scenario='redis-remove')
+
     test('POST','/update/check',predicate=lambda d:d['current_version'] and not d['update_available'])
     task('update.apply',error='UpdateDisabled')
     reject('POST','/update/schedule','/update/schedule',409,'update_disabled')

@@ -1,12 +1,12 @@
 ---
 title: 应用目录
-description: 应用商店内置的 24 个 Compose 应用与参数说明。
+description: 应用商店内置的 25 个 Compose 应用与参数说明。
 outline: [2, 3]
 ---
 
 # 应用目录
 
-当前内置 24 个 Compose 应用，按登记的 `category` 分组。参数列的是部署时需要填写的项，留空的密码类参数会自动生成。
+当前内置 25 个 Compose 应用，按登记的 `category` 分组。参数列的是部署时需要填写的项，留空的密码类参数会自动生成。
 
 ## Web
 
@@ -43,9 +43,12 @@ EMQX 部署后需在 Dashboard 设置管理员密码并配置客户端认证。K
 | 应用 | 说明 | 主要参数 |
 | --- | --- | --- |
 | **Gitea** | 自托管 Git 服务，含 Web 与 SSH | Web 端口、SSH 端口 |
+| **Hasura GraphQL Engine** | 私有 PostgreSQL 支撑的 GraphQL API，仅本机开放管理端口 | 本机 API 端口、管理员密钥、数据库密码 |
 | **Act Runner** | Gitea Actions 运行器 | Gitea 主机、Web 端口、注册令牌 |
 | **code-server** | 浏览器中的 VS Code | Web 端口、访问密码 |
 | **Nacos** | 单节点服务发现与配置中心，内嵌数据库 | API 端口、gRPC 端口、认证密钥、身份密钥 |
+
+Hasura 使用独立的 PostgreSQL 容器和持久化卷，数据库没有宿主机端口；GraphQL API 与 Console 只绑定 `127.0.0.1:8086`（可修改本机 API 端口），本机访问 `http://127.0.0.1:8086/console`。从远程访问请配置受保护的反向代理，不要直接暴露管理端口。`admin_secret` 用于 Hasura 管理员认证；`db_password` 会原样写入 PostgreSQL 连接 URI，**手动填写时仅使用字母、数字、`-_.~`**，不要包含 `@`、`:`、`/`、`?`、`#`、`%` 等 URI 特殊字符；留空时生成的十六进制密码符合此要求。Compose 文件含明文密钥，须限制读取权限。重新部署时务必复用原数据库密码（以及原管理员密钥）：应用商店留空密码会重新生成，持久化 PostgreSQL 卷不会因此更改已有数据库用户密码，导致 Hasura 无法连接；忘记旧密码时应先手动重置数据库凭据。
 
 Act Runner 会挂载 `/var/run/docker.sock`。容器内因此获得宿主引擎控制权，等同于把宿主机交给该运行器。只在可信的 Gitea 实例上使用。
 

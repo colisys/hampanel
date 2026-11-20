@@ -239,10 +239,15 @@ class ApiClient {
     return text.trim().isEmpty ? null : jsonDecode(text);
   }
 
-  Future<WebSocket> openTerminal({required int cols, required int rows}) {
+  Future<WebSocket> openTerminal({
+    required int cols,
+    required int rows,
+    String? redisId,
+  }) {
     final url = uri('/api/v1/terminal/ws', {
       'cols': '$cols',
       'rows': '$rows',
+      'redis_id': ?redisId,
     }, 'wss');
     return WebSocket.connect(url.toString(), customClient: _http);
   }

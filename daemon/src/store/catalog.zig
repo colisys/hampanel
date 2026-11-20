@@ -63,6 +63,19 @@ pub const apps = [_]App{
         },
     },
     .{
+        .slug = "hasura",
+        .name = "Hasura GraphQL Engine",
+        .description = "基于私有 PostgreSQL 的 GraphQL API；仅在本机开放管理端口，部署时设置管理员密钥。",
+        .category = "开发",
+        .icon = "database",
+        .compose = @embedFile("catalog/hasura.yml"),
+        .params = &.{
+            .{ .key = "port", .label = "本机 API 端口", .kind = .port, .default = "8086" },
+            .{ .key = "admin_secret", .label = "管理员密钥", .kind = .password, .secret = true },
+            .{ .key = "db_password", .label = "数据库密码（仅限字母数字或 -_.~）", .kind = .password, .secret = true },
+        },
+    },
+    .{
         .slug = "mariadb",
         .name = "MariaDB",
         .description = "MySQL 兼容数据库，初始化数据库与 root 密码。",

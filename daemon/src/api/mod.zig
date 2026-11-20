@@ -34,7 +34,24 @@ const notifications = @import("notifications.zig");
 const runtimes = @import("runtimes.zig");
 const host = @import("host.zig");
 
+const databases = @import("databases.zig");
+
 pub const routes = [_]router.Route{
+    .{ .method = .GET, .pattern = "/api/v1/databases/instances", .handler = databases.handler(.list) },
+    .{ .method = .POST, .pattern = "/api/v1/databases/instances", .handler = databases.handler(.register) },
+    .{ .method = .PUT, .pattern = "/api/v1/databases/instances/:id", .handler = databases.handler(.update) },
+    .{ .method = .DELETE, .pattern = "/api/v1/databases/instances/:id", .handler = databases.handler(.remove) },
+    .{ .method = .GET, .pattern = "/api/v1/databases/instances/:id/overview", .handler = databases.handler(.overview) },
+    .{ .method = .GET, .pattern = "/api/v1/databases/instances/:id/databases/:name/tables", .handler = databases.handler(.tables) },
+    .{ .method = .POST, .pattern = "/api/v1/databases/instances/:id/databases", .handler = databases.handler(.create) },
+    .{ .method = .DELETE, .pattern = "/api/v1/databases/instances/:id/databases/:name", .handler = databases.handler(.drop) },
+    .{ .method = .POST, .pattern = "/api/v1/databases/instances/:id/users", .handler = databases.handler(.user) },
+    .{ .method = .POST, .pattern = "/api/v1/databases/instances/:id/password", .handler = databases.handler(.password) },
+    .{ .method = .POST, .pattern = "/api/v1/databases/instances/:id/databases/:name/backup", .handler = databases.handler(.backup) },
+    .{ .method = .GET, .pattern = "/api/v1/databases/instances/:id/backups", .handler = databases.handler(.backups) },
+    .{ .method = .GET, .pattern = "/api/v1/databases/instances/:id/backups/:backup/download", .handler = databases.handler(.download) },
+    .{ .method = .POST, .pattern = "/api/v1/databases/instances/:id/databases/:name/restore", .handler = databases.handler(.restore) },
+
     .{ .method = .GET, .pattern = "/api/v1/health", .handler = health.index },
 
     .{ .method = .POST, .pattern = "/api/v1/tasks", .handler = tasks.create },
@@ -70,6 +87,7 @@ pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/host/settings", .handler = host.settings },
     .{ .method = .PUT, .pattern = "/api/v1/host/hosts", .handler = host.hosts },
 
+    .{ .method = .POST, .pattern = "/api/v1/graphql", .handler = @import("graphql.zig").index },
     .{ .method = .GET, .pattern = "/api/v1/system", .handler = system.index },
     .{ .method = .GET, .pattern = "/api/v1/metrics", .handler = metrics.index },
     .{ .method = .GET, .pattern = "/api/v1/processes", .handler = processes.index },

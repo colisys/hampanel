@@ -83,14 +83,21 @@ pub fn deploy(
     var values = std.StringHashMap([]const u8).init(allocator);
     var applied = std.array_list.Managed(AppliedParam).init(allocator);
 
+    const redeploy_hasura = std.mem.eql(u8, app.slug, "hasura") and installed(allocator, data_dir, app);
     for (app.params) |param| {
         var value = provided.get(param.key) orelse "";
         if (value.len == 0) value = param.default;
         if (value.len == 0 and param.kind == .password) {
+            if (redeploy_hasura) return error.MissingParam;
             value = try randomPassword(allocator);
         }
         if (value.len == 0) return error.MissingParam;
         try validateValue(param, value);
+        if (std.mem.eql(u8, app.slug, "hasura") and std.mem.eql(u8, param.key, "db_password")) {
+            for (value) |ch| {
+                if (!std.ascii.isAlphanumeric(ch) and std.mem.indexOfScalar(u8, "-_.~", ch) == null) return error.InvalidParam;
+            }
+        }
         try values.put(param.key, value);
         try applied.append(.{ .key = param.key, .value = value, .secret = param.secret });
     }

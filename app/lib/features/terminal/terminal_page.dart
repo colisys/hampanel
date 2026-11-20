@@ -16,10 +16,11 @@ import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 
 class TerminalPage extends StatefulWidget {
-  const TerminalPage({super.key, this.autoConnect = true});
+  const TerminalPage({super.key, this.autoConnect = true, this.redisId});
 
   /// IndexedStack 会构建所有隐藏页；只有当前激活标签才允许自动建连。
   final bool autoConnect;
+  final String? redisId;
 
   @override
   State<TerminalPage> createState() => _TerminalPageState();
@@ -197,6 +198,7 @@ class _TerminalPageState extends State<TerminalPage> {
       final socket = await PanelScope.of(context).api.openTerminal(
         cols: session.terminal.viewWidth,
         rows: session.terminal.viewHeight,
+        redisId: widget.redisId,
       );
       if (!mounted || session.generation != generation) {
         await socket.close();
@@ -511,7 +513,7 @@ class _TerminalPageState extends State<TerminalPage> {
     return Column(
       children: [
         PageHeader(
-          title: '终端',
+          title: widget.redisId == null ? '终端' : 'Redis CLI',
           subtitle: compact ? null : 'PTY 会话通过 WebSocket + mTLS 传输',
           actions: [
             StatusPill(

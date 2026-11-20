@@ -8,6 +8,9 @@ test {
     _ = @import("api/docker_addresses.zig");
     _ = @import("compat");
     _ = @import("db.zig");
+    _ = @import("database.zig");
+    _ = @import("api/graphql.zig");
+    _ = @import("api/databases.zig");
     _ = @import("migrations.zig");
     _ = @import("notify.zig");
     _ = @import("runtime/images.zig");
