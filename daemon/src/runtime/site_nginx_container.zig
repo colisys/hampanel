@@ -143,6 +143,7 @@ pub fn sync(allocator: std.mem.Allocator, data_dir: []const u8, socket: []const 
     var argv = std.array_list.Managed([]const u8).init(allocator);
     try argv.appendSlice(try engine_mod.composeCommand(allocator, engine, socket));
     try argv.appendSlice(&.{ "-f", compose, "-f", override, "-p", project, "up", "-d" });
+    if (engine.podman) try argv.append("--force-recreate");
     const result = engine_mod.run(allocator, engine, socket, argv.items, .{ .max_output = 4 * 1024 * 1024 }) catch {
         restore(override, previous);
         return .{ .ok = false, .output = "compose provider unavailable while applying site mounts" };
