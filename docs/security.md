@@ -165,3 +165,45 @@ guest 里不是空的：每次构建都会生成一套"看起来像真机器"的
 
 同一次构建共用单个随机生成器，因此主机名、站点名与 nginx 配置互相吻合；
 不同构建的镜像哈希不同，不会让攻击者在多次会话间看出是同一套模板。
+
+## 主机加固
+
+安全中心的「主机加固」页把常被漏掉的杂项集中在一处。每项都先读现状再写入受管
+文件，重启后依然生效。
+
+### 空链接
+
+扫描 `/etc`、`/opt`、`/srv`、`/var/tmp`，用 `find -xtype l` 精确匹配**目标无法
+解析**的链接（而非所有链接）。删除前会再解析一次：目标若已出现则跳过，避免误删
+刚刚修好的链接。`-xdev` 只用于系统树，操作者选定的子树不加，否则 bind mount 会
+让结果为空。
+
+### 默认 umask
+
+写入 `/etc/security/hampanel-umask.conf` 供 `pam_umask` 使用。umask 表示**要移除**
+的权限位，因此校验规则是「其他用户必须失去写权限」（0o002 位必须存在）：
+`027` 有效，`000` 会被拒绝。这一点最初写反了，测试立刻暴露。
+
+### at / cron
+
+写 `<tool>.allow` 并删除 `<tool>.deny`；两者同时存在时 allow 生效，留下的 deny
+只会让审计困惑。用户名逐条校验，不接受空格、分号等可能进入命令的字符。
+
+### sudo
+
+写入 `/etc/sudoers.d/99-hampanel-hardening`（0440）。只包含 `use_pty` 与
+`!visiblepw`——实测本机是 sudo-rs，`logfile` 这类项会报 `unknown setting` 并让
+**所有** sudo 调用解析失败，因此写入后用 `visudo -c` 校验，不通过则回滚。
+
+### 内核参数
+
+只暴露 15 个有明确安全含义、且有安全取值的参数（ICMP、rp_filter、重定向、
+syncookies、dmesg_restrict、kptr_restrict、sysrq、ASLR、protected_*）。取值写入
+`/etc/sysctl.d/99-hampanel-hardening.conf` 并用 `sysctl -w` 立即生效；内核拒绝的
+项会逐条报告，不会静默成功。
+
+`net.ipv4.ip_forward` 标记为**需人工判断**：在容器宿主或路由器上关闭转发会直接
+破坏网络（本机 `ip_forward=1` 且装了 Docker）。它被排除在「应用全部建议值」之外，
+测试固定了这一行为。
+
+接口：`GET /api/v1/security/hardening`，`POST /hardening/{dangling,umask,scheduler,sudo,kernel}`。

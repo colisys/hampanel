@@ -104,6 +104,112 @@ pub fn unprotect(ctx: *context.Context) anyerror!void {
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
 }
 
+/// Host hardening: dangling links, umask, at/cron/sudo access, kernel params.
+pub fn hardening(ctx: *context.Context) anyerror!void {
+    const status = platform.hardening.status(ctx.arena) catch |err| {
+        ctx.fail(500, "hardening_failed", @errorName(err));
+        return;
+    };
+    try ctx.json(status);
+}
+
+pub fn pruneDangling(ctx: *context.Context) anyerror!void {
+    const Body = struct { paths: []const []const u8 };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected paths");
+        return;
+    };
+    if (body.paths.len == 0 or body.paths.len > 500) {
+        ctx.fail(400, "bad_request", "expected 1..500 paths");
+        return;
+    }
+    const outcome = platform.hardening.pruneDangling(ctx.arena, body.paths) catch |err| {
+        ctx.fail(400, "hardening_failed", @errorName(err));
+        return;
+    };
+    log.info("security: pruned dangling links: {s}", .{outcome.output});
+    try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+}
+
+pub fn setUmask(ctx: *context.Context) anyerror!void {
+    const Body = struct { umask: []const u8 };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected umask");
+        return;
+    };
+    const outcome = platform.hardening.setUmask(ctx.arena, body.umask) catch |err| {
+        ctx.fail(mapHardeningError(err), "hardening_failed", @errorName(err));
+        return;
+    };
+    log.info("security: umask configured ok={}", .{outcome.ok});
+    try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+}
+
+pub fn schedulerAccess(ctx: *context.Context) anyerror!void {
+    const Body = struct {
+        tool: []const u8,
+        users: []const []const u8 = &.{},
+        enabled: bool,
+    };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected tool/users/enabled");
+        return;
+    };
+    const tool = platform.hardening.AccessTool.fromString(body.tool) orelse {
+        ctx.fail(400, "bad_tool", "tool must be at or cron");
+        return;
+    };
+    const outcome = platform.hardening.restrictScheduler(ctx.arena, tool, body.users, body.enabled) catch |err| {
+        ctx.fail(mapHardeningError(err), "hardening_failed", @errorName(err));
+        return;
+    };
+    log.info("security: {s} access restricted={}", .{ body.tool, body.enabled });
+    try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+}
+
+pub fn hardenSudo(ctx: *context.Context) anyerror!void {
+    const outcome = platform.hardening.hardenSudo(ctx.arena) catch |err| {
+        ctx.fail(mapHardeningError(err), "hardening_failed", @errorName(err));
+        return;
+    };
+    log.info("security: sudo hardened ok={}", .{outcome.ok});
+    try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+}
+
+pub fn setKernel(ctx: *context.Context) anyerror!void {
+    const Body = struct { params: []const platform.hardening.Request };
+    const body = ctx.requireJson(Body) catch {
+        ctx.fail(400, "bad_request", "expected params");
+        return;
+    };
+    if (body.params.len == 0 or body.params.len > 64) {
+        ctx.fail(400, "bad_request", "expected 1..64 parameters");
+        return;
+    }
+    const outcome = platform.hardening.setKernel(ctx.arena, body.params) catch |err| {
+        ctx.fail(mapHardeningError(err), "hardening_failed", @errorName(err));
+        return;
+    };
+    if (!outcome.ok) ctx.response.status = 502;
+    log.info("security: kernel hardening applied={}", .{outcome.ok});
+    try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+}
+
+fn mapHardeningError(err: anyerror) u16 {
+    const name = @errorName(err);
+    if (std.mem.eql(u8, name, "InvalidUmask") or
+        std.mem.eql(u8, name, "InvalidUser") or
+        std.mem.eql(u8, name, "InvalidKey") or
+        std.mem.eql(u8, name, "InvalidValue") or
+        std.mem.eql(u8, name, "InvalidPath") or
+        std.mem.eql(u8, name, "InvalidParams")) return 400;
+    if (std.mem.eql(u8, name, "PamUnavailable") or
+        std.mem.eql(u8, name, "SudoUnavailable") or
+        std.mem.eql(u8, name, "SysctlUnavailable") or
+        std.mem.eql(u8, name, "Unsupported")) return 501;
+    return 500;
+}
+
 /// Honeypot state: host profile being replicated and running guests.
 pub fn honeypot(ctx: *context.Context) anyerror!void {
     const status = platform.honeypot.status(ctx.arena, ctx.app.config.data_dir) catch |err| {

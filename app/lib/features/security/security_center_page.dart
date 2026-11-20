@@ -6,6 +6,7 @@ import '../../core/session.dart';
 import '../../ui/layout.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
+import 'hardening_page.dart';
 import 'probe_page.dart';
 import '../cron/cron_page.dart';
 import '../firewall/firewall_page.dart';
@@ -178,6 +179,12 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
                     const SizedBox(height: 16),
                     _sectionTitle('主机加固'),
                     const SizedBox(height: 8),
+                    _entry(
+                      icon: Icons.build_circle_outlined,
+                      title: '主机加固',
+                      subtitle: '空链接、umask、at/cron/sudo 与内核参数',
+                      onTap: () => _open(const HardeningPage()),
+                    ),
                     _entry(
                       icon: Icons.lock_outline,
                       title: '文件防篡改',

@@ -82,7 +82,16 @@ pub fn protect(allocator: std.mem.Allocator, data_dir: []const u8, path: []const
 
     const result = exec.run(allocator, argv.items, 256 * 1024) catch
         return error.ChattrUnavailable;
-    if (!result.ok()) return .{ .ok = false, .output = textOf(result) };
+    // `textOf` borrows from the buffers, so the failure output is copied before
+    // they are released.
+    if (!result.ok()) {
+        const output = try allocator.dupe(u8, textOf(result));
+        allocator.free(result.stdout);
+        allocator.free(result.stderr);
+        return .{ .ok = false, .output = output };
+    }
+    allocator.free(result.stdout);
+    allocator.free(result.stderr);
 
     // Persist only after the attribute was actually applied.
     try appendManifest(allocator, data_dir, path);
@@ -100,7 +109,14 @@ pub fn unprotect(allocator: std.mem.Allocator, data_dir: []const u8, path: []con
 
     const result = exec.run(allocator, argv.items, 256 * 1024) catch
         return error.ChattrUnavailable;
-    if (!result.ok()) return .{ .ok = false, .output = textOf(result) };
+    if (!result.ok()) {
+        const output = try allocator.dupe(u8, textOf(result));
+        allocator.free(result.stdout);
+        allocator.free(result.stderr);
+        return .{ .ok = false, .output = output };
+    }
+    allocator.free(result.stdout);
+    allocator.free(result.stderr);
     try removeFromManifest(allocator, data_dir, path);
     return .{ .ok = true, .output = "" };
 }
@@ -129,6 +145,8 @@ pub fn restoreAll(allocator: std.mem.Allocator, data_dir: []const u8) !usize {
         try argv.append("+i");
         try argv.append(path);
         const result = exec.run(allocator, argv.items, 256 * 1024) catch continue;
+        allocator.free(result.stdout);
+        allocator.free(result.stderr);
         if (result.ok()) restored += 1;
     }
     return restored;
@@ -156,11 +174,17 @@ fn readAttributes(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     if (!exec.commandExists(allocator, "lsattr")) return try allocator.dupe(u8, "");
     const result = exec.run(allocator, &.{ "lsattr", "-d", path }, 64 * 1024) catch
         return try allocator.dupe(u8, "");
-    if (!result.ok()) return try allocator.dupe(u8, "");
-    // "----i---------e------ /path"
-    var tokens = std.mem.tokenizeAny(u8, result.stdout, " \t\r\n");
-    const first = tokens.next() orelse return try allocator.dupe(u8, "");
-    return allocator.dupe(u8, first);
+    // Copy the first field before the buffers are released: `first` borrows
+    // from `result.stdout`.
+    const owned = blk: {
+        if (!result.ok()) break :blk try allocator.dupe(u8, "");
+        var tokens = std.mem.tokenizeAny(u8, result.stdout, " \t\r\n");
+        const first = tokens.next() orelse break :blk try allocator.dupe(u8, "");
+        break :blk try allocator.dupe(u8, first);
+    };
+    allocator.free(result.stdout);
+    allocator.free(result.stderr);
+    return owned;
 }
 
 fn appendManifest(allocator: std.mem.Allocator, data_dir: []const u8, path: []const u8) !void {

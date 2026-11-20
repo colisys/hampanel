@@ -25,6 +25,7 @@ pub const waf = backend.waf;
 pub const security = backend.security;
 pub const scansensor = if (@hasDecl(backend, "scansensor")) backend.scansensor else struct {};
 pub const tamper = backend.tamper;
+pub const hardening = backend.hardening;
 pub const honeypot = backend.honeypot;
 pub const selinux = backend.selinux;
 pub const hostprobe = backend.hostprobe;

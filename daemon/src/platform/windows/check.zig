@@ -79,6 +79,12 @@ comptime {
     _ = &backend.security.stopScan;
     _ = &backend.security.ingest;
     _ = &backend.security.unban;
+    _ = &backend.hardening.status;
+    _ = &backend.hardening.pruneDangling;
+    _ = &backend.hardening.setUmask;
+    _ = &backend.hardening.restrictScheduler;
+    _ = &backend.hardening.hardenSudo;
+    _ = &backend.hardening.setKernel;
     _ = &backend.selinux.status;
     _ = &backend.selinux.setMode;
     _ = &backend.selinux.setBoolean;

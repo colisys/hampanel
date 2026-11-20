@@ -94,6 +94,11 @@ pub fn install(allocator: std.mem.Allocator, data_dir: []const u8) !Paths {
 
 pub fn bpftraceAvailable(allocator: std.mem.Allocator) bool {
     const result = exec.run(allocator, &.{ "bpftrace", "--version" }, 64 * 1024) catch return false;
+    // exec.run hands back owned buffers; callers own them.
+    defer {
+        allocator.free(result.stdout);
+        allocator.free(result.stderr);
+    }
     return result.ok();
 }
 

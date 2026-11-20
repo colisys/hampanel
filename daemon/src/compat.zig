@@ -21,8 +21,14 @@ pub fn setEnviron(map: *const std.process.Environ.Map) void {
 }
 
 pub fn getEnv(name: []const u8) ?[]const u8 {
-    const map = environ_map orelse return null;
-    return map.get(name);
+    // Tests run without an environ map (`zig build test` passes none), and a
+    // missing PATH would make every command lookup fail silently. Searching the
+    // standard locations is the same fallback a shell would use.
+    if (environ_map) |map| {
+        if (map.get(name)) |value| return value;
+    }
+    if (std.mem.eql(u8, name, "PATH")) return "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+    return null;
 }
 
 pub fn cloneEnv(allocator: std.mem.Allocator) !std.process.Environ.Map {

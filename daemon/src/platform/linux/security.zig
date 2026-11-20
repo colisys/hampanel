@@ -142,7 +142,13 @@ fn sameAddress(a: []const u8, b: []const u8) bool {
 fn bpfSyscallAvailable(allocator: std.mem.Allocator) bool {
     // BTF is required before a kprobe can be typed against kernel structures.
     if (!sensor.exists("/sys/kernel/btf/vmlinux")) return false;
-    const probe = exec.run(allocator, &.{ "bpftool", "feature", "probe", "kernel" }, 64 * 1024) catch return false;
+    var probe = exec.run(allocator, &.{ "bpftool", "feature", "probe", "kernel" }, 64 * 1024) catch return false;
+    // exec.run hands back owned buffers; callers own them. Freed even on the
+    // early-return paths below.
+    defer {
+        allocator.free(probe.stdout);
+        allocator.free(probe.stderr);
+    }
     if (!probe.ok()) return false;
     return std.mem.indexOf(u8, probe.stdout, "CONFIG_BPF_SYSCALL is set to y") != null and
         std.mem.indexOf(u8, probe.stdout, "CONFIG_BPF is set to y") != null;
