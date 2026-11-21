@@ -82,6 +82,7 @@ pub fn validate(config: Config) ?[]const u8 {
     if (config.ntfy_enabled) {
         if (!validUrl(config.ntfy_server)) return "ntfy_server must be an http(s) URL";
         if (!validTopic(config.ntfy_topic)) return "ntfy_topic must be 1..64 chars of [A-Za-z0-9_-]";
+        if (tryPriorityName(config.ntfy_priority) == null) return "ntfy_priority must be min/low/default/high/urgent/max or 1..5";
     }
     return null;
 }
@@ -106,6 +107,29 @@ fn validTopic(value: []const u8) bool {
     return true;
 }
 
+/// ntfy accepts a priority name or 1..5. Normalize to the canonical name so an
+/// operator typing `3` or `Low` still gets a valid header, and reject anything
+/// else instead of sending a request ntfy will answer with HTTP 400.
+fn tryPriorityName(value: []const u8) ?[]const u8 {
+    const names = [_][]const u8{ "max", "urgent", "high", "default", "low", "min" };
+    var lowered_buffer: [8]u8 = undefined;
+    if (value.len == 0 or value.len > lowered_buffer.len) return null;
+    const lowered = std.ascii.lowerString(&lowered_buffer, value);
+    for (names) |name| {
+        if (std.mem.eql(u8, lowered, name)) return name;
+    }
+    if (lowered.len == 1 and lowered[0] >= '1' and lowered[0] <= '5') {
+        return switch (lowered[0]) {
+            '1' => "min",
+            '2' => "low",
+            '3' => "default",
+            '4' => "high",
+            else => "max",
+        };
+    }
+    return null;
+}
+
 fn trimSlash(value: []const u8) []const u8 {
     var out = value;
     while (out.len > 0 and out[out.len - 1] == '/') out = out[0 .. out.len - 1];
@@ -126,29 +150,6 @@ pub fn barkPayload(
     try root.object.put(allocator, "level", .{ .string = config.bark_level });
     if (config.bark_sound.len > 0) {
         try root.object.put(allocator, "sound", .{ .string = config.bark_sound });
-    }
-    return std.json.Stringify.valueAlloc(allocator, root, .{});
-}
-
-pub fn ntfyPayload(
-    allocator: std.mem.Allocator,
-    config: Config,
-    title: []const u8,
-    body: []const u8,
-) ![]u8 {
-    var root: std.json.Value = .{ .object = .empty };
-    try root.object.put(allocator, "topic", .{ .string = config.ntfy_topic });
-    try root.object.put(allocator, "title", .{ .string = title });
-    try root.object.put(allocator, "message", .{ .string = body });
-    try root.object.put(allocator, "priority", .{ .string = config.ntfy_priority });
-    if (config.ntfy_tags.len > 0) {
-        var tags: std.json.Array = .init(allocator);
-        var iterator = std.mem.splitScalar(u8, config.ntfy_tags, ',');
-        while (iterator.next()) |tag| {
-            const trimmed = std.mem.trim(u8, tag, " \t");
-            if (trimmed.len > 0) try tags.append(.{ .string = trimmed });
-        }
-        try root.object.put(allocator, "tags", .{ .array = tags });
     }
     return std.json.Stringify.valueAlloc(allocator, root, .{});
 }
@@ -184,6 +185,14 @@ fn sendBark(
     return .{ .ok = result.ok(), .output = outputOf(result) };
 }
 
+/// Sends through the header form documented at https://docs.ntfy.sh/publish/:
+/// the topic goes in the URL path and title/priority/tags travel as headers.
+///
+/// The JSON form was used before and never worked: `POST /` with a body of
+/// `{"priority":"default"}` is rejected with HTTP 400 (`priority` must be a
+/// number there), and `curl -f` discarded that error, so every send failed with
+/// an empty message. The header form accepts names (`default`, `high`, ...) and
+/// needs no JSON at all.
 fn sendNtfy(
     allocator: std.mem.Allocator,
     config: Config,
@@ -193,27 +202,61 @@ fn sendNtfy(
     if (!config.ntfy_enabled) return .{ .ok = false, .output = "ntfy disabled" };
     if (!validUrl(config.ntfy_server)) return .{ .ok = false, .output = "invalid ntfy_server" };
     if (!validTopic(config.ntfy_topic)) return .{ .ok = false, .output = "invalid ntfy_topic" };
-    const payload = ntfyPayload(allocator, config, title, body) catch {
-        return .{ .ok = false, .output = "out of memory" };
-    };
-    const url = trimSlash(config.ntfy_server);
+    const priority = tryPriorityName(config.ntfy_priority) orelse
+        return .{ .ok = false, .output = "invalid ntfy_priority" };
+
+    const url = std.fmt.allocPrint(allocator, "{s}/{s}", .{
+        trimSlash(config.ntfy_server),
+        config.ntfy_topic,
+    }) catch return .{ .ok = false, .output = "out of memory" };
+    defer allocator.free(url);
+
+    // `-sS` without `-f`: on a rejection ntfy answers with a JSON error body,
+    // and that body is the only useful diagnostic the operator can get.
     var argv = std.array_list.Managed([]const u8).init(allocator);
     defer argv.deinit();
-    argv.appendSlice(&.{ "curl", "-fsS", "--max-time", "8", "-H", "Content-Type: application/json" }) catch {
+    argv.appendSlice(&.{ "curl", "-sS", "--max-time", "8" }) catch
         return .{ .ok = false, .output = "out of memory" };
-    };
+
+    const title_header = std.fmt.allocPrint(allocator, "Title: {s}", .{title}) catch null;
+    defer if (title_header) |h| allocator.free(h);
+    if (title_header) |header| argv.appendSlice(&.{ "-H", header }) catch {};
+
+    const priority_header = std.fmt.allocPrint(allocator, "Priority: {s}", .{priority}) catch null;
+    defer if (priority_header) |h| allocator.free(h);
+    if (priority_header) |header| argv.appendSlice(&.{ "-H", header }) catch {};
+
+    const tags_header = if (config.ntfy_tags.len > 0)
+        std.fmt.allocPrint(allocator, "Tags: {s}", .{config.ntfy_tags}) catch null
+    else
+        null;
+    defer if (tags_header) |h| allocator.free(h);
+    if (tags_header) |header| argv.appendSlice(&.{ "-H", header }) catch {};
+
     const auth = if (config.ntfy_token.len > 0)
         std.fmt.allocPrint(allocator, "Authorization: Bearer {s}", .{config.ntfy_token}) catch null
     else
         null;
+    defer if (auth) |h| allocator.free(h);
     if (auth) |header| argv.appendSlice(&.{ "-H", header }) catch {};
-    argv.appendSlice(&.{ "-X", "POST", "-d", payload, url }) catch {
+
+    argv.appendSlice(&.{ "-d", body, url }) catch
         return .{ .ok = false, .output = "out of memory" };
-    };
+
     const result = exec.run(allocator, argv.items, 64 * 1024) catch {
         return .{ .ok = false, .output = "curl unavailable" };
     };
-    return .{ .ok = result.ok(), .output = outputOf(result) };
+    defer {
+        allocator.free(result.stdout);
+        allocator.free(result.stderr);
+    }
+    // ntfy always answers with a JSON message object; a non-empty `error` means
+    // the push did not happen even when curl itself reported success.
+    const output = outputOf(result);
+    if (std.mem.indexOf(u8, output, "\"error\"") != null and !result.ok()) {
+        return .{ .ok = false, .output = output };
+    }
+    return .{ .ok = result.ok(), .output = output };
 }
 
 pub fn sendProvider(
@@ -415,10 +458,19 @@ test "payload builders and validation" {
     try std.testing.expect(std.mem.indexOf(u8, bark, "abc_123") != null);
     try std.testing.expect(std.mem.indexOf(u8, bark, "面板登录") != null);
 
-    const ntfy = try ntfyPayload(a, config, "容器重启", "nginx");
-    try std.testing.expect(std.mem.indexOf(u8, ntfy, "\"topic\":\"hampanel-alerts\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, ntfy, "warning") != null);
-    try std.testing.expect(std.mem.indexOf(u8, ntfy, "tk") == null);
+    // The header form needs no JSON body, so what must hold is that a typo in
+    // the priority is caught here rather than sent and rejected with HTTP 400.
+    try std.testing.expect(tryPriorityName("default") != null);
+    try std.testing.expect(tryPriorityName("DEFAULT") != null);
+    try std.testing.expectEqualStrings("high", tryPriorityName("4").?);
+    try std.testing.expectEqualStrings("min", tryPriorityName("1").?);
+    try std.testing.expect(tryPriorityName("loud") == null);
+    try std.testing.expect(tryPriorityName("") == null);
+    try std.testing.expect(tryPriorityName("6") == null);
+
+    var bad_priority = config;
+    bad_priority.ntfy_priority = "loud";
+    try std.testing.expect(validate(bad_priority) != null);
 
     var bad = config;
     bad.ntfy_topic = "bad topic!";
