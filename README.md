@@ -1,7 +1,7 @@
 # Hampanel
 
-[![Build (main)](https://github.com/colisys/hampanel/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/colisys/hampanel/actions/workflows/build.yml)
-[![Build (nightly)](https://github.com/colisys/hampanel/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/colisys/hampanel/actions/workflows/build.yml)
+[![稳定版](https://img.shields.io/github/actions/workflow/status/colisys/hampanel/build.yml?branch=main&label=%E7%A8%B3%E5%AE%9A%E7%89%88)](https://github.com/colisys/hampanel/actions/workflows/build.yml)
+[![nightly](https://img.shields.io/github/actions/workflow/status/colisys/hampanel/build.yml?branch=nightly&label=nightly)](https://github.com/colisys/hampanel/actions/workflows/build.yml)
 
 官网：<https://hampanel.dawncall.work> · 产品标识：`work.dawncall.hampanel`
 
