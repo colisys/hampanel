@@ -362,6 +362,18 @@ fn serviceAction(ctx: *tasks.Context) !void {
     const unit = try stringParam(ctx, "unit");
     const action = try stringParam(ctx, "action");
     if (!@import("shared").validate.isUnitName(unit)) return error.InvalidParams;
+    // Starting a reboot/halt unit takes the host down exactly like a reboot
+    // command would. Before SELinux has been relabelled that is how a machine
+    // stops booting, so the action is refused rather than executed.
+    if (platform_mod.selinux.isRebootUnit(unit) and
+        !platform_mod.selinux.rebootAllowed(ctx.allocator))
+    {
+        try ctx.write(
+            "已拒绝：SELinux 尚未完成重打标签。此时重启或关机会让主机回到无法启动的状态，" ++
+                "请先在 安全中心 → SELinux 完成初始化。\n",
+        );
+        return error.RebootBlocked;
+    }
     const allowed = [_][]const u8{ "start", "stop", "restart", "reload", "enable", "disable" };
     for (allowed) |candidate| {
         if (std.mem.eql(u8, action, candidate)) break;

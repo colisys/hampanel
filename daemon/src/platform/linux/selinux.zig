@@ -41,6 +41,9 @@ pub const Status = struct {
     /// How many paths the panel wants covered, so the UI can show progress
     /// instead of a bare count.
     managed_total: u32,
+    /// Reboot/halt are refused while this is false (SELinux present but the
+    /// filesystem still needs relabelling).
+    reboot_allowed: bool,
     message: []const u8 = "",
 };
 
@@ -145,6 +148,7 @@ pub fn status(allocator: std.mem.Allocator, data_dir: []const u8) !Status {
         .relabelled = (!present) or relabelMarker(),
         .managed_paths = managedPathCount(allocator, data_dir),
         .managed_total = managedPathTotal(allocator, data_dir, present and semanage),
+        .reboot_allowed = if (present) relabelMarker() else true,
         .message = message,
     };
 }
@@ -522,6 +526,41 @@ fn hasContextRule(allocator: std.mem.Allocator, path: []const u8, kind: []const 
 /// host that was never relabelled is how machines stop booting: init is
 /// `unlabeled_t`, every process inherits `kernel_t`, and the policy then denies
 /// the very accesses the boot needs.
+/// Units whose start/stop reboots or powers off the host.
+///
+/// Restarting `reboot.target` (or the matching systemd-*.service) takes the
+/// machine down just as surely as a reboot button would, so these have to be
+/// recognised by name rather than trusted to the caller.
+pub fn isRebootUnit(unit: []const u8) bool {
+    const names = [_][]const u8{
+        "reboot.target",             "poweroff.target",
+        "halt.target",               "kexec.target",
+        "systemd-reboot.service",    "systemd-poweroff.service",
+        "systemd-halt.service",      "systemd-kexec.service",
+        "reboot.service",            "poweroff.service",
+        "halt.service",              "kexec.service",
+    };
+    for (names) |name| {
+        if (std.mem.eql(u8, unit, name)) return true;
+    }
+    return false;
+}
+
+/// Whether a reboot is safe right now.
+///
+/// Before the filesystem has been relabelled, the machine comes back with init
+/// unlabeled_t and every process in kernel_t, which the policy then denies —
+/// that is exactly the unbootable state this guard exists to prevent. Hosts
+/// without SELinux, and hosts that have completed initialization, are free to
+/// reboot.
+pub fn rebootAllowed(allocator: std.mem.Allocator) bool {
+    if (!exists("/sys/fs/selinux")) return true;
+    // `semanage` missing means we cannot reason about labels at all; treat the
+    // host as unmanaged rather than locking its operator out of rebooting.
+    if (!exec.commandExists(allocator, "semanage")) return true;
+    return relabelMarker();
+}
+
 pub fn initialize(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
     if (!exists("/sys/fs/selinux")) return error.NotPresent;
     if (!exec.commandExists(allocator, "semanage")) return error.ToolingUnavailable;

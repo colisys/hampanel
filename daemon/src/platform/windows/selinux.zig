@@ -102,3 +102,14 @@ pub fn validBooleanName(name: []const u8) bool {
     _ = name;
     return false;
 }
+
+/// Windows has no SELinux, so nothing here can make a reboot unsafe.
+pub fn isRebootUnit(unit: []const u8) bool {
+    _ = unit;
+    return false;
+}
+
+pub fn rebootAllowed(allocator: std.mem.Allocator) bool {
+    _ = allocator;
+    return true;
+}

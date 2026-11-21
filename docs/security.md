@@ -270,3 +270,17 @@ SELinux 管理界面在真实主机上的验证要点（每一条都由运行时
 
 注意：发行版自带的标签（例如 `/var/lib/containers` 下的分层类型）不要用面板
 重复声明；面板只补自己缺少的规则，避免与策略库冲突。
+
+### 重打标签之前禁止重启
+
+未初始化的主机重启后会回到无法启动的状态（`init_t` 丢失、进程全在 `kernel_t`）。
+所以就绪标记存在之前，面板拒绝一切会把主机带下去的操作：
+
+- `service.action` 对 `reboot.target` / `poweroff.target` / `halt.target` /
+  `kexec.target` 及其 `systemd-*.service`、`*.service` 形式，一律返回
+  `RebootBlocked`，并附带可读原因，指向 SELinux 页的初始化入口。
+- 普通单元不受影响：`nginx.service` 之类照常交给 systemd。
+- `GET /security/selinux` 现在返回 `reboot_allowed`，界面在就绪标记缺失时
+  直接显示"重启与关机：已禁止"。
+- 主机没有 SELinux，或没有 `semanage`，或已完成初始化时一律放行——这道闸门
+  只用于挡住真实存在的启动风险，不是用来限制操作者的。

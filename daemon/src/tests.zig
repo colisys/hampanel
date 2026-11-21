@@ -62,6 +62,8 @@ test {
         _ = &selinux.managedPaths;
         _ = &selinux.initialize;
         _ = &selinux.relabelMarker;
+        _ = &selinux.isRebootUnit;
+        _ = &selinux.rebootAllowed;
         _ = &security.scanStatus;
     }
     _ = @import("tasks.zig");
@@ -1365,4 +1367,29 @@ test "selinux refuses enforcing without a relabel" {
                 std.mem.eql(u8, name, "RelabelRequired"),
         );
     }
+}
+
+test "selinux refuses reboot targets before relabel" {
+    const selinux = @import("platform/mod.zig").selinux;
+    if (@import("builtin").os.tag != .linux) return;
+
+    // Units that take the host down must be recognised, including the target
+    // and the service forms, since either can be submitted.
+    const blocking = [_][]const u8{
+        "reboot.target", "poweroff.target", "halt.target", "kexec.target",
+        "systemd-reboot.service", "systemd-poweroff.service",
+        "reboot.service", "poweroff.service", "halt.service",
+    };
+    for (blocking) |unit| try std.testing.expect(selinux.isRebootUnit(unit));
+
+    // Ordinary units are untouched, otherwise the guard would block the panel's
+    // whole service page.
+    const allowed_units = [_][]const u8{
+        "nginx.service", "hampanel.service", "docker.service", "sshd.service",
+    };
+    for (allowed_units) |unit| try std.testing.expect(!selinux.isRebootUnit(unit));
+
+    // On a host without SELinux (this one) reboot must stay allowed, so the
+    // guard never locks an operator out for nothing.
+    try std.testing.expect(selinux.rebootAllowed(std.testing.allocator));
 }

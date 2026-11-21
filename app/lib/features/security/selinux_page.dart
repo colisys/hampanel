@@ -420,6 +420,7 @@ class _SelinuxPageState extends State<SelinuxPage>
     List<Map<String, dynamic>> modules,
   ) {
     final relabelled = status['relabelled'] == true;
+    final rebootAllowed = status['reboot_allowed'] != false;
     final managedPaths = (status['managed_paths'] as num?)?.toInt() ?? 0;
     final totalPaths = (status['managed_total'] as num?)?.toInt() ?? 0;
 
@@ -454,6 +455,23 @@ class _SelinuxPageState extends State<SelinuxPage>
               const SizedBox(height: 8),
               _row('受管路径规则', '$managedPaths 条'),
               if (totalPaths > 0) _row('应覆盖路径', '$totalPaths 条'),
+              _row(
+                '重启与关机',
+                rebootAllowed ? '允许' : '已禁止',
+              ),
+              if (!rebootAllowed)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '重打标签完成前，面板会拒绝重启/关机类 systemd 单元。'
+                    '此时重启会让主机回到无法启动的状态。',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: hampanelDanger,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerLeft,
