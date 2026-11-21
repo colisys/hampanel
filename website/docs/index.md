@@ -31,10 +31,13 @@ features:
     details: hampaneld 由 Zig 编写，直接调用系统能力，无运行时依赖。systemd 或 Windows 服务托管，装好即可用。
   - icon: 🧰
     title: 从进程到网站
-    details: 概览、进程、终端、服务、文件、防火墙、SSH、计划任务、日志放在同一处，日常运维不用在多个工具间切换。
+    details: 概览、任务、进程、终端、服务、文件、数据库、站点、计划任务与日志放在同一处，日常运维不用在多个工具间切换。
+  - icon: 🛡️
+    title: 安全中心
+    details: SSH、WAF、防火墙与 Fail2ban 收在一处；另有扫描感知自动拉黑、主机探测、QEMU 蜜罐、文件防篡改、主机加固与 SELinux 管理，能力不可用时如实禁用。
   - icon: 📦
     title: 应用商店
-    details: 内置 Compose 应用目录，一键部署 Nginx、PostgreSQL、Gitea、Kafka、vLLM 等 24 个应用；另含软件包与 Nix 入口。
+    details: 内置 Compose 应用目录，一键部署 Nginx、PostgreSQL、Gitea、Kafka、vLLM 等 26 个应用；另含软件包与 Nix 入口。
   - icon: 📜
     title: 合规使用
     details: 面板不向任何非法用途提供服务。使用者须遵守所在国家或地区的法律法规，详见使用条款。

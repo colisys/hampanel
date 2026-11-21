@@ -20,21 +20,22 @@ Hampanel 是一个 **CleanRoom 实现**、以 **GPL-3.0-or-later** 授权的开�
 | 模块 | 能力 |
 | --- | --- |
 | 概览 | 主机信息、CPU / 内存 / 磁盘 / 网络指标与趋势图（网卡可切换）、负载、刷新间隔可配置 |
-| 文件 | 浏览、读取、在线编辑、新建、重命名、上传、下载；删除进入回收站；编辑自动保存历史版本 |
-| 终端 | 基于 PTY 的 WebSocket 交互终端，支持窗口尺寸调整 |
+| 任务 | 长操作任务队列：状态与增量输出、取消、删除记录；持久化在 SQLite，重启后排队任务继续执行 |
+| 文件 | 浏览、读取、在线编辑、新建、重命名、上传、下载、多选；删除进入回收站；编辑自动保存历史版本；可在文件菜单修改权限 |
+| 终端 | 基于 PTY 的 WebSocket 交互终端；多会话侧栏、复制 / 粘贴、字号 / 行高 / 光标 / 配色可调（仅存客户端） |
 | 服务 | systemd 单元列表、启停、重启、开机自启、日志（可搜索、按行数截断） |
 | 进程 | 进程列表、PID/名称/命令搜索、TERM/KILL、详情（打开文件、监听端口、cwd、线程） |
-| SSH | 二级导航（概览 / 密钥 / 日志）；sshd 状态与生效配置、安全项修改（校验+回滚）、authorized_keys 管理、日志记录方式（syslog/文件）与日志查询 |
+| 数据库 | 登记 MySQL / PostgreSQL / MongoDB / Redis 实例（宿主机或容器），查看库 / 账号 / 表，执行查询，备份 / 下载 / 恢复，Redis 控制台 |
+| GraphQL | 本地 GraphQL 请求台：端点、查询、变量与请求头，格式化响应 |
 | 软件 | 已安装软件的托管状态、确认后初始化（停止→写入托管配置→启动）、Fail2ban 卡片内合并的 jail/封禁/阈值管理 |
 | 网站 | Nginx 站点生成、启停、配置校验后热重载 |
 | 容器 | Docker（未安装时回退 Podman）全量管理：概览、容器创建 / 重建 / 终端 / 文件 / 日志 / 备注 / 导出、编排、镜像、网络、存储卷、镜像源与 Docker 设置；引擎缺失时给出安装引导 |
 | 应用商店 | 内嵌 Docker Compose 应用目录、Linux 包管理器精选工具（含 fail2ban、Docker / Podman、rsyslog）、自定义包安装、Nix build / run（含自定义属性） |
 | 运行环境 | 借宿主机 Docker 管理 Node / Python / Java / Go / PHP / Ruby / .NET / 自定义镜像；推荐+开放版本、包管理器镜像源；每环境「管理」页含日志 / 配置 / 扩展 / 进程 |
-| 防火墙 | UFW 规则查看、放行、拒绝、删除 |
-| WAF | Caddy + Coraza + 内嵌 OWASP CRS；risk gateway、TypeSafe 风险复检、GeoIP/GeoSite 选择器、detect/enforce、日志 |
-| 计划任务 | 面板托管的 root crontab 区块（增删查） |
+| 安全中心 | 聚合 SSH、WAF（含暴力破解封禁与浏览器指纹）、防火墙、Fail2ban；扫描感知（eBPF 被动探测 + ufw 自动拉黑）、主机探测（nmap + Shodan InternetDB）、QEMU 蜜罐、chattr 文件防篡改、主机加固（空链接 / umask / at-cron / sudo / 内核参数）、SELinux（模式 / 布尔 / 文件上下文 / 端口标签 / 拒绝日志 / 首次 relabel）；能力探测如实上报，不可用入口直接禁用 |
+| 计划任务 | 面板托管的 root crontab 区块（增删查）；面板任务与用户任务分开管理 |
 | 回收站 | 面板删除的文件/目录恢复、永久删除、清空 |
-| 日志 | 面板审计日志与系统日志尾部查看 |
+| 日志 | 统一日志页：面板审计、系统日志与各类服务日志（可搜索、按级别与时间筛选） |
 | AI 助手 | OpenAI 兼容 Chat Completions（流式）/ Responses；多对话侧栏、Markdown（含表格）渲染；系统设置勾选工具与敏感路径、人工审批、无 shell、删除仅回收站 |
 | 主机设置 | Swap（交换文件或已有分区）、NTP 同步、GRUB2 启动项、/etc/hosts |
 | 通知 | Bark / ntfy 推送（登录、AI 执行操作等事件），可在面板配置与测试 |
@@ -68,6 +69,8 @@ daemon/                 Zig 后端（按模块拆分）
   src/sys/              命令执行、/proc 采样
   src/store/            Docker Compose 应用目录与编排（YAML 内嵌）
   src/runtime/          运行环境目录、镜像构建与生命周期管理
+  src/tasks.zig         持久化任务队列（状态、输出、保留上限）
+  src/task_handlers.zig 任务种类与执行器注册
   src/db.zig            SQLite 封装与迁移
   src/notify.zig        Bark / ntfy 推送
   src/versions.zig      文件历史版本（内容寻址）
@@ -86,12 +89,15 @@ windows/driver/         WDM 内核伴随驱动（C + INF）
 tool/hampanelctl        SSH 编排 CLI
 tool/package/           Linux AppImage / Windows 单文件 exe 打包脚本
 flake.nix               Nix：构建 daemon、开发环境
+website/                VitePress 文档站点（hampanel.dawncall.work）
 docs/                   架构与接口文档（含 docs/store.md、docs/runtimes.md）
 ```
 
 应用商店的实现与新增应用方式见 [docs/store.md](docs/store.md)；SSH 管理说明见
 [docs/ssh.md](docs/ssh.md)；软件托管与初始化语义见 [docs/software.md](docs/software.md)；回收站与版本历史见 [docs/recycle.md](docs/recycle.md)，
-AI 助手见 [docs/ai.md](docs/ai.md)；运行环境管理与 SQLite 存储见 [docs/runtimes.md](docs/runtimes.md)，移动端行为见 [docs/mobile.md](docs/mobile.md)，安全模型见 [docs/security.md](docs/security.md)，品牌资产见 [docs/branding.md](docs/branding.md)。
+AI 助手见 [docs/ai.md](docs/ai.md)；运行环境管理与 SQLite 存储见 [docs/runtimes.md](docs/runtimes.md)，任务队列与种类见
+[docs/tasks.md](docs/tasks.md)，移动端行为见 [docs/mobile.md](docs/mobile.md)，安全中心与安全模型见
+[docs/security.md](docs/security.md)，品牌资产见 [docs/branding.md](docs/branding.md)。
 
 ## 数据存储
 

@@ -59,6 +59,7 @@ export default defineConfig({
             { text: '网站与证书', link: '/features/sites' },
             { text: '容器与运行环境', link: '/features/containers' },
             { text: '网络接入与防护', link: '/features/network' },
+            { text: '安全中心', link: '/features/security' },
             { text: 'AI 助手与通知', link: '/features/ai' },
           ],
         },

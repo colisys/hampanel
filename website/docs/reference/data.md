@@ -24,6 +24,20 @@ outline: [2, 3]
 
 SQLite 使用 vendored amalgamation，不依赖系统 `libsqlite3`。
 
+任务队列（状态、输出与保留记录）同样存放在该数据库中；任务输出按需滚动，不会无限增长。
+
+### 安全中心的状态文件
+
+安全中心的若干能力会把状态落在数据目录的 `security/` 下：
+
+| 内容 | 位置 |
+| --- | --- |
+| 扫描感知探针脚本 | `<data-dir>/security/scan-sensor.bt` |
+| 扫描封禁来源清单 | `<data-dir>/security/scan-banned.txt` |
+| 文件防篡改保护清单 | `<data-dir>/security/tamper-manifest.txt` |
+
+蜜罐 guest 的镜像与磁盘也在数据目录下，由面板构建；它不是发行版镜像，不会从外网下载。SELinux 首次初始化的就绪标记由系统策略目录维护，不在此表内。
+
 ### 容器引擎的选择
 
 `config.json` 的 `container` 字段记录首次探测结果（`docker` 或 `podman`）。运行时固定使用该值；切换引擎是改这个字段并重启。
@@ -38,6 +52,8 @@ SQLite 使用 vendored amalgamation，不依赖系统 `libsqlite3`。
 | Android / iOS | 应用私有目录 |
 
 客户端保存主机列表、界面设置、AI 会话与模型密钥（桌面端在系统钥匙串，移动端在私有文件）。
+
+终端的字号、行高、光标与配色等外观设置也保存在客户端本地（`client_settings.json` 的 `terminal` 字段），只影响这台管理端的显示，不写入受控端，也不随主机切换而改变。
 
 ## 应用数据
 
