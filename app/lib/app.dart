@@ -227,7 +227,13 @@ class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
       builder: (context, child) => MediaQuery.withClampedTextScaling(
         minScaleFactor: 0.85,
         maxScaleFactor: 1.25,
-        child: child ?? const SizedBox.shrink(),
+        child: session == null
+            ? child ?? const SizedBox.shrink()
+            // PanelScope must sit above the Navigator, not inside `home`:
+            // pushed routes are siblings of `home`, so anything scoped there is
+            // invisible to them and PanelScope.of() throws. Exposing the
+            // session here makes every pushed page able to reach it.
+            : PanelScope(session: session, child: child ?? const SizedBox.shrink()),
       ),
       home: _bootstrapError != null
           ? _BootstrapError(
@@ -262,14 +268,11 @@ class _HampanelAppState extends State<HampanelApp> with WidgetsBindingObserver {
                     onEnrolled: _onEnrolled,
                     onDelete: _deleteHost,
                   ))
-          : PanelScope(
-              session: session,
-              child: PanelShell(
-                key: ValueKey('shell-$_activeId'),
-                sessionKey: _activeId!,
-                onLogout: _logout,
-                onSwitchHost: _switchHost,
-              ),
+          : PanelShell(
+              key: ValueKey('shell-$_activeId'),
+              sessionKey: _activeId!,
+              onLogout: _logout,
+              onSwitchHost: _switchHost,
             ),
     );
   }

@@ -476,12 +476,15 @@ List<AiTool> buildAiTools() {
       name: 'add_cron_job',
       description:
           '创建 root 计划任务。该工具默认关闭，需要在系统设置中显式勾选；'
-          '会执行计划命令，每次创建都必须人工批准。',
+          '命令是任意 shell 文本，每次调用都必须人工批准。',
       parameters: _object(
         {'schedule': _string('5 段 cron 表达式'), 'command': _string('计划执行的命令')},
         ['schedule', 'command'],
       ),
       mutating: true,
+      // Arbitrary shell text that later runs as root: treated like log reads,
+      // it is high risk and needs approval on every single call.
+      highRisk: true,
       defaultEnabled: false,
       summary: (args) => '添加计划任务 ${args['schedule']} → ${args['command']}',
       run: (api, args) async => _result(

@@ -528,7 +528,11 @@ class _AiPageState extends State<AiPage> {
               _appendToolNotice('预检失败：${tool.summary(call.arguments)}');
             }
           } else if (tool.mutating ||
+              tool.highRisk ||
               (tool.requiresApproval?.call(call.arguments) ?? false)) {
+            // High-risk tools are never auto-run, even if a future variant is
+            // marked read-only: they touch data that may be sensitive or give
+            // root-level side effects, so every call needs a human decision.
             final approved = await _approve(tool, call.arguments);
             if (!approved) {
               result = jsonEncode({'ok': false, 'error': '用户拒绝执行该操作'});

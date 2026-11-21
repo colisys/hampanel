@@ -108,7 +108,10 @@ class _CronPageState extends State<CronPage> {
 
   Future<void> _addPanelJob() async {
     if (_panelJobs.isEmpty) {
-      _toast('后端未提供面板任务目录');
+      // A current daemon always returns the curated catalog, so an empty list
+      // means it is running an older build that predates panel jobs. Say so
+      // instead of blaming the backend, which cannot fix itself.
+      _toast('当前 daemon 版本较旧，未提供面板任务目录；请升级并重启 daemon 后重试');
       return;
     }
     var jobId = _panelJobs.first.id;
