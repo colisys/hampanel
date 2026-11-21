@@ -42,6 +42,10 @@ pub const Status = struct {
     modules: []const Module = &.{},
     denials: []const Denial = &.{},
     policy_store: bool = false,
+    relabelled: bool = false,
+    managed_paths: u32 = 0,
+    managed_total: u32 = 0,
+    reboot_allowed: bool = true,
     message: []const u8 = "SELinux 仅存在于 Linux 主机",
 };
 
@@ -56,9 +60,16 @@ pub const Outcome = struct {
     reboot_required: bool = false,
 };
 
-pub fn status(allocator: std.mem.Allocator) !Status {
+pub fn status(allocator: std.mem.Allocator, data_dir: []const u8) !Status {
     _ = allocator;
+    _ = data_dir;
     return .{};
+}
+
+pub fn initialize(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
+    _ = allocator;
+    _ = data_dir;
+    return error.Unsupported;
 }
 
 pub fn setMode(allocator: std.mem.Allocator, mode: []const u8) !Outcome {

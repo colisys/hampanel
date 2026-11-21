@@ -64,6 +64,10 @@ pub fn ingest(allocator: std.mem.Allocator, data_dir: []const u8, line: []const 
     return error.Unsupported;
 }
 
+pub fn isRoot() bool {
+    return false;
+}
+
 pub fn unban(allocator: std.mem.Allocator, data_dir: []const u8, source: []const u8) !void {
     _ = allocator;
     _ = data_dir;

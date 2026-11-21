@@ -267,41 +267,50 @@ pub fn searchDangling(
 ) !void {
     for (roots) |root| {
         if (!exists(root)) continue;
-        // `-xtype l` reports links whose target cannot be resolved, which is
-        // exactly the definition of dangling; `-type l` would report every
-        // link and force us to resolve them ourselves.
-        // -xdev keeps a scan of /etc from wandering into /proc or another
-        // mount; it is dropped for trees that are their own filesystem (tests),
-        // where it would suppress everything.
-        // `-xdev` stops find at the first mount boundary. It is right for a
-        // scan of `/` (never descend into /proc), but wrong for the small
-        // operator-chosen trees below, where a bind mount would hide
-        // everything. Only the system scan keeps it.
-        const uses_xdev = std.mem.eql(u8, root, "/") or
-            std.mem.startsWith(u8, root, "/etc") or
-            std.mem.startsWith(u8, root, "/usr");
-        const argv: []const []const u8 = if (uses_xdev)
-            &.{ "find", root, "-xdev", "-xtype", "l", "-print" }
-        else
-            &.{ "find", root, "-xtype", "l", "-print" };
-        const result = exec.run(allocator, argv, 4 * 1024 * 1024) catch continue;
-        // Owned by us: free on every exit from this iteration.
-        defer {
-            allocator.free(result.stdout);
-            allocator.free(result.stderr);
-        }
-        var lines = std.mem.splitScalar(u8, result.stdout, '\n');
-        while (lines.next()) |line| {
-            const path = std.mem.trim(u8, line, " \r\t");
-            if (path.len == 0) continue;
-            if (list.items.len >= limit) return;
-            try list.append(.{
-                .path = try allocator.dupe(u8, path),
-                .target = try readLink(allocator, path),
-            });
+        try walkDangling(allocator, list, root, limit);
+        if (list.items.len >= limit) return;
+    }
+}
+
+/// Walks `root` looking for links whose target cannot be resolved.
+///
+/// This is done in-process rather than through `find -xtype`: `-xtype` is a GNU
+/// findutils extension, and the musl release is built and tested inside Alpine,
+/// whose busybox `find` silently ignores it and reports nothing. A scan that
+/// depends on which `find` happens to be first in PATH is not dependable.
+fn walkDangling(
+    allocator: std.mem.Allocator,
+    list: *std.array_list.Managed(Dangling),
+    root: []const u8,
+    limit: usize,
+) !void {
+    var dir = compat.openDirAbsolute(root, .{ .iterate = true }) catch return;
+    defer dir.close();
+
+    var it = dir.iterate();
+    while (it.next() catch null) |entry| {
+        if (list.items.len >= limit) return;
+        const path = try compat.path.join(allocator, &.{ root, entry.name });
+        switch (entry.kind) {
+            .sym_link => {
+                defer allocator.free(path);
+                // access() follows the link, so it fails exactly when the link
+                // dangles. Resolve first so a broken link is never walked into.
+                if (exists(path)) continue;
+                try list.append(.{
+                    .path = try allocator.dupe(u8, path),
+                    .target = try readLink(allocator, path),
+                });
+            },
+            .directory => {
+                defer allocator.free(path);
+                try walkDangling(allocator, list, path, limit);
+            },
+            else => allocator.free(path),
         }
     }
 }
+
 
 pub fn scanDangling(
     allocator: std.mem.Allocator,

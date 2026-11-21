@@ -55,13 +55,18 @@ pub fn status(allocator: std.mem.Allocator, data_dir: []const u8) !Status {
         last.immutable = std.mem.indexOfScalar(u8, last.attributes, 'i') != null;
     }
 
+    // The caller owns and frees `entries`, so return a slice whose allocation is
+    // exactly as long as its length. Handing back `entries.items` while the list
+    // still holds its capacity makes `free(entries)` an invalid free, which the
+    // CI test runner (root, so `chattr` succeeds) aborts on.
+    const owned = try entries.toOwnedSlice();
     return .{
-        .available = tooling and entries.items.len > 0,
+        .available = tooling and owned.len > 0,
         .tooling = tooling,
-        .entries = entries.items,
+        .entries = owned,
         .message = if (!tooling)
             "缺少 chattr/lsattr，无法进行不可变保护"
-        else if (entries.items.len == 0)
+        else if (owned.len == 0)
             "尚未保护任何路径"
         else
             "",
@@ -92,6 +97,24 @@ pub fn protect(allocator: std.mem.Allocator, data_dir: []const u8, path: []const
     }
     allocator.free(result.stdout);
     allocator.free(result.stderr);
+
+    // A zero exit status is not proof: busybox `chattr` prints "getting flags:
+    // Not a tty" and still exits 0 when the filesystem does not support the
+    // immutable attribute (overlayfs in a container, tmpfs, ...). Read the flag
+    // back so a protection that did not take effect is reported as a failure
+    // instead of silently claiming the path is immutable.
+    const verification = try readAttributes(allocator, path);
+    defer allocator.free(verification);
+    if (std.mem.indexOfScalar(u8, verification, 'i') == null) {
+        return .{
+            .ok = false,
+            .output = try std.fmt.allocPrint(
+                allocator,
+                "文件系统不支持不可变属性（lsattr: {s}）",
+                .{if (verification.len == 0) "无输出" else verification},
+            ),
+        };
+    }
 
     // Persist only after the attribute was actually applied.
     try appendManifest(allocator, data_dir, path);
@@ -145,9 +168,10 @@ pub fn restoreAll(allocator: std.mem.Allocator, data_dir: []const u8) !usize {
         try argv.append("+i");
         try argv.append(path);
         const result = exec.run(allocator, argv.items, 256 * 1024) catch continue;
+        const ok = result.ok();
         allocator.free(result.stdout);
         allocator.free(result.stderr);
-        if (result.ok()) restored += 1;
+        if (ok) restored += 1;
     }
     return restored;
 }
@@ -204,6 +228,9 @@ fn appendManifest(allocator: std.mem.Allocator, data_dir: []const u8, path: []co
     var file = try compat.createFileAbsolute(manifest, .{ .truncate = true, .mode = 0o600 });
     defer file.close();
     try file.writeAll(updated);
+    // Read back immediately below (restoreAll runs at startup), so make the
+    // bytes durable here rather than relying on close.
+    try file.sync();
 }
 
 fn removeFromManifest(allocator: std.mem.Allocator, data_dir: []const u8, path: []const u8) !void {

@@ -596,7 +596,10 @@ pub fn initialize(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
     const relabel = exec.run(allocator, &.{
         "restorecon", "-R", "-e", "/var/lib/docker", "-e", "/var/lib/containers", "-e", "/run/containers", "/",
     }, 8 * 1024 * 1024) catch return error.ToolingUnavailable;
-    const relabel_text = textOf(relabel);
+    // textOf borrows from the result buffers, so copy before releasing them.
+    const relabel_ok = relabel.ok();
+    const relabel_text = try allocator.dupe(u8, textOf(relabel));
+    defer allocator.free(relabel_text);
     allocator.free(relabel.stdout);
     allocator.free(relabel.stderr);
     if (relabel_text.len > 0) {
@@ -604,7 +607,7 @@ pub fn initialize(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
         try report.appendSlice("\n");
     }
 
-    if (!relabel.ok()) {
+    if (!relabel_ok) {
         try report.appendSlice("重打标签未成功完成，已保留未就绪状态；请修复后重试。\n");
         return .{ .ok = false, .output = try report.toOwnedSlice() };
     }
@@ -886,6 +889,10 @@ pub fn parseBooleans(allocator: std.mem.Allocator, output: []const u8) ![]const 
 fn listBooleans(allocator: std.mem.Allocator) ![]const Boolean {
     const result = exec.run(allocator, &.{ "getsebool", "-a" }, 1024 * 1024) catch
         return &.{};
+    defer {
+        allocator.free(result.stdout);
+        allocator.free(result.stderr);
+    }
     if (!result.ok()) return &.{};
     return parseBooleans(allocator, result.stdout);
 }

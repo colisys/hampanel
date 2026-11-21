@@ -16,6 +16,23 @@ pub const Outcome = struct {
     output: []const u8,
 };
 
+pub const PanelJob = struct {
+    id: []const u8,
+    label: []const u8,
+    command: []const u8,
+};
+
+/// Windows has no panel-scheduled jobs; the curated commands only exist for the
+/// Linux systemd timer. The list stays empty so the API reports the same shape.
+pub const panel_jobs = [_]PanelJob{};
+
+pub fn panelJobFor(command: []const u8) ?PanelJob {
+    for (panel_jobs) |job| {
+        if (std.mem.eql(u8, job.command, command)) return job;
+    }
+    return null;
+}
+
 const task_path = "\\Hampanel\\";
 
 pub fn list(allocator: std.mem.Allocator) ![]Entry {

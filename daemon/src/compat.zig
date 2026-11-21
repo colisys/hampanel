@@ -85,6 +85,12 @@ pub const File = struct {
         try self.inner.writeStreamingAll(io(), bytes);
     }
 
+    /// Streaming writes only reach the OS page cache; without this a manifest
+    /// written and read back immediately can still look empty.
+    pub fn sync(self: File) !void {
+        try self.inner.sync(io());
+    }
+
     pub fn write(self: File, bytes: []const u8) !usize {
         return self.inner.writeStreaming(io(), &.{}, &.{bytes}, 1);
     }

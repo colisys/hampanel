@@ -31,6 +31,8 @@ comptime {
     _ = &backend.cron.list;
     _ = &backend.cron.add;
     _ = &backend.cron.remove;
+    _ = &backend.cron.panel_jobs;
+    _ = &backend.cron.panelJobFor;
 
     _ = &backend.logs.sources;
 
@@ -79,6 +81,7 @@ comptime {
     _ = &backend.security.stopScan;
     _ = &backend.security.ingest;
     _ = &backend.security.unban;
+    _ = &backend.security.isRoot;
     _ = &backend.hardening.status;
     _ = &backend.hardening.pruneDangling;
     _ = &backend.hardening.setUmask;
@@ -86,6 +89,9 @@ comptime {
     _ = &backend.hardening.hardenSudo;
     _ = &backend.hardening.setKernel;
     _ = &backend.selinux.status;
+    _ = &backend.selinux.initialize;
+    _ = &backend.selinux.rebootAllowed;
+    _ = &backend.selinux.isRebootUnit;
     _ = &backend.selinux.setMode;
     _ = &backend.selinux.setBoolean;
     _ = &backend.selinux.setContext;
@@ -95,6 +101,12 @@ comptime {
     _ = &backend.tamper.status;
     _ = &backend.tamper.protect;
     _ = &backend.tamper.unprotect;
+    _ = &backend.honeypot.buildPaths;
+    _ = &backend.honeypot.status;
+    _ = &backend.honeypot.buildImage;
+    _ = &backend.honeypot.start;
+    _ = &backend.honeypot.stop;
+    _ = &backend.hostprobe.probe;
 
     _ = &service.run;
 }

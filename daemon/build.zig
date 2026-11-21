@@ -231,8 +231,11 @@ pub fn build(b: *std.Build) void {
 
     // The WAF risk gateway is Go; keep it separate from `test` so the Zig test
     // suite does not require a Go toolchain, but expose one entry point for it.
+    // Build the package exactly the way CI releases it before testing: `go test .
+    // compiles all files in the directory, while CI ran `go build main.go`, which
+    // only compiles that one file and silently ignores the rest of the package.
     const go_test = b.addSystemCommand(&.{ "sh", "-c",
-        \\cd src/platform/linux/risk_gateway && GO111MODULE=off go test .
+        \\cd src/platform/linux/risk_gateway && GO111MODULE=off CGO_ENABLED=0 go build -o /dev/null . && GO111MODULE=off go test .
     });
     const go_test_step = b.step("test-go", "Run WAF risk gateway tests");
     go_test_step.dependOn(&go_test.step);
@@ -286,4 +289,34 @@ pub fn build(b: *std.Build) void {
     const check_step = b.step("check-windows", "Type-check the Windows backend");
     check_step.dependOn(&windows_check.step);
     check_step.dependOn(&windows_shared.step);
+
+    // `check-windows` only analyses the backend and the shared modules, but the
+    // API layer compiles solely through the real executable. A Windows export
+    // that exists on Linux only therefore escaped every local check and failed
+    // on CI. Analyse the same sources as an object file: the whole Windows code
+    // path is checked without linking, so no OpenSSL library is needed.
+    if (target.result.os.tag == .windows) {
+        const check_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        });
+        check_module.addImport("platform_backend", backend);
+        check_module.addImport("shared", shared);
+        check_module.addImport("windows_service", service_module);
+        check_module.addImport("openssl_c", openssl_c);
+        check_module.addImport("compat", compat);
+        check_module.addImport("sqlite_c", sqlite_c);
+        check_module.addIncludePath(sqlite_include);
+        check_module.addCSourceFile(.{ .file = sqlite_source, .flags = sqlite_flags });
+        check_module.addOptions("build_info", build_info);
+        if (openssl_include) |dir| check_module.addIncludePath(.{ .cwd_relative = dir });
+        if (windows_c) |module| check_module.addImport("windows_c", module);
+        const windows_exe_check = b.addObject(.{
+            .name = "hampanel-windows-exe-check",
+            .root_module = check_module,
+        });
+        check_step.dependOn(&windows_exe_check.step);
+    }
 }

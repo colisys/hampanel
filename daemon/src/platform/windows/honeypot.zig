@@ -59,6 +59,35 @@ pub const Status = struct {
     message: []const u8 = "蜜罐依赖 KVM，仅 Linux 主机可用",
 };
 
+pub const Paths = struct {
+    root: []u8,
+
+    pub fn deinit(self: Paths, allocator: std.mem.Allocator) void {
+        _ = self;
+        _ = allocator;
+    }
+
+    pub fn image(self: Paths, allocator: std.mem.Allocator) ![]u8 {
+        _ = self;
+        _ = allocator;
+        return error.Unsupported;
+    }
+
+    pub fn state(self: Paths, allocator: std.mem.Allocator, id: []const u8, name: []const u8) ![]u8 {
+        _ = self;
+        _ = allocator;
+        _ = id;
+        _ = name;
+        return error.Unsupported;
+    }
+};
+
+pub fn buildPaths(allocator: std.mem.Allocator, data_dir: []const u8) !Paths {
+    _ = allocator;
+    _ = data_dir;
+    return error.Unsupported;
+}
+
 pub fn status(allocator: std.mem.Allocator, data_dir: []const u8) !Status {
     _ = allocator;
     _ = data_dir;

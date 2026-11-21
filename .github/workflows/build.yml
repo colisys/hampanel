@@ -150,7 +150,7 @@ jobs:
         working-directory: daemon/src/platform/linux/risk_gateway
         env:
           CGO_ENABLED: "0"
-        run: go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/daemon/zig-out/bin/hampanel-risk" main.go
+        run: GO111MODULE=off go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/daemon/zig-out/bin/hampanel-risk" .
 
       - name: Upload daemon
         uses: actions/upload-artifact@v4
@@ -243,7 +243,7 @@ jobs:
         working-directory: daemon/src/platform/linux/risk_gateway
         env:
           CGO_ENABLED: "0"
-        run: go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/daemon/zig-out/bin/hampanel-risk" main.go
+        run: GO111MODULE=off go build -trimpath -ldflags="-s -w" -o "$GITHUB_WORKSPACE/daemon/zig-out/bin/hampanel-risk" .
 
       - name: Upload daemon (musl)
         uses: actions/upload-artifact@v4

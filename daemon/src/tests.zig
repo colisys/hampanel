@@ -911,11 +911,17 @@ test "tamper manifest round trip and restore" {
     defer freeTamperStatus(allocator, after);
     try std.testing.expectEqual(@as(usize, 1), after.entries.len);
 
-    // Clear the attribute, then simulate the flag being lost (e.g. a remount)
-    // and confirm startup restore re-applies it.
-    const cleared = try tamper.unprotect(allocator, dir, target);
-    defer allocator.free(cleared.output);
-    try std.testing.expect(cleared.ok);
+    // Clear the attribute directly, then confirm startup restore re-applies it.
+    // `unprotect` is not used here on purpose: it also drops the path from the
+    // manifest, which is a deliberate removal, not the lost-flag case that
+    // restoreAll exists to repair.
+    {
+        const exec = @import("shared").exec;
+        const cleared = try exec.run(allocator, &.{ "chattr", "-i", target }, 64 * 1024);
+        defer allocator.free(cleared.stdout);
+        defer allocator.free(cleared.stderr);
+        try std.testing.expect(cleared.ok());
+    }
     const restored = try tamper.restoreAll(allocator, dir);
     try std.testing.expectEqual(@as(usize, 1), restored);
 
@@ -939,6 +945,9 @@ fn canAppendAsRoot(allocator: std.mem.Allocator, path: []const u8) bool {
     const exec = @import("shared").exec;
     const result = exec.run(allocator, &.{ "sh", "-c", "echo x >> \"$1\"", "sh", path }, 64 * 1024) catch
         return false;
+    // exec.run hands ownership of both buffers to the caller.
+    defer allocator.free(result.stdout);
+    defer allocator.free(result.stderr);
     return result.ok();
 }
 
@@ -1389,7 +1398,14 @@ test "selinux refuses reboot targets before relabel" {
     };
     for (allowed_units) |unit| try std.testing.expect(!selinux.isRebootUnit(unit));
 
-    // On a host without SELinux (this one) reboot must stay allowed, so the
-    // guard never locks an operator out for nothing.
-    try std.testing.expect(selinux.rebootAllowed(std.testing.allocator));
+    // The guard must not lock an operator out for nothing: on a host without
+    // SELinux, or one whose policy store is already relabelled, reboot stays
+    // allowed. A fresh RHEL-family host ships SELinux unlabelled for us, so
+    // assert against the reported status instead of assuming this host has none.
+    // `status` returns arena-owned data, so give it one.
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const status = try selinux.status(arena_state.allocator(), "/nonexistent-hampanel");
+    const expect_allowed = !status.present or status.relabelled;
+    try std.testing.expectEqual(expect_allowed, selinux.rebootAllowed(std.testing.allocator));
 }
