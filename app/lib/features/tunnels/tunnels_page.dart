@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
+import '../../ui/remote_picker.dart';
 import '../../core/models/tunnel_profile.dart';
 import '../../core/session.dart';
 import '../../core/tunnel_store.dart';
@@ -201,10 +202,12 @@ class _TunnelsPageState extends State<TunnelsPage> {
                         const SizedBox(width: 10),
                         Expanded(
                           flex: 2,
-                          child: _field(
-                            keyController,
-                            '私钥路径（可选）',
-                            hint: '~/.ssh/id_ed25519',
+                          child: RemotePathField(
+                            source: LocalDirectorySource(),
+                            controller: keyController,
+                            label: '私钥路径（可选）',
+                            allowFiles: true,
+                            hintText: '~/.ssh/id_ed25519',
                           ),
                         ),
                       ],

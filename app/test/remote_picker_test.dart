@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hampanel/ui/remote_picker.dart';
 import 'package:material_ui/material_ui.dart';
@@ -79,6 +81,62 @@ void main() {
     await tester.tap(find.text('清空'));
     await tester.pumpAndSettle();
     expect(find.text('已选择 0 项'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(result, isNull);
+  });
+
+  test('local disk source lists directories and files on demand', () async {
+    final dir = await Directory.systemTemp.createTemp('picker-local');
+    addTearDown(() => dir.delete(recursive: true));
+    await Directory('${dir.path}/sub').create();
+    await File('${dir.path}/note.txt').writeAsString('x');
+
+    final source = LocalDirectorySource(start: dir.path);
+    final all = await source.list(dir.path, includeFiles: true);
+    expect(
+      all.map((entry) => entry.name).toSet(),
+      containsAll(<String>['sub', 'note.txt']),
+    );
+
+    final dirsOnly = await source.list(dir.path);
+    expect(dirsOnly.map((entry) => entry.name), ['sub']);
+    expect(source.parentOf('${dir.path}/sub'), dir.path);
+
+    // A file can only be confirmed when the caller allows files.
+    final fileEntry = RemotePickerEntry(
+      name: 'note.txt',
+      path: '${dir.path}/note.txt',
+      isDirectory: false,
+    );
+    expect(source.selectableEntry(fileEntry, allowFiles: false), isFalse);
+    expect(source.selectableEntry(fileEntry, allowFiles: true), isTrue);
+  });
+
+  testWidgets('pathInputDialog shows a browse button for any tree', (
+    tester,
+  ) async {
+    // Real filesystem work inside a widget test must run outside the fake
+    // async zone, otherwise the future never completes.
+    final dir = await tester.runAsync(
+      () => Directory.systemTemp.createTemp('picker-dialog'),
+    );
+    addTearDown(() => dir!.delete(recursive: true));
+
+    String? result;
+    await _open(tester, (context) {
+      pathInputDialog(
+        context,
+        title: '保存',
+        label: '本机路径',
+        source: LocalDirectorySource(start: dir!.path),
+        allowFiles: true,
+      ).then((value) => result = value);
+    });
+
+    expect(find.byType(RemotePathField), findsOneWidget);
+    expect(find.byTooltip('浏览并选择文件'), findsOneWidget);
+    // Close the dialog so the pending future resolves and the test can finish.
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(result, isNull);

@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
+import '../../ui/remote_picker.dart';
 import '../../core/format.dart';
 import '../../core/file_results.dart';
 import '../../core/models/file_entry.dart';
@@ -530,10 +531,12 @@ class _FilesPageState extends State<FilesPage> {
       }
       return;
     }
-    final localPath = await textInputDialog(
+    final localPath = await pathInputDialog(
       context,
       title: '上传文件',
-      label: '本地文件绝对路径',
+      label: '本机文件路径',
+      source: LocalDirectorySource(),
+      allowFiles: true,
       confirmLabel: '上传',
     );
     if (localPath == null || localPath.trim().isEmpty) return;
@@ -562,11 +565,12 @@ class _FilesPageState extends State<FilesPage> {
       }
       return;
     }
-    final target = await textInputDialog(
+    final target = await pathInputDialog(
       context,
       title: '下载 ${entry.name}',
-      label: '保存到本地路径',
-      initial: entry.name,
+      label: '保存到本机路径',
+      source: LocalDirectorySource(),
+      allowFiles: true,
       confirmLabel: '下载',
     );
     if (target == null || target.trim().isEmpty) return;

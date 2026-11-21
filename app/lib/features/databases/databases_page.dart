@@ -6,6 +6,7 @@ import '../../core/api_client.dart';
 import '../../core/native_files.dart';
 import '../../core/session.dart';
 import '../../ui/layout.dart';
+import '../../ui/remote_picker.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../terminal/terminal_page.dart';
@@ -182,11 +183,19 @@ class _DatabasesPageState extends State<DatabasesPage> {
       final bytes = await api.downloadToBytes(url, {});
       if (!mounted || !await NativeFiles.save(name, bytes)) return;
     } else {
-      final body = await databaseDialog(context, '下载备份', '保存', [
-        'path',
-      ], message: '为「$name」选择新的本地文件路径。');
-      if (body == null || !mounted) return;
-      final file = File(body['path'] as String);
+      // The destination is on the client machine, and it is a path like any
+      // other, so it is browsed rather than typed.
+      final target = await pathInputDialog(
+        context,
+        title: '下载备份 $name',
+        label: '保存到本机路径',
+        source: LocalDirectorySource(),
+        allowFiles: true,
+        initial: name,
+        confirmLabel: '保存',
+      );
+      if (target == null || !mounted) return;
+      final file = File(target);
       if (!file.isAbsolute) throw const FormatException('请输入绝对路径');
       await file.create(exclusive: true);
       try {

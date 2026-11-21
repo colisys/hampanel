@@ -202,11 +202,12 @@ class _ImagesSectionState extends State<ImagesSection> {
   }
 
   Future<void> _import() async {
-    final path = await textInputDialog(
+    final path = await pathInputDialog(
       context,
       title: '导入镜像',
       label: '本机 tar 路径',
-      initial: Platform.environment['HOME'] ?? '',
+      source: LocalDirectorySource(),
+      allowFiles: true,
     );
     if (path == null || path.trim().isEmpty) return;
     try {
@@ -993,9 +994,11 @@ class _BuildDialogState extends State<_BuildDialog> {
                   hintText: '/srv/app',
                 ),
               ] else ...[
-                TextField(
+                RemotePathField(
+                  source: LocalDirectorySource(),
                   controller: _local,
-                  decoration: const InputDecoration(labelText: '本机 tar 上下文路径'),
+                  label: '本机 tar 上下文路径',
+                  allowFiles: true,
                 ),
               ],
               const SizedBox(height: 10),

@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
+import '../../ui/remote_picker.dart';
 import '../../core/enrollment.dart';
 import '../../core/ssh_installer.dart';
 import '../../ui/enrollment_trust.dart';
@@ -235,12 +236,12 @@ class _InstallPageState extends State<InstallPage> {
                     Row(
                       children: [
                         Expanded(
-                          child: TextField(
+                          child: RemotePathField(
+                            source: LocalDirectorySource(),
                             controller: _keyPath,
-                            decoration: const InputDecoration(
-                              labelText: '私钥路径',
-                              hintText: '/home/me/.ssh/id_ed25519',
-                            ),
+                            label: '私钥路径',
+                            allowFiles: true,
+                            hintText: '/home/me/.ssh/id_ed25519',
                           ),
                         ),
                         IconButton(

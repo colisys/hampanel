@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
+import '../../ui/remote_picker.dart';
 import '../../core/models/docker.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
@@ -81,10 +82,12 @@ class _JobDialogState extends State<_JobDialog> {
         Platform.environment['HOME'] ??
         Platform.environment['USERPROFILE'] ??
         '';
-    final target = await textInputDialog(
+    final target = await pathInputDialog(
       context,
       title: '保存产物',
       label: '本机路径',
+      source: LocalDirectorySource(),
+      allowFiles: true,
       initial: home.isEmpty ? 'export.tar' : '$home/Downloads/export.tar',
     );
     if (target == null || target.trim().isEmpty) return;

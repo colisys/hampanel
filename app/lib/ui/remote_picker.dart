@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
 
 import 'selection_toolbar.dart';
@@ -23,23 +25,65 @@ class RemotePickerEntry {
 }
 
 /// A hierarchy the picker can walk. Implementations may talk to the remote
-/// host (file system) or expose a fixed tree built by the caller (volumes,
-/// predefined mount points, ...).
+/// host (file system), the local machine, or expose a fixed tree built by the
+/// caller (volumes, predefined mount points, ...).
+///
+/// The picker itself must not know which kind it is holding: it asks these
+/// members for navigation, labels and selectability, so any tree works.
 abstract class RemotePickerSource {
   String get title;
 
-  Future<List<RemotePickerEntry>> list(String path);
+  /// Path shown when the picker opens with an empty path.
+  String get root => '';
+
+  /// Lists the children of [path]. [includeFiles] asks for files as well as
+  /// directories; sources that have no notion of files ignore it.
+  Future<List<RemotePickerEntry>> list(String path, {bool includeFiles = false});
+
+  /// Parent of [path], or null at the top of the tree.
+  String? parentOf(String path) => null;
+
+  /// Breadcrumb labels from the root to [path].
+  List<String> crumbsFor(String path) => path.isEmpty ? const [] : [path];
+
+  /// Whether [path] itself can be confirmed rather than only navigated into.
+  bool selectable(String path) => path.isNotEmpty;
+
+  /// Whether this entry can be confirmed. Tree sources allow picking leaves;
+  /// file-system sources allow files only when the caller asked for them.
+  bool selectableEntry(RemotePickerEntry entry, {required bool allowFiles}) =>
+      entry.isDirectory;
 }
 
 /// Walks directories on the remote host through `GET /api/v1/files`.
-class HostDirectorySource implements RemotePickerSource {
+class HostDirectorySource extends RemotePickerSource {
   HostDirectorySource(this.api, {this.root = '/'});
 
   final ApiClient api;
+  @override
   final String root;
 
   @override
   String get title => '选择远程目录';
+
+  @override
+  String? parentOf(String path) {
+    final trimmed = path.isEmpty ? root : path;
+    if (trimmed == '/' || trimmed.isEmpty) return null;
+    final slash = trimmed.lastIndexOf('/');
+    return slash <= 0 ? '/' : trimmed.substring(0, slash);
+  }
+
+  @override
+  List<String> crumbsFor(String path) {
+    final trimmed = path.isEmpty ? root : path;
+    final parts = trimmed.split('/').where((part) => part.isNotEmpty);
+    return ['/', ...parts];
+  }
+
+  @override
+  bool selectableEntry(RemotePickerEntry entry, {required bool allowFiles}) =>
+      entry.isDirectory || allowFiles;
 
   @override
   Future<List<RemotePickerEntry>> list(
@@ -70,6 +114,99 @@ class HostDirectorySource implements RemotePickerSource {
   }
 }
 
+/// Walks the machine the client runs on. Local paths are a tree like any other,
+/// so the same picker serves them: upload source, download destination, a local
+/// tar file, an SSH private key.
+class LocalDirectorySource extends RemotePickerSource {
+  LocalDirectorySource({String? start});
+
+  /// Where the picker opens when nothing is selected yet. Defaults to the home
+  /// directory so the operator does not start at `/` every time.
+  String? start;
+
+  @override
+  String get title => '选择本机路径';
+
+  @override
+  String get root {
+    final preferred = start;
+    if (preferred != null && preferred.isNotEmpty) return preferred;
+    final home =
+        Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+    if (home != null && home.isNotEmpty) return home;
+    return Platform.isWindows ? '' : '/';
+  }
+
+  @override
+  String? parentOf(String path) {
+    if (path.isEmpty) return null;
+    final normalized = path.replaceAll(r'\', '/');
+    final trimmed = normalized.length > 1 && normalized.endsWith('/')
+        ? normalized.substring(0, normalized.length - 1)
+        : normalized;
+    final slash = trimmed.lastIndexOf('/');
+    if (slash < 0) return null;
+    // A drive root such as C:/ stays the top of its own tree.
+    return slash == 0 ? (Platform.isWindows ? null : '/') : trimmed.substring(0, slash);
+  }
+
+  @override
+  List<String> crumbsFor(String path) {
+    if (path.isEmpty) return const [];
+    final normalized = path.replaceAll(r'\', '/');
+    final parts = normalized.split('/').where((part) => part.isNotEmpty);
+    return normalized.startsWith('/') ? ['/', ...parts] : parts.toList();
+  }
+
+  @override
+  bool selectableEntry(RemotePickerEntry entry, {required bool allowFiles}) =>
+      entry.isDirectory || allowFiles;
+
+  @override
+  Future<List<RemotePickerEntry>> list(
+    String path, {
+    bool includeFiles = false,
+  }) async {
+    final target = path.isEmpty ? root : path;
+    if (target.isEmpty) return _windowsRoots();
+    final entries = <RemotePickerEntry>[];
+    await for (final entity in Directory(target).list(followLinks: false)) {
+      final type = await FileSystemEntity.type(entity.path, followLinks: false);
+      final isDirectory = type == FileSystemEntityType.directory;
+      if (!isDirectory && !includeFiles) continue;
+      final name = entity.path
+          .split(RegExp(r'[/\\]'))
+          .lastWhere((part) => part.isNotEmpty, orElse: () => entity.path);
+      entries.add(
+        RemotePickerEntry(
+          name: name,
+          path: entity.path,
+          isDirectory: isDirectory,
+        ),
+      );
+    }
+    entries.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+    return entries;
+  }
+
+  /// Windows has no single root path, so the top level lists the drives.
+  List<RemotePickerEntry> _windowsRoots() {
+    final drives = <RemotePickerEntry>[];
+    for (var code = 'A'.codeUnitAt(0); code <= 'Z'.codeUnitAt(0); code++) {
+      final drive = '${String.fromCharCode(code)}:\\';
+      if (Directory(drive).existsSync()) {
+        drives.add(
+          RemotePickerEntry(name: drive, path: drive, isDirectory: true),
+        );
+      }
+    }
+    return drives;
+  }
+}
+
+
 /// One node of a caller-supplied tree.
 class RemotePickerNode {
   const RemotePickerNode({
@@ -88,7 +225,7 @@ class RemotePickerNode {
 }
 
 /// Fixed tree source. Useful for volumes or any non-file selection.
-class TreePickerSource implements RemotePickerSource {
+class TreePickerSource extends RemotePickerSource {
   TreePickerSource({required this.title, required this.nodes});
 
   @override
@@ -96,7 +233,10 @@ class TreePickerSource implements RemotePickerSource {
   final List<RemotePickerNode> nodes;
 
   @override
-  Future<List<RemotePickerEntry>> list(String path) async {
+  Future<List<RemotePickerEntry>> list(
+    String path, {
+    bool includeFiles = false,
+  }) async {
     final children = path.isEmpty ? nodes : _find(path)?.children ?? const [];
     return [
       for (final child in children)
@@ -109,8 +249,32 @@ class TreePickerSource implements RemotePickerSource {
     ];
   }
 
+  @override
+  String? parentOf(String path) {
+    if (path.isEmpty) return null;
+    final slash = path.lastIndexOf('/');
+    return slash <= 0 ? '' : path.substring(0, slash);
+  }
+
+  @override
+  List<String> crumbsFor(String path) {
+    final labels = <String>[];
+    var current = path;
+    while (current.isNotEmpty) {
+      labels.insert(0, labelOf(current));
+      final slash = current.lastIndexOf('/');
+      current = slash <= 0 ? '' : current.substring(0, slash);
+    }
+    return labels.isEmpty ? const ['全部'] : labels;
+  }
+
   /// Whether the path itself can be confirmed rather than only navigated.
+  @override
   bool selectable(String path) => _find(path)?.selectable ?? path.isEmpty;
+
+  @override
+  bool selectableEntry(RemotePickerEntry entry, {required bool allowFiles}) =>
+      selectable(entry.path);
 
   /// Human-readable name for a tree path.
   String labelOf(String path) {
@@ -215,10 +379,10 @@ class _RemotePickerDialogState<T> extends State<_RemotePickerDialog<T>> {
       _error = null;
     });
     try {
-      final source = widget.source;
-      final entries = source is HostDirectorySource
-          ? await source.list(path, includeFiles: widget.allowFiles)
-          : await source.list(path);
+      final entries = await widget.source.list(
+        path,
+        includeFiles: widget.allowFiles,
+      );
       if (!mounted || loadId != _loadId) return;
       setState(() {
         _entries = entries;
@@ -233,60 +397,22 @@ class _RemotePickerDialogState<T> extends State<_RemotePickerDialog<T>> {
     }
   }
 
-  List<String> get _crumbs {
-    final source = widget.source;
-    if (source is HostDirectorySource) {
-      final trimmed = _path.isEmpty ? source.root : _path;
-      final parts = trimmed.split('/').where((part) => part.isNotEmpty);
-      return ['/', ...parts];
-    }
-    if (source is TreePickerSource) {
-      final labels = <String>[];
-      var current = _path;
-      while (current.isNotEmpty) {
-        labels.insert(0, source.labelOf(current));
-        final slash = current.lastIndexOf('/');
-        current = slash <= 0 ? '' : current.substring(0, slash);
-      }
-      return labels.isEmpty ? const ['全部'] : labels;
-    }
-    return [_path];
-  }
+  List<String> get _crumbs => widget.source.crumbsFor(_path);
 
   void _up() {
-    final source = widget.source;
-    if (source is HostDirectorySource) {
-      final trimmed = _path.isEmpty ? source.root : _path;
-      if (trimmed == '/' || trimmed.isEmpty) return;
-      final slash = trimmed.lastIndexOf('/');
-      _load(slash <= 0 ? '/' : trimmed.substring(0, slash));
-      return;
-    }
-    if (source is TreePickerSource) {
-      if (_path.isEmpty) return;
-      final slash = _path.lastIndexOf('/');
-      _load(slash <= 0 ? '' : _path.substring(0, slash));
-    }
+    final parent = widget.source.parentOf(_path);
+    if (parent != null) _load(parent);
   }
 
-  String get _currentPath {
-    final source = widget.source;
-    return source is HostDirectorySource && _path.isEmpty ? source.root : _path;
-  }
+  String get _currentPath =>
+      _path.isEmpty ? widget.source.root : _path;
 
-  bool _selectable(String path) {
-    final source = widget.source;
-    if (source is TreePickerSource) {
-      return path.isNotEmpty && source.selectable(path);
-    }
-    return path.isNotEmpty;
-  }
+  bool _selectable(String path) =>
+      path.isNotEmpty && widget.source.selectable(path);
 
   bool _canSelectEntry(RemotePickerEntry entry) =>
       _selectable(entry.path) &&
-      (entry.isDirectory ||
-          widget.allowFiles ||
-          widget.source is TreePickerSource);
+      widget.source.selectableEntry(entry, allowFiles: widget.allowFiles);
 
   void _toggle(String path) {
     setState(() {
@@ -491,13 +617,17 @@ class _RemotePickerDialogState<T> extends State<_RemotePickerDialog<T>> {
   }
 }
 
-/// A text field for a remote host path with a browse button that opens
-/// [showRemotePicker]. Use this instead of a bare TextField anywhere the user
-/// would otherwise have to remember a server-side path.
+/// A text field for a path with a browse button that opens [showRemotePicker].
+/// Use this instead of a bare TextField anywhere the user would otherwise have
+/// to remember a path.
+///
+/// Pass [source] for any tree — the local disk, fixed nodes, or the remote host
+/// — or [api] as shorthand for a [HostDirectorySource].
 class RemotePathField extends StatelessWidget {
   const RemotePathField({
     super.key,
-    required this.api,
+    this.api,
+    this.source,
     required this.controller,
     required this.label,
     this.hintText,
@@ -508,9 +638,16 @@ class RemotePathField extends StatelessWidget {
     this.onPicked,
     this.onChanged,
     this.initialPath,
-  });
+  }) : assert(
+         api != null || source != null,
+         'RemotePathField needs either api or source',
+       );
 
-  final ApiClient api;
+  /// Remote host shorthand: a [HostDirectorySource] over [api].
+  final ApiClient? api;
+
+  /// Explicit tree; takes precedence, so local and fixed trees work too.
+  final RemotePickerSource? source;
   final TextEditingController controller;
   final String label;
   final String? hintText;
@@ -527,13 +664,16 @@ class RemotePathField extends StatelessWidget {
   final ValueChanged<String>? onChanged;
   final String? initialPath;
 
+  RemotePickerSource get _source =>
+      source ?? HostDirectorySource(api!, root: initialPath ?? '/');
+
   Future<void> _pick(BuildContext context) async {
     final picked = await showRemotePicker(
       context,
-      source: HostDirectorySource(api),
+      source: _source,
       initialPath: (initialPath ?? controller.text).trim(),
       allowFiles: allowFiles,
-      confirmLabel: allowFiles ? '选择' : '使用该目录',
+      confirmLabel: '选择',
     );
     if (picked == null) return;
     controller.text = picked;
@@ -552,7 +692,7 @@ class RemotePathField extends StatelessWidget {
         helperText: helperText,
         isDense: isDense,
         suffixIcon: IconButton(
-          tooltip: allowFiles ? '从远程主机选择文件' : '从远程主机选择目录',
+          tooltip: allowFiles ? '浏览并选择文件' : '浏览并选择目录',
           visualDensity: VisualDensity.compact,
           onPressed: enabled ? () => _pick(context) : null,
           icon: Icon(
@@ -565,4 +705,45 @@ class RemotePathField extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Single-line dialog for a path, with a browse button walking [source].
+///
+/// The plain [textInputDialog] forces the operator to remember a path by heart;
+/// this is the same dialog with the picker attached. Any tree works, so it
+/// serves the local disk as well as the remote host.
+Future<String?> pathInputDialog(
+  BuildContext context, {
+  required String title,
+  required String label,
+  required RemotePickerSource source,
+  String initial = '',
+  String confirmLabel = '确定',
+  bool allowFiles = false,
+}) async {
+  final controller = TextEditingController(text: initial);
+  final result = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: DialogBody(
+        maxWidth: 460,
+        child: RemotePathField(
+          source: source,
+          controller: controller,
+          label: label,
+          allowFiles: allowFiles,
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, controller.text),
+          child: Text(confirmLabel),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  return result;
 }

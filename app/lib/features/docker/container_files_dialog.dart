@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
+import '../../ui/remote_picker.dart';
 import '../../core/models/docker.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
@@ -176,10 +177,12 @@ class _ContainerFilesDialogState extends State<ContainerFilesDialog> {
   }
 
   Future<void> _upload() async {
-    final localPath = await textInputDialog(
+    final localPath = await pathInputDialog(
       context,
       title: '上传文件',
       label: '本机文件路径',
+      source: LocalDirectorySource(),
+      allowFiles: true,
       initial: Platform.environment['HOME'] ?? '',
     );
     if (localPath == null || localPath.trim().isEmpty) return;
@@ -204,10 +207,12 @@ class _ContainerFilesDialogState extends State<ContainerFilesDialog> {
         Platform.environment['HOME'] ??
         Platform.environment['USERPROFILE'] ??
         '';
-    final target = await textInputDialog(
+    final target = await pathInputDialog(
       context,
       title: '下载 ${entry.name}',
       label: '保存到本机路径',
+      source: LocalDirectorySource(),
+      allowFiles: true,
       initial: home.isEmpty ? entry.name : '$home/Downloads/${entry.name}',
     );
     if (target == null || target.trim().isEmpty) return;
