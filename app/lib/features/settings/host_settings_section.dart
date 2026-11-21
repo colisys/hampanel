@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../core/format.dart';
 import '../../core/session.dart';
 import '../../ui/theme.dart';
+import '../../ui/remote_picker.dart';
 import '../../ui/widgets.dart';
 
 /// 主机级系统设置：交换分区、时间同步、启动项与 hosts。
@@ -189,13 +190,16 @@ class _HostSettingsSectionState extends State<HostSettingsSection> {
                   children: [
                     SizedBox(
                       width: 240,
-                      child: TextField(
+                      // A block device is a host path; the picker starts at
+                      // /dev instead of making the operator recall a name.
+                      child: RemotePathField(
+                        api: _api,
                         controller: _swapDevice,
-                        decoration: const InputDecoration(
-                          labelText: '已有分区 / 设备',
-                          hintText: '/dev/vg0/swap 或 /dev/sdb2',
-                          isDense: true,
-                        ),
+                        label: '已有分区 / 设备',
+                        hintText: '/dev/vg0/swap 或 /dev/sdb2',
+                        allowFiles: true,
+                        isDense: true,
+                        initialPath: '/dev',
                       ),
                     ),
                     OutlinedButton(

@@ -506,6 +506,7 @@ class RemotePathField extends StatelessWidget {
     this.enabled = true,
     this.isDense = false,
     this.onPicked,
+    this.onChanged,
     this.initialPath,
   });
 
@@ -520,6 +521,10 @@ class RemotePathField extends StatelessWidget {
   final bool enabled;
   final bool isDense;
   final ValueChanged<String>? onPicked;
+
+  /// Fires on manual edits too, so callers that gate a button on the value do
+  /// not have to poll the controller.
+  final ValueChanged<String>? onChanged;
   final String? initialPath;
 
   Future<void> _pick(BuildContext context) async {
@@ -540,6 +545,7 @@ class RemotePathField extends StatelessWidget {
     return TextField(
       controller: controller,
       enabled: enabled,
+      onChanged: onChanged,
       decoration: InputDecoration(
         labelText: label,
         hintText: hintText,

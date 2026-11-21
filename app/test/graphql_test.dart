@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hampanel/features/graphql/graphql_client.dart';
 import 'package:hampanel/features/graphql/graphql_page.dart';
+import 'package:re_editor/re_editor.dart' as re;
 
 void main() {
   const endpoint = 'https://example.test/graphql';
@@ -44,14 +45,32 @@ void main() {
       expect(jsonDecode(body), {'query': query});
       return (status: 403, body: payload);
     });
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: GraphqlPage(client: client))));
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: GraphqlPage(client: client))),
+    );
+    // The endpoint is the only plain TextField; the query and the two JSON
+    // blocks are code editors now, so they are typed into via their editors.
     await tester.enterText(find.byType(TextField).at(0), endpoint);
-    await tester.enterText(find.byType(TextField).at(1), query);
+    // The query and the two JSON blocks are code editors; drive them through
+    // the editor's own controller, the way code_editor_test does.
+    final editors = tester
+        .widgetList<re.CodeEditor>(find.byType(re.CodeEditor))
+        .toList();
+    expect(editors, hasLength(3));
+    editors.first.controller!.text = query;
+    await tester.pump();
     expect(calls, 0);
+    // The request card is taller than the default 600px test viewport, so the
+    // button has to be scrolled into view before tapping.
+    await tester.ensureVisible(find.text('执行查询'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('执行查询'));
     await tester.pumpAndSettle();
     expect(calls, 1);
     expect(find.text('HTTP 403'), findsOneWidget);
-    expect(jsonDecode(tester.widget<SelectableText>(find.byType(SelectableText)).data!), jsonDecode(payload));
+    expect(
+      jsonDecode(tester.widget<SelectableText>(find.byType(SelectableText)).data!),
+      jsonDecode(payload),
+    );
   });
 }

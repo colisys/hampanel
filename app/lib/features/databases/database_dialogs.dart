@@ -1,5 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/api_client.dart';
+import '../../ui/remote_picker.dart';
+
 const engineLabels = {
   'mysql': 'MySQL',
   'redis': 'Redis',
@@ -30,6 +33,7 @@ Future<Map<String, dynamic>?> databaseDialog(
   String? message,
   bool instance = false,
   bool editing = false,
+  ApiClient? api,
 }) {
   final form = GlobalKey<FormState>();
   final values = <String, dynamic>{
@@ -120,7 +124,16 @@ Future<Map<String, dynamic>?> databaseDialog(
                 ],
                 for (final key in fields)
                   if (key != 'container' || values['mode'] == 'container')
-                    input(key),
+                    // A socket lives on the daemon host, so it is picked rather
+                    // than typed; everything else here is ordinary text.
+                    if (key == 'socket' && api != null)
+                      _SocketField(
+                        api: api,
+                        initial: '${values['socket'] ?? ''}',
+                        onChanged: (v) => values['socket'] = v,
+                      )
+                    else
+                      input(key),
               ],
             ),
           ),
@@ -150,6 +163,47 @@ Future<Map<String, dynamic>?> databaseDialog(
           ],
         );
       },
+    ),
+  );
+}
+
+/// The unix socket is a host path, so it gets the remote picker. Kept as its
+/// own widget because RemotePathField needs a persistent controller while this
+/// dialog is a stateless builder.
+class _SocketField extends StatefulWidget {
+  const _SocketField({
+    required this.api,
+    required this.initial,
+    required this.onChanged,
+  });
+
+  final ApiClient api;
+  final String initial;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_SocketField> createState() => _SocketFieldState();
+}
+
+class _SocketFieldState extends State<_SocketField> {
+  late final _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 8),
+    child: RemotePathField(
+      api: widget.api,
+      controller: _controller,
+      label: fieldLabels['socket']!,
+      allowFiles: true,
+      hintText: '/var/run/mysqld/mysqld.sock',
+      onPicked: widget.onChanged,
     ),
   );
 }

@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
+import '../../ui/theme.dart';
+import '../../ui/widgets.dart';
 
 const _path = '/api/v1/notifications';
 const _sections = {
@@ -17,7 +19,7 @@ const _sections = {
     'ntfy_server': '服务器地址',
     'ntfy_topic': '主题',
     'ntfy_token': '访问令牌（可选）',
-    'ntfy_priority': '优先级',
+    'ntfy_priority': '优先级（min/low/default/high/urgent/max 或 1-5）',
     'ntfy_tags': '标签（逗号分隔）',
   },
   '通知事件': {
@@ -155,35 +157,77 @@ class _NotificationSettingsState extends State<NotificationSettings> {
   @override
   Widget build(BuildContext context) {
     if (_draft == null) {
-      return _busy ? const CircularProgressIndicator() : Column(children: [
-        Text(_message),
-        TextButton(onPressed: _load, child: const Text('重试')),
-      ]);
+      return _busy
+          ? const CircularProgressIndicator()
+          : Column(
+              children: [
+                Text(_message),
+                TextButton(onPressed: _load, child: const Text('重试')),
+              ],
+            );
     }
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 720),
-      child: Form(key: _form, child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        spacing: 10,
-        children: [
-          const Text('推送配置保存在当前服务端。请先保存更改，再发送测试通知。'),
-          for (final section in _sections.entries) ...[
-            Text(section.key, style: Theme.of(context).textTheme.titleMedium),
-            for (final field in section.value.entries) _field(field.key, field.value),
-          ],
-          Wrap(spacing: 8, children: [
-            FilledButton(onPressed: _busy || !_dirty ? null : () => _submit(), child: const Text('保存通知设置')),
-            for (final name in ['Bark', 'ntfy'])
-              OutlinedButton(
-                onPressed: _busy || _dirty || _draft!['${name.toLowerCase()}_enabled'] != true
-                    ? null : () => _submit(name.toLowerCase()),
-                child: Text('测试 $name'),
+      child: Form(
+        key: _form,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '推送配置保存在当前服务端。请先保存更改，再发送测试通知。',
+              style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+            ),
+            const SizedBox(height: 12),
+            // One card per concern, matching the system settings pages: a flat
+            // list of 20 fields was hard to scan and gave every provider equal
+            // weight.
+            for (final section in _sections.entries) ...[
+              PanelCard(
+                title: section.key,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final (index, field)
+                        in section.value.entries.indexed) ...[
+                      if (index > 0) const SizedBox(height: 10),
+                      _field(field.key, field.value),
+                    ],
+                  ],
+                ),
               ),
-          ]),
-          if (_busy) const LinearProgressIndicator(),
-          if (_message.isNotEmpty) Text(_message),
-        ],
-      )),
+              const SizedBox(height: 12),
+            ],
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton(
+                  onPressed: _busy || !_dirty ? null : () => _submit(),
+                  child: const Text('保存通知设置'),
+                ),
+                for (final name in ['Bark', 'ntfy'])
+                  OutlinedButton(
+                    onPressed:
+                        _busy ||
+                            _dirty ||
+                            _draft!['${name.toLowerCase()}_enabled'] != true
+                        ? null
+                        : () => _submit(name.toLowerCase()),
+                    child: Text('测试 $name'),
+                  ),
+              ],
+            ),
+            if (_busy) ...[
+              const SizedBox(height: 10),
+              const LinearProgressIndicator(),
+            ],
+            if (_message.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(_message),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }

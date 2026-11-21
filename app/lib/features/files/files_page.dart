@@ -1,7 +1,5 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../ui/selection_toolbar.dart';
-
 import '../../core/api_client.dart';
 import '../../core/format.dart';
 import '../../core/file_results.dart';
@@ -272,26 +270,96 @@ class _FilesPageState extends State<FilesPage> {
     }
   }
 
-  Widget _selectionControls(double horizontal) => Padding(
-    padding: EdgeInsets.fromLTRB(horizontal, 0, horizontal, 8),
-    child: Wrap(
-      spacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        Semantics(
-          liveRegion: true,
-          child: Text('已选择 ${_selectedPaths.length} 项'),
-        ),
-        OutlinedButton.icon(
-          onPressed: _deleting || _selectedPaths.isEmpty
-              ? null
-              : _deleteSelected,
-          icon: const Icon(Icons.delete_outline, size: 16),
-          label: const Text('移入回收站'),
-        ),
-      ],
-    ),
-  );
+  /// Mobile counterparts of [_selectionItems]: the same actions as dock
+  /// buttons, shown only when there is something to select.
+  List<ActionDockItem> _dockSelectionItems() {
+    if (_loading || _error != null || _entries.isEmpty) return const [];
+    final visible = _entries.map((entry) => entry.path).toSet();
+    void apply(Set<String> paths) => setState(() {
+      _selectedPaths
+        ..clear()
+        ..addAll(paths);
+    });
+    return [
+      ActionDockItem(
+        icon: Icons.done_all,
+        label: '已选择 ${_selectedPaths.length} 项',
+        onPressed: null,
+      ),
+      ActionDockItem(
+        icon: Icons.select_all,
+        label: '全选',
+        onPressed: _deleting || _selectedPaths.containsAll(visible)
+            ? null
+            : () => apply(_selectedPaths.union(visible)),
+      ),
+      ActionDockItem(
+        icon: Icons.flip_to_back,
+        label: '反选',
+        onPressed: _deleting || visible.isEmpty
+            ? null
+            : () => apply(
+                _selectedPaths
+                    .difference(visible)
+                    .union(visible.difference(_selectedPaths)),
+              ),
+      ),
+      ActionDockItem(
+        icon: Icons.deselect,
+        label: '清空',
+        onPressed: _deleting || _selectedPaths.isEmpty ? null : () => apply({}),
+      ),
+      ActionDockItem(
+        icon: Icons.delete_outline,
+        label: '移入回收站',
+        danger: true,
+        onPressed: _deleting || _selectedPaths.isEmpty ? null : _deleteSelected,
+      ),
+    ];
+  }
+
+  /// Selection actions, rendered next to the creation controls. Returns an
+  /// empty list when nothing is selectable, so the row stays clean in an empty
+  /// directory.
+  List<Widget> _selectionItems({required bool enabled}) {
+    if (_loading || _error != null || _entries.isEmpty) return const [];
+    final visible = _entries.map((entry) => entry.path).toSet();
+    void apply(Set<String> paths) => setState(() {
+      _selectedPaths
+        ..clear()
+        ..addAll(paths);
+    });
+    return [
+      Text('已选择 ${_selectedPaths.length} 项'),
+      TextButton(
+        onPressed: enabled && !_selectedPaths.containsAll(visible)
+            ? () => apply(_selectedPaths.union(visible))
+            : null,
+        child: const Text('全选'),
+      ),
+      TextButton(
+        onPressed: enabled && visible.isNotEmpty
+            ? () => apply(
+                _selectedPaths
+                    .difference(visible)
+                    .union(visible.difference(_selectedPaths)),
+              )
+            : null,
+        child: const Text('反选'),
+      ),
+      TextButton(
+        onPressed: enabled && _selectedPaths.isNotEmpty
+            ? () => apply({})
+            : null,
+        child: const Text('清空'),
+      ),
+      OutlinedButton.icon(
+        onPressed: enabled && _selectedPaths.isNotEmpty ? _deleteSelected : null,
+        icon: const Icon(Icons.delete_outline, size: 16),
+        label: const Text('移入回收站'),
+      ),
+    ];
+  }
 
   Widget _selectionCheckbox(FileEntry entry) => Semantics(
     label: '选择 ${entry.name}',
@@ -558,6 +626,7 @@ class _FilesPageState extends State<FilesPage> {
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 OutlinedButton.icon(
                   onPressed: _createFolder,
@@ -579,6 +648,9 @@ class _FilesPageState extends State<FilesPage> {
                   icon: const Icon(Icons.delete_outline, size: 16),
                   label: const Text('回收站'),
                 ),
+                // Selection actions belong with the creation controls rather
+                // than in a strip of their own above the list.
+                ..._selectionItems(enabled: !_deleting),
               ],
             ),
           ),
@@ -614,8 +686,6 @@ class _FilesPageState extends State<FilesPage> {
         ),
         if (_error != null)
           ErrorBanner(message: _error!, onRetry: () => _load(_path)),
-        if (!_loading && _error == null && _entries.isNotEmpty)
-          _selectionControls(horizontal),
         Expanded(
           child: _loading
               ? const LoadingView()
@@ -648,17 +718,6 @@ class _FilesPageState extends State<FilesPage> {
                   ),
                 ),
         ),
-        if (!_loading && _error == null && _entries.isNotEmpty)
-          SelectionToolbar(
-            selected: _selectedPaths,
-            visible: _entries.map((entry) => entry.path).toSet(),
-            enabled: !_deleting,
-            onChanged: (paths) => setState(() {
-              _selectedPaths
-                ..clear()
-                ..addAll(paths);
-            }),
-          ),
         if (compact)
           ActionDock(
             actions: [
@@ -682,6 +741,9 @@ class _FilesPageState extends State<FilesPage> {
                 label: '回收站',
                 onPressed: _openRecycle,
               ),
+              // Selection actions live in the same rail: on a phone they were
+              // previously a separate strip that pushed the list down.
+              ..._dockSelectionItems(),
             ],
           ),
       ],

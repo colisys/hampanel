@@ -3,6 +3,7 @@ import 'package:hampanel/core/api_client.dart';
 import 'package:hampanel/core/session.dart';
 import 'package:hampanel/features/recycle/recycle_page.dart';
 import 'package:hampanel/features/files/files_page.dart';
+import 'package:hampanel/ui/layout.dart';
 import 'package:material_ui/material_ui.dart';
 
 class _Session extends ChangeNotifier implements PanelSession {
@@ -111,6 +112,19 @@ void main() {
       await tester.tap(find.byType(Checkbox).first);
       await tester.pumpAndSettle();
       expect(find.text('已选择 1 项'), findsOneWidget);
+      final dock = find.byType(ActionDock);
+      if (dock.evaluate().isNotEmpty) {
+        // On a phone the selection actions live in the horizontally scrolling
+        // action rail; scroll them into view before tapping.
+        await tester.scrollUntilVisible(
+          find.text('反选'),
+          80,
+          scrollable: find.descendant(
+            of: dock,
+            matching: find.byType(Scrollable),
+          ),
+        );
+      }
       await tester.tap(find.text('反选'));
       await tester.pumpAndSettle();
       expect(

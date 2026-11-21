@@ -665,17 +665,25 @@ class _ImageCard extends StatelessWidget {
                 ),
               ],
             ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
+            // The actions belong on the right edge of the card; a plain Wrap
+            // left-aligns them and leaves a wide empty gutter on desktop.
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                IconButton(
-                  tooltip: '更新',
-                  visualDensity: VisualDensity.compact,
-                  onPressed: onUpdate,
-                  icon: const Icon(Icons.sync, size: 18),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: '更新',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: onUpdate,
+                      icon: const Icon(Icons.sync, size: 18),
+                    ),
+                    _menu(),
+                  ],
                 ),
-                _menu(),
               ],
             ),
           ],

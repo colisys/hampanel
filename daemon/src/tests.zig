@@ -6,6 +6,7 @@ test {
     if (@import("builtin").os.tag == .linux or @import("builtin").os.tag == .windows) _ = @import("app.zig");
     _ = @import("api/docker_images.zig");
     _ = @import("api/docker_addresses.zig");
+    _ = @import("api/docker_compose.zig");
     _ = @import("compat");
     _ = @import("db.zig");
     _ = @import("database.zig");

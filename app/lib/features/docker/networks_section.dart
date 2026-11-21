@@ -208,8 +208,10 @@ class _NetworksSectionState extends State<NetworksSection> {
                                 color: hampanelMuted,
                               ),
                             ),
-                            Wrap(
-                              spacing: 6,
+                            // Right-aligned like the other container cards, so
+                            // the action does not sit under the title text.
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
                               children: [
                                 IconButton(
                                   tooltip: '删除',

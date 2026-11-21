@@ -387,52 +387,60 @@ class _ComposeCard extends StatelessWidget {
                 project.status,
                 style: TextStyle(fontSize: 11, color: hampanelMuted),
               ),
-            Wrap(
-              spacing: 4,
+            // Actions sit on the right edge; a bare Wrap left-aligns them and
+            // leaves the card looking collapsed on a wide screen.
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                if (project.managed) ...[
-                  IconButton(
-                    tooltip: '启动',
-                    onPressed: () => onAction('up'),
-                    icon: const Icon(Icons.play_arrow, size: 18),
-                  ),
-                  IconButton(
-                    tooltip: '重启',
-                    onPressed: () => onAction('restart'),
-                    icon: const Icon(Icons.restart_alt, size: 18),
-                  ),
-                  IconButton(
-                    tooltip: '停止',
-                    onPressed: () => onAction('down'),
-                    icon: const Icon(Icons.stop, size: 18),
-                  ),
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_horiz, size: 18),
-                    onSelected: (value) {
-                      switch (value) {
-                        case 'edit':
-                          onEdit();
-                        case 'logs':
-                          onLogs();
-                        case 'pull':
-                          onAction('pull');
-                        case 'delete':
-                          onDelete();
-                      }
-                    },
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(value: 'edit', child: Text('编辑配置')),
-                      PopupMenuItem(value: 'logs', child: Text('日志')),
-                      PopupMenuItem(value: 'pull', child: Text('拉取镜像')),
-                      PopupMenuItem(value: 'delete', child: Text('删除')),
-                    ],
-                  ),
-                ] else
-                  TextButton.icon(
-                    onPressed: onAdopt,
-                    icon: const Icon(Icons.move_to_inbox_outlined, size: 16),
-                    label: const Text('接管'),
-                  ),
+                Wrap(
+                  spacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (project.managed) ...[
+                      IconButton(
+                        tooltip: '启动',
+                        onPressed: () => onAction('up'),
+                        icon: const Icon(Icons.play_arrow, size: 18),
+                      ),
+                      IconButton(
+                        tooltip: '重启',
+                        onPressed: () => onAction('restart'),
+                        icon: const Icon(Icons.restart_alt, size: 18),
+                      ),
+                      IconButton(
+                        tooltip: '停止',
+                        onPressed: () => onAction('down'),
+                        icon: const Icon(Icons.stop, size: 18),
+                      ),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_horiz, size: 18),
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'edit':
+                              onEdit();
+                            case 'logs':
+                              onLogs();
+                            case 'pull':
+                              onAction('pull');
+                            case 'delete':
+                              onDelete();
+                          }
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(value: 'edit', child: Text('编辑配置')),
+                          PopupMenuItem(value: 'logs', child: Text('日志')),
+                          PopupMenuItem(value: 'pull', child: Text('拉取镜像')),
+                          PopupMenuItem(value: 'delete', child: Text('删除')),
+                        ],
+                      ),
+                    ] else
+                      TextButton.icon(
+                        onPressed: onAdopt,
+                        icon: const Icon(Icons.move_to_inbox_outlined, size: 16),
+                        label: const Text('接管'),
+                      ),
+                  ],
+                ),
               ],
             ),
           ],

@@ -361,36 +361,37 @@ class _ContainerCard extends StatelessWidget {
                 ),
               ],
               // Actions live at the end of the card so the title row stays
-              // readable on phones.
+              // readable on phones. They must not pile up on the left edge of a
+              // wide card: `Wrap` alone left-aligns and strands the menu button
+              // far from the rest, so the row is spread instead.
               const SizedBox(height: 10),
               Divider(height: 1, color: hampanelBorder),
               const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  _CardAction(
-                    icon: Icons.open_in_new,
-                    label: '详情',
-                    onPressed: onOpen,
-                  ),
-                  _CardAction(
-                    icon: Icons.terminal,
-                    label: '终端',
-                    onPressed: running ? onTerminal : null,
-                  ),
-                  _CardAction(
-                    icon: Icons.receipt_long_outlined,
-                    label: '日志',
-                    onPressed: onLogs,
-                  ),
-                  _CardAction(
-                    icon: Icons.folder_open_outlined,
-                    label: '文件',
-                    onPressed: running ? onFiles : null,
-                  ),
-                  PopupMenuButton<String>(
+              Builder(
+                builder: (context) {
+                  final actions = <Widget>[
+                    _CardAction(
+                      icon: Icons.open_in_new,
+                      label: '详情',
+                      onPressed: onOpen,
+                    ),
+                    _CardAction(
+                      icon: Icons.terminal,
+                      label: '终端',
+                      onPressed: running ? onTerminal : null,
+                    ),
+                    _CardAction(
+                      icon: Icons.receipt_long_outlined,
+                      label: '日志',
+                      onPressed: onLogs,
+                    ),
+                    _CardAction(
+                      icon: Icons.folder_open_outlined,
+                      label: '文件',
+                      onPressed: running ? onFiles : null,
+                    ),
+                  ];
+                  final menu = PopupMenuButton<String>(
                     icon: const Icon(Icons.more_horiz, size: 18),
                     onSelected: (value) {
                       switch (value) {
@@ -422,8 +423,29 @@ class _ContainerCard extends StatelessWidget {
                       const PopupMenuItem(value: 'note', child: Text('备注')),
                       const PopupMenuItem(value: 'rm', child: Text('删除')),
                     ],
-                  ),
-                ],
+                  );
+                  return Row(
+                    children: [
+                      // Scrolling keeps the menu reachable on a phone while the
+                      // buttons still start at the left edge.
+                      Flexible(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              for (final action in actions) ...[
+                                action,
+                                const SizedBox(width: 6),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      menu,
+                    ],
+                  );
+                },
               ),
             ],
           ),

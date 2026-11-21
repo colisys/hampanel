@@ -6,6 +6,7 @@ import '../../core/api_client.dart';
 import '../../core/native_files.dart';
 import '../../core/session.dart';
 import '../../ui/layout.dart';
+import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import '../terminal/terminal_page.dart';
 import 'database_dialogs.dart';
@@ -26,6 +27,11 @@ class _DatabasesPageState extends State<DatabasesPage> {
   _Json? instance;
   String? database;
   bool busy = false;
+
+  /// Empty means "show every engine"; otherwise only that engine's instances
+  /// are listed. Mirrors the runtimes page, where the left rail switches the
+  /// category instead of everything piling into one list.
+  String _engineFilter = '';
 
   String get instancePath =>
       '$_root/${Uri.encodeComponent(instance!['id'].toString())}';
@@ -89,6 +95,7 @@ class _DatabasesPageState extends State<DatabasesPage> {
       instance: true,
       editing: item != null,
       initial: item ?? {},
+      api: api,
     );
     if (body == null || !mounted) return;
     if (item == null) {
@@ -207,8 +214,16 @@ class _DatabasesPageState extends State<DatabasesPage> {
       child: action('登记实例', () => registration()),
     ),
     if ((data['items'] as List).isEmpty)
-      const ListTile(title: Text('暂无实例，请先登记数据库连接。')),
+      const ListTile(title: Text('暂无实例，请先登记数据库连接。'))
+    else if (_engineFilter.isNotEmpty &&
+        !(data['items'] as List).any((item) => item['engine'] == _engineFilter))
+      ListTile(
+        title: Text(
+          '暂无 ${engineLabels[_engineFilter] ?? _engineFilter} 实例；可切换到「全部」查看其它引擎。',
+        ),
+      ),
     for (final item in (data['items'] as List).cast<_Json>())
+      if (_engineFilter.isEmpty || item['engine'] == _engineFilter)
       ListTile(
         leading: const Icon(Icons.storage),
         title: Text(item['name']),
@@ -293,6 +308,73 @@ class _DatabasesPageState extends State<DatabasesPage> {
     ];
   }
 
+  static const _engineOrder = [
+    'mysql',
+    'mariadb',
+    'postgres',
+    'mongo',
+    'redis',
+  ];
+
+  List<String> get _engineLabels => [
+    '全部',
+    for (final engine in _engineOrder) engineLabels[engine] ?? engine,
+  ];
+
+  int get _engineIndex {
+    if (_engineFilter.isEmpty) return 0;
+    final index = _engineOrder.indexOf(_engineFilter);
+    return index < 0 ? 0 : index + 1;
+  }
+
+  void _selectEngine(int index) {
+    setState(() {
+      _engineFilter = index == 0 ? '' : _engineOrder[index - 1];
+    });
+  }
+
+  Widget _withEngineNav(Widget list) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 760;
+        if (narrow) {
+          return Column(
+            children: [
+              Expanded(child: list),
+              Container(
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: hampanelBorder),
+                  ),
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+                child: SafeArea(
+                  top: false,
+                  child: SubNavMenu(
+                    items: _engineLabels,
+                    index: _engineIndex,
+                    onChanged: _selectEngine,
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SubNav(
+              items: _engineLabels,
+              index: _engineIndex,
+              onChanged: _selectEngine,
+            ),
+            Expanded(child: list),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Column(
     children: [
@@ -338,8 +420,8 @@ class _DatabasesPageState extends State<DatabasesPage> {
                 );
               }
               final data = state.requireData;
-              return ListView(
-                key: ValueKey((instance?['id'], database)),
+              final list = ListView(
+                key: ValueKey((instance?['id'], database, _engineFilter)),
                 padding: pageContentPadding(context),
                 children: instance == null
                     ? instances(data)
@@ -347,6 +429,9 @@ class _DatabasesPageState extends State<DatabasesPage> {
                     ? overview(data)
                     : details(data),
               );
+              // The engine rail only makes sense while browsing instances; once
+              // an instance is open the page drills into its contents.
+              return instance == null ? _withEngineNav(list) : list;
             },
           ),
         ),

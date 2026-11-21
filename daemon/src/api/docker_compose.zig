@@ -29,6 +29,7 @@ const External = struct {
 pub fn index(ctx: *context.Context) anyerror!void {
     var projects = std.array_list.Managed(Project).init(ctx.arena);
     try appendManaged(ctx, &projects);
+    try appendStoreApps(ctx, &projects);
     const socket = engine_mod.socketFromDb(ctx.arena, ctx.app.db);
     const engine = engine_mod.detect(ctx.arena, socket) catch {
         try ctx.json(.{ .projects = projects.items });
@@ -420,7 +421,7 @@ fn managed(ctx: *context.Context, name: []const u8) !?Project {
     );
     defer statement.deinit();
     try statement.bind(&.{.{ .text = name }});
-    if (!(try statement.step())) return null;
+    if (!(try statement.step())) return storeAppProject(ctx, name);
     const files_json = try statement.dupeColumnText(ctx.arena, 3);
     return .{
         .name = try statement.dupeColumnText(ctx.arena, 0),
@@ -430,6 +431,58 @@ fn managed(ctx: *context.Context, name: []const u8) !?Project {
         .adopted = statement.columnInt(4) != 0,
         .managed = true,
     };
+}
+
+/// Store-installed compose apps live at `<data_dir>/apps/<slug>/compose.yml`
+/// under project name `hampanel-<slug>`. They were invisible to the compose
+/// page before, so the container detail page told users to edit a project that
+/// was not listed anywhere. Treating them like managed projects makes them
+/// editable and operable from the same page.
+fn storeAppProject(ctx: *context.Context, name: []const u8) ?Project {
+    const slug = storeSlug(name) orelse return null;
+    const path = std.fs.path.join(ctx.arena, &.{
+        ctx.app.config.data_dir, "apps", slug, "compose.yml",
+    }) catch return null;
+    compat.cwd().access(path, .{}) catch return null;
+    const files = ctx.arena.alloc([]const u8, 1) catch return null;
+    files[0] = "compose.yml";
+    return .{
+        .name = name,
+        .dir = std.fs.path.dirname(path) orelse "",
+        .source_dir = "",
+        .files = files,
+        .adopted = false,
+        .managed = true,
+    };
+}
+
+fn storeSlug(project_name: []const u8) ?[]const u8 {
+    const prefix = "hampanel-";
+    if (!std.mem.startsWith(u8, project_name, prefix)) return null;
+    const slug = project_name[prefix.len..];
+    return if (slug.len == 0) null else slug;
+}
+
+fn appendStoreApps(ctx: *context.Context, projects: *std.array_list.Managed(Project)) !void {
+    const apps_dir = try std.fs.path.join(ctx.arena, &.{ ctx.app.config.data_dir, "apps" });
+    var dir = compat.openDirAny(apps_dir, true) catch return;
+    defer dir.close();
+    var it = dir.iterate();
+    while (it.next() catch null) |entry| {
+        if (entry.kind != .directory) continue;
+        const project_name = std.fmt.allocPrint(ctx.arena, "hampanel-{s}", .{entry.name}) catch continue;
+        const project = storeAppProject(ctx, project_name) orelse continue;
+        // A project already registered in the table wins; skip the duplicate.
+        var duplicate = false;
+        for (projects.items) |existing| {
+            if (std.mem.eql(u8, existing.name, project.name)) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate) continue;
+        try projects.append(project);
+    }
 }
 
 fn insertProject(ctx: *context.Context, project: Project) !void {
@@ -545,7 +598,7 @@ fn readMain(ctx: *context.Context, project: Project) ![]const u8 {
 }
 
 fn readAbsolute(ctx: *context.Context, path: []const u8) ![]const u8 {
-    var file = try compat.openFileAbsolute(path, .{});
+    var file = try compat.openFileAny(path, .{});
     defer file.close();
     return file.readToEndAlloc(ctx.arena, max_compose);
 }
@@ -556,7 +609,7 @@ fn writeMain(ctx: *context.Context, dir: []const u8, content: []const u8) !void 
 
 fn writeFile(ctx: *context.Context, dir: []const u8, name: []const u8, content: []const u8) !void {
     const path = try std.fs.path.join(ctx.arena, &.{ dir, name });
-    var file = try compat.createFileAbsolute(path, .{ .truncate = true, .mode = 0o600 });
+    var file = try compat.createFileAny(path, .{ .truncate = true, .mode = 0o600 });
     defer file.close();
     try file.writeAll(content);
 }
@@ -602,4 +655,16 @@ fn field(value: std.json.Value, key: []const u8) []const u8 {
 fn textOf(result: exec.Result) []const u8 {
     if (result.stderr.len > 0) return result.stderr;
     return result.stdout;
+}
+
+test "store app projects are addressed as hampanel-<slug>" {
+    // The compose page addresses a project by the label the container carries,
+    // which store installs set to `hampanel-<slug>`; the slug is the directory
+    // under apps/.
+    try std.testing.expectEqualStrings("nginx", storeSlug("hampanel-nginx").?);
+    try std.testing.expectEqualStrings("pure-ftpd", storeSlug("hampanel-pure-ftpd").?);
+    // Anything else is a managed or external project, not a store app.
+    try std.testing.expect(storeSlug("nginx") == null);
+    try std.testing.expect(storeSlug("hampanel-") == null);
+    try std.testing.expect(storeSlug("my-hampanel-nginx") == null);
 }

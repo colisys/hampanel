@@ -49,8 +49,17 @@ class ServiceCard extends StatelessWidget {
                   ),
               ],
             ),
-            StatusPill(text: service.active, good: service.running),
-            ServiceActions(onAction: onAction, onEdit: onEdit, onLogs: onLogs),
+            const SizedBox(height: 6),
+            // Status on the left, menu on the right: a bare Column stacked both
+            // against the left edge of a wide card, which is what made the card
+            // look collapsed.
+            Row(
+              children: [
+                StatusPill(text: service.active, good: service.running),
+                const Spacer(),
+                ServiceActions(onAction: onAction, onEdit: onEdit, onLogs: onLogs),
+              ],
+            ),
           ],
         ),
       ),

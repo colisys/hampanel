@@ -249,6 +249,39 @@ pub fn cwd() Dir {
     return .{ .inner = .cwd() };
 }
 
+/// Opens a file whose path may be absolute or relative to the working
+/// directory. The *Absolute helpers assert on relative input, which turns a
+/// relative `data_dir` into a panic instead of an error.
+pub fn openFileAny(sub_path: []const u8, options: OpenOptions) !File {
+    if (std.Io.Dir.path.isAbsolute(sub_path)) return openFileAbsolute(sub_path, options);
+    return .{ .inner = try std.Io.Dir.cwd().openFile(io(), sub_path, .{
+        .mode = options.mode,
+        .allow_directory = options.allow_directory,
+        .path_only = options.path_only,
+        .lock = options.lock,
+    }) };
+}
+
+pub fn createFileAny(sub_path: []const u8, options: CreateOptions) !File {
+    if (std.Io.Dir.path.isAbsolute(sub_path)) return createFileAbsolute(sub_path, options);
+    return .{ .inner = try std.Io.Dir.cwd().createFile(io(), sub_path, .{
+        .read = options.read,
+        .truncate = options.truncate,
+        .exclusive = options.exclusive,
+        .lock = options.lock,
+        .permissions = @fromBackingInt(@intCast(options.mode)),
+    }) };
+}
+
+pub fn openDirAny(sub_path: []const u8, iterate: bool) !Dir {
+    if (std.Io.Dir.path.isAbsolute(sub_path)) return openDirAbsolute(sub_path, .{ .iterate = iterate });
+    return .{ .inner = try std.Io.Dir.cwd().openDir(io(), sub_path, .{
+        .access_sub_paths = true,
+        .iterate = iterate,
+        .follow_symlinks = true,
+    }) };
+}
+
 pub fn createFileAbsolute(sub_path: []const u8, options: CreateOptions) !File {
     return .{ .inner = try std.Io.Dir.createFileAbsolute(io(), sub_path, .{
         .read = options.read,
