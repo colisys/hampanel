@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
@@ -61,6 +63,28 @@ class _SelinuxPageState extends State<SelinuxPage>
         _error = describeError(error);
         _loading = false;
       });
+    }
+  }
+
+  /// Relabel is a task, not a request: minutes on a real root.
+  Future<void> _initialize() async {
+    setState(() => _busy = true);
+    try {
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'selinux.initialize',
+        title: '初始化 SELinux 面板保护',
+      );
+      if (!mounted) return;
+      showAppSnackBar(context, SnackBar(content: Text('已提交任务：${task.title}')));
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
+    } catch (error) {
+      if (!mounted) return;
+      showAppSnackBar(context, SnackBar(content: Text(describeError(error))));
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -395,9 +419,60 @@ class _SelinuxPageState extends State<SelinuxPage>
     bool semanage,
     List<Map<String, dynamic>> modules,
   ) {
+    final relabelled = status['relabelled'] == true;
+    final managedPaths = (status['managed_paths'] as num?)?.toInt() ?? 0;
+    final totalPaths = (status['managed_total'] as num?)?.toInt() ?? 0;
+
     return ListView(
       padding: pageContentPadding(context),
       children: [
+        // Entering enforcing on a host that was never relabelled is how
+        // machines stop booting: init stays unlabeled_t, every process falls
+        // back to kernel_t, and the policy then denies boot-time access. So the
+        // initialization is an explicit, visible step rather than something
+        // hidden behind the mode buttons.
+        PanelCard(
+          title: '面板初始化',
+          trailing: StatusPill(
+            text: relabelled ? '已完成' : '未完成',
+            good: relabelled,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                relabelled
+                    ? '面板路径与容器存储已完成权限标注，可以安全切换 enforcing。'
+                    : '尚未完成权限标注。在未初始化的主机上切换到 enforcing，'
+                          '可能因为进程停留在 kernel_t 而无法启动。',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: relabelled ? hampanelMuted : hampanelDanger,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _row('受管路径规则', '$managedPaths 条'),
+              if (totalPaths > 0) _row('应覆盖路径', '$totalPaths 条'),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _initialize,
+                  icon: const Icon(Icons.security_outlined, size: 16),
+                  label: Text(relabelled ? '重新初始化' : '初始化面板保护'),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '会为面板自身路径（配置、数据、日志、unit）与容器存储写入规则，'
+                '并跳过容器存储做一次重打标签。在大型磁盘上需要数分钟。',
+                style: TextStyle(fontSize: 11, color: hampanelMuted, height: 1.5),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
         PanelCard(
           title: '运行模式',
           trailing: StatusPill(
@@ -428,7 +503,12 @@ class _SelinuxPageState extends State<SelinuxPage>
                 children: [
                   for (final mode in const ['enforcing', 'permissive', 'disabled'])
                     OutlinedButton(
-                      onPressed: _busy || !tooling
+                      // enforcing is only offered once the relabel marker
+                      // exists; the backend refuses it anyway (409
+                      // RelabelRequired), so the UI must not pretend otherwise.
+                      onPressed: _busy ||
+                              !tooling ||
+                              (mode == 'enforcing' && !relabelled)
                           ? null
                           : () => _post('/api/v1/security/selinux/mode', {'mode': mode}),
                       child: Text(mode),

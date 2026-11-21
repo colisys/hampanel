@@ -245,3 +245,28 @@ SELinux 管理界面在真实主机上的验证要点（每一条都由运行时
   否则所有进程停在 `kernel_t`，既不产生有意义的 AVC，也没法验证域间行为。
   重打标签后 `init` 为 `init_t`、新进程为 `unconfined_t`，AVC 才正常记录。
 - 输入校验先于能力检查：非法路径/类型/端口返回 400，主机不支持才 409。
+
+### 首次初始化（关键）
+
+在从未打过标签的主机上直接切换到 enforcing 会让机器无法启动：内核找不到带
+`init_t` 的 init，所有进程回落到 `kernel_t`，策略随即拒绝启动所需的访问。
+
+因此初始化是面板里一个显式、可见的步骤，而不是藏在模式按钮后面：
+
+- 为面板自身路径（`/etc/hampanel`、数据目录、日志、`/usr/local/bin/hampaneld`、
+  systemd 单元）与容器存储（Docker/Podman 的 graph root、`/etc/containers`、
+  `/run/containers`）写入文件上下文规则。发行版策略已覆盖的条目会被跳过。
+- 对全盘执行 `restorecon -R`，但**显式排除容器存储**
+  （`-e /var/lib/docker -e /var/lib/containers -e /run/containers`）。
+- 完成后写入 `/var/lib/selinux/.hampanel-relabelled` 作为就绪标记。
+
+为什么必须排除容器存储：overlay 层里是完整的 guest 文件系统，
+`restorecon -R /` 会把宿主策略盖到 guest 文件上。实测一个镜像内的 `/bin/busybox`
+被打成 `ntp_drift_t`，容器随后报 `Permission denied` 无法执行任何命令。
+
+保护措施：`setMode(enforcing)` 在就绪标记不存在时返回
+`RelabelRequired`（HTTP 409），界面也把 enforcing 按钮置灰，因此
+"未初始化 → 切 enforcing" 这条危险路径在前后端都被挡住。
+
+注意：发行版自带的标签（例如 `/var/lib/containers` 下的分层类型）不要用面板
+重复声明；面板只补自己缺少的规则，避免与策略库冲突。

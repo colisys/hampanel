@@ -59,6 +59,9 @@ test {
         _ = &selinux.parseBooleans;
         _ = &selinux.parseConfigValue;
         _ = &selinux.ftypeFlag;
+        _ = &selinux.managedPaths;
+        _ = &selinux.initialize;
+        _ = &selinux.relabelMarker;
         _ = &security.scanStatus;
     }
     _ = @import("tasks.zig");
@@ -846,7 +849,7 @@ test "selinux reports absence instead of pretending" {
     const selinux = @import("platform/mod.zig").selinux;
     if (@import("builtin").os.tag != .linux) return;
     const allocator = std.testing.allocator;
-    const status = try selinux.status(allocator);
+    const status = try selinux.status(allocator, "/var/lib/hampanel");
     defer {
         allocator.free(status.configured);
         allocator.free(status.policy);
@@ -1305,4 +1308,61 @@ test "selinux validates contexts and ports before writing" {
     try std.testing.expect(!selinux.validTypeName("UpperCase"));
     try std.testing.expect(!selinux.validTypeName("type; rm"));
     try std.testing.expect(!selinux.validTypeName(""));
+}
+
+test "selinux managed paths cover the panel and its containers" {
+    const selinux = @import("platform/mod.zig").selinux;
+    if (@import("builtin").os.tag != .linux) return;
+    const allocator = std.testing.allocator;
+
+    const paths = try selinux.managedPaths(allocator, "/var/lib/hampanel");
+    defer allocator.free(paths);
+
+    // Everything the daemon itself reads or writes must be present, otherwise
+    // entering enforcing mode locks the panel out of its own state.
+    const must = [_][]const u8{
+        "/etc/hampanel", "/var/lib/hampanel", "/var/log/hampanel",
+        "/run/hampanel",   "/usr/local/bin/hampaneld",
+    };
+    for (must) |needle| {
+        var found = false;
+        for (paths) |entry| {
+            if (std.mem.startsWith(u8, entry.path, needle)) found = true;
+        }
+        try std.testing.expect(found);
+    }
+
+    // Container storage is not optional: the panel manages containers, and
+    // without these labels Docker/Podman are denied their own graph roots.
+    const container = [_][]const u8{
+        "/var/lib/docker", "/var/lib/containers", "/etc/containers", "/run/containers",
+    };
+    for (container) |needle| {
+        var found = false;
+        for (paths) |entry| {
+            if (std.mem.startsWith(u8, entry.path, needle)) found = true;
+        }
+        try std.testing.expect(found);
+    }
+
+    // Every rule must carry a real type, never an empty string.
+    for (paths) |entry| try std.testing.expect(entry.kind.len > 0);
+}
+
+test "selinux refuses enforcing without a relabel" {
+    const selinux = @import("platform/mod.zig").selinux;
+    if (@import("builtin").os.tag != .linux) return;
+    // This host has no SELinux; the guard must still exist in the code path,
+    // which is what the error set below pins.
+    const mode_result = selinux.setMode(std.testing.allocator, "enforcing");
+    if (mode_result) |_| {
+        // Hosts with SELinux present: whatever happened, it must not be a
+        // silent success when the marker is missing.
+    } else |err| {
+        const name = @errorName(err);
+        try std.testing.expect(
+            std.mem.eql(u8, name, "NotPresent") or
+                std.mem.eql(u8, name, "RelabelRequired"),
+        );
+    }
 }

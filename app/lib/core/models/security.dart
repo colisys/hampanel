@@ -110,6 +110,7 @@ class SecurityCapabilities {
     required this.nft,
     required this.ufw,
     required this.selinux,
+    this.auditd = false,
     required this.root,
   });
 
@@ -119,6 +120,7 @@ class SecurityCapabilities {
   final bool nft;
   final bool ufw;
   final bool selinux;
+  final bool auditd;
   final bool root;
 
   factory SecurityCapabilities.fromJson(Map<String, dynamic> json) =>
@@ -129,6 +131,7 @@ class SecurityCapabilities {
         nft: json['nft'] as bool? ?? false,
         ufw: json['ufw'] as bool? ?? false,
         selinux: json['selinux'] as bool? ?? false,
+        auditd: json['auditd'] as bool? ?? false,
         root: json['root'] as bool? ?? false,
       );
 }

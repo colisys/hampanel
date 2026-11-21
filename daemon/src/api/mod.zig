@@ -116,6 +116,7 @@ pub const routes = [_]router.Route{
     .{ .method = .GET, .pattern = "/api/v1/security/selinux", .handler = security.selinux },
     .{ .method = .POST, .pattern = "/api/v1/security/selinux/mode", .handler = security.selinuxMode },
     .{ .method = .POST, .pattern = "/api/v1/security/selinux/boolean", .handler = security.selinuxBoolean },
+    .{ .method = .POST, .pattern = "/api/v1/security/selinux/init", .handler = security.selinuxInitialize },
     .{ .method = .POST, .pattern = "/api/v1/security/selinux/context", .handler = security.selinuxContext },
     .{ .method = .POST, .pattern = "/api/v1/security/selinux/port", .handler = security.selinuxPort },
     .{ .method = .GET, .pattern = "/api/v1/security/scan", .handler = security.scan },

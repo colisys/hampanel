@@ -8,6 +8,7 @@ pub const ToolStatus = struct {
     description: []const u8,
     binary: []const u8,
     installed: bool,
+    safety: bool = false,
 };
 
 pub const Status = struct {
@@ -43,6 +44,12 @@ const Tool = struct {
     binary: []const u8,
     apt_package: ?[]const u8 = null,
     apt_extra: ?[]const u8 = null,
+    /// Some components are a set of packages (e.g. SELinux needs the tools and
+    /// the policy store). When present this list is used verbatim for apt.
+    apt_packages: ?[]const []const u8 = null,
+    /// Grouping shown by the client so security components can be listed
+    /// together instead of scattered through the general toolbox.
+    safety: bool = false,
 };
 
 const tools = [_]Tool{
@@ -67,6 +74,52 @@ const tools = [_]Tool{
     .{ .id = "nix", .name = "Nix", .description = "可复现构建与运行环境（本面板使用精选属性）", .package = "nix", .binary = "nix", .apt_package = "nix-bin" },
     .{ .id = "docker", .name = "Docker", .description = "容器运行时与 CLI（容器页面依赖）", .package = "docker", .binary = "docker", .apt_package = "docker.io" },
     .{ .id = "podman", .name = "Podman", .description = "无守护进程容器运行时（兼容 Docker CLI）", .package = "podman", .binary = "podman" },
+
+    // 安全组件：安全中心各页面依赖的外部工具。每个组件把该页面用到的命令
+    // 一次装齐，避免用户面对一串零散的包名。
+    .{
+        .id = "selinux-tools",
+        .name = "SELinux 工具与策略",
+        .description = "semanage / setsebool / restorecon 与默认策略库（SELinux 页面依赖）",
+        .package = "policycoreutils",
+        .binary = "semanage",
+        .apt_packages = &.{ "policycoreutils", "policycoreutils-python-utils", "selinux-utils", "selinux-basics", "selinux-policy-default" },
+        .safety = true,
+    },
+    .{
+        .id = "auditd",
+        .name = "auditd 审计服务",
+        .description = "内核审计日志，SELinux 拒绝记录（AVC）依赖它才能被读取",
+        .package = "auditd",
+        .binary = "ausearch",
+        .apt_packages = &.{ "auditd" },
+        .safety = true,
+    },
+    .{
+        .id = "bpftrace",
+        .name = "bpftrace",
+        .description = "eBPF 追踪，扫描感知探针依赖它挂载 kprobe",
+        .package = "bpftrace",
+        .binary = "bpftrace",
+        .safety = true,
+    },
+    .{
+        .id = "nmap",
+        .name = "Nmap",
+        .description = "主机主动探测：端口、服务版本与系统指纹",
+        .package = "nmap",
+        .binary = "nmap",
+        .safety = true,
+    },
+    .{
+        .id = "qemu",
+        .name = "QEMU 虚拟化",
+        .description = "蜜罐所需的虚拟机监控器（qemu-system-x86_64 与镜像工具）",
+        .package = "qemu-system-x86",
+        .binary = "qemu-system-x86_64",
+        .apt_packages = &.{ "qemu-system-x86", "qemu-utils" },
+        .safety = true,
+    },
 };
 
 pub fn list(allocator: std.mem.Allocator) !Status {
@@ -79,6 +132,7 @@ pub fn list(allocator: std.mem.Allocator) !Status {
             .description = tool.description,
             .binary = tool.binary,
             .installed = binaryExists(allocator, tool.binary),
+            .safety = tool.safety,
         });
     }
     return .{
@@ -93,9 +147,19 @@ pub fn install(allocator: std.mem.Allocator, id: []const u8) !Outcome {
     const manager = detect(allocator);
     if (manager == .none) return error.ManagerUnavailable;
     var packages = std.array_list.Managed([]const u8).init(allocator);
-    try packages.append(packageFor(tool, manager));
-    if (manager == .apt) {
-        if (tool.apt_extra) |extra| try packages.append(extra);
+    if (tool.apt_packages) |set| {
+        // Only apt has been mapped for these composite components; other
+        // managers fall back to the single meta package.
+        if (manager == .apt) {
+            try packages.appendSlice(set);
+        } else {
+            try packages.append(tool.package);
+        }
+    } else {
+        try packages.append(packageFor(tool, manager));
+        if (manager == .apt) {
+            if (tool.apt_extra) |extra| try packages.append(extra);
+        }
     }
     return installPackage(allocator, manager, packages.items);
 }

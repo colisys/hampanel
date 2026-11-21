@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/api_client.dart';
@@ -32,6 +34,7 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
   SecurityCapabilities? _capabilities;
   bool _loading = true;
   String? _error;
+  String? _installing;
 
   ApiClient get _api => PanelScope.of(context).api;
 
@@ -214,12 +217,45 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
     );
   }
 
+  /// Security capabilities map onto installable components, so a missing
+  /// dependency is a one-click fix instead of a package name the operator has
+  /// to look up.
+  static const _componentFor = <String, ({String id, String name})>{
+    'ebpf': (id: 'bpftrace', name: 'bpftrace'),
+    'qemu': (id: 'qemu', name: 'QEMU'),
+    'chattr': (id: 'e2fsprogs', name: 'e2fsprogs'),
+    'selinux': (id: 'selinux-tools', name: 'SELinux 工具与策略'),
+    'auditd': (id: 'auditd', name: 'auditd 审计服务'),
+  };
+
+  Future<void> _installComponent(({String id, String name}) component) async {
+    setState(() => _installing = component.id);
+    try {
+      final center = PanelScope.of(context).tasks;
+      final task = await center.submit(
+        'package.install',
+        title: '安装 ${component.name}',
+        params: {'id': component.id},
+      );
+      if (!mounted) return;
+      showAppSnackBar(context, SnackBar(content: Text('已提交任务：${task.title}')));
+      unawaited(center.waitFor(task.id).then((_) {
+        if (mounted) _load();
+      }));
+    } catch (error) {
+      showAppSnackBar(context, SnackBar(content: Text(describeError(error))));
+    } finally {
+      if (mounted) setState(() => _installing = null);
+    }
+  }
+
   Widget _capabilityBanner(SecurityCapabilities caps) {
     final missing = <String>[
-      if (!caps.ebpf) 'eBPF（扫描感知）',
-      if (!caps.qemu) 'QEMU（蜜罐）',
-      if (!caps.chattr) 'chattr（防篡改）',
-      if (!caps.selinux) 'SELinux',
+      if (!caps.ebpf) 'ebpf',
+      if (!caps.qemu) 'qemu',
+      if (!caps.chattr) 'chattr',
+      if (!caps.selinux) 'selinux',
+      if (!caps.auditd) 'auditd',
     ];
     if (missing.isEmpty) {
       return PanelCard(
@@ -230,6 +266,13 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
         ),
       );
     }
+    final labels = <String, String>{
+      'ebpf': 'eBPF（扫描感知）',
+      'qemu': 'QEMU（蜜罐）',
+      'chattr': 'chattr（防篡改）',
+      'selinux': 'SELinux',
+      'auditd': 'auditd（SELinux 拒绝日志）',
+    };
     return PanelCard(
       title: '运行环境',
       child: Column(
@@ -237,25 +280,52 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
         children: [
           Text(
             caps.root
-                ? '以下能力在当前主机不可用，相关入口已禁用：'
-                : 'daemon 未以 root 运行，以下能力无法工作：',
+                ? '以下能力在当前主机不可用。缺少的工具可直接在此安装：'
+                : 'daemon 未以 root 运行，以下能力无法工作（安装也需要 root）：',
             style: TextStyle(fontSize: 11.5, color: hampanelMuted, height: 1.5),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Wrap(
             spacing: 8,
-            runSpacing: 6,
+            runSpacing: 8,
             children: [
-              for (final item in missing)
-                Chip(
-                  label: Text(
-                    item,
-                    style: const TextStyle(fontSize: 11),
+              for (final key in missing)
+                if (_componentFor[key] case final component?)
+                  InputChip(
+                    label: Text(
+                      '安装 ${labels[key] ?? component.name}',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    avatar: _installing == component.id
+                        ? const SizedBox(
+                            width: 12,
+                            height: 12,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.download_outlined, size: 14),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _installing == null || _installing == component.id
+                        ? () => _installComponent(component)
+                        : null,
                   ),
-                  visualDensity: VisualDensity.compact,
-                ),
             ],
           ),
+          if (missing.length > 1) ...[
+            const SizedBox(height: 10),
+            TextButton.icon(
+              onPressed: _installing == null
+                  ? () async {
+                      for (final key in missing) {
+                        if (_componentFor[key] case final component?) {
+                          await _installComponent(component);
+                        }
+                      }
+                    }
+                  : null,
+              icon: const Icon(Icons.download_for_offline_outlined, size: 16),
+              label: const Text('全部安装', style: TextStyle(fontSize: 12)),
+            ),
+          ],
         ],
       ),
     );

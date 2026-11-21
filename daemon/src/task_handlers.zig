@@ -26,6 +26,7 @@ pub fn register(manager: *tasks.Manager) !void {
     try manager.register(.{ .kind = "security.probe", .lock_key = "security-probe", .handler = securityProbe });
     try manager.register(.{ .kind = "security.honeypot.build", .lock_key = "honeypot", .handler = honeypotBuild });
     try manager.register(.{ .kind = "security.honeypot.start", .lock_key = "honeypot", .handler = honeypotStart });
+    try manager.register(.{ .kind = "selinux.initialize", .lock_key = "selinux", .handler = selinuxInitialize });
 }
 
 fn stringParam(ctx: *tasks.Context, key: []const u8) ![]const u8 {
@@ -444,6 +445,17 @@ fn updateApply(ctx: *tasks.Context) !void {
 /// Active host probe. Scanning is slow (nmap may take minutes), so it is always
 /// a task; the report is written to the task result and the human summary to
 /// the output stream.
+/// Relabels the filesystem for the panel's own paths and the container storage
+/// it manages. Long-running, so it is a task rather than a request.
+fn selinuxInitialize(ctx: *tasks.Context) !void {
+    try ctx.setPhase("relabelling");
+    const data_dir = try stringParam(ctx, "data_dir");
+    const outcome = try platform_mod.selinux.initialize(ctx.allocator, data_dir);
+    if (outcome.output.len > 0) try ctx.write(outcome.output);
+    if (!outcome.ok) return error.RelabelFailed;
+    try ctx.setPhase("ready");
+}
+
 fn securityProbe(ctx: *tasks.Context) !void {
     const target = try stringParam(ctx, "target");
     if (!platform_mod.hostprobe.isSafeTarget(target)) return error.InvalidTarget;

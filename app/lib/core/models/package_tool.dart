@@ -5,6 +5,7 @@ class PackageTool {
     required this.description,
     required this.binary,
     required this.installed,
+    this.safety = false,
   });
 
   final String id;
@@ -13,12 +14,16 @@ class PackageTool {
   final String binary;
   final bool installed;
 
+  /// 安全中心各页面依赖的组件，与通用工具分组显示。
+  final bool safety;
+
   factory PackageTool.fromJson(Map<String, dynamic> json) => PackageTool(
     id: json['id'] as String? ?? '',
     name: json['name'] as String? ?? '',
     description: json['description'] as String? ?? '',
     binary: json['binary'] as String? ?? '',
     installed: json['installed'] as bool? ?? false,
+    safety: json['safety'] as bool? ?? false,
   );
 }
 

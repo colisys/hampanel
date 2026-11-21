@@ -281,7 +281,7 @@ pub fn honeypotConsole(ctx: *context.Context) anyerror!void {
 
 /// SELinux status: presence, live mode, policy and tunable booleans.
 pub fn selinux(ctx: *context.Context) anyerror!void {
-    const status = platform.selinux.status(ctx.arena) catch |err| {
+    const status = platform.selinux.status(ctx.arena, ctx.app.config.data_dir) catch |err| {
         ctx.fail(500, "selinux_failed", @errorName(err));
         return;
     };
@@ -305,6 +305,30 @@ pub fn selinuxMode(ctx: *context.Context) anyerror!void {
         .output = outcome.output,
         .reboot_required = outcome.reboot_required,
     });
+}
+
+/// Filesystem relabel is minutes-long on a real root, so this only submits a
+/// task; the client watches it through the task list.
+pub fn selinuxInitialize(ctx: *context.Context) anyerror!void {
+    const summary = ctx.app.tasks.create(
+        ctx.arena,
+        "selinux.initialize",
+        "初始化 SELinux 面板保护",
+        "{}",
+        "",
+        ctx.peer_cn,
+    ) catch |err| switch (err) {
+        error.UnknownKind => {
+            ctx.fail(400, "unknown_kind", "unknown task kind");
+            return;
+        },
+        else => {
+            ctx.fail(500, "task_failed", @errorName(err));
+            return;
+        },
+    };
+    ctx.response.status = 202;
+    try ctx.json(.{ .task_id = summary.id });
 }
 
 pub fn selinuxBoolean(ctx: *context.Context) anyerror!void {
@@ -378,6 +402,7 @@ fn mapSelinuxError(err: anyerror) u16 {
         std.mem.eql(u8, name, "InvalidType") or
         std.mem.eql(u8, name, "InvalidPort") or
         std.mem.eql(u8, name, "InvalidProtocol")) return 400;
+    if (std.mem.eql(u8, name, "RelabelRequired")) return 409;
     if (std.mem.eql(u8, name, "NotPresent")) return 409;
     if (std.mem.eql(u8, name, "ToolingUnavailable") or std.mem.eql(u8, name, "Unsupported")) return 501;
     return 500;
@@ -467,6 +492,7 @@ pub fn capabilities(ctx: *context.Context) anyerror!void {
         .nft = commandExists(a, "nft"),
         .ufw = commandExists(a, "ufw"),
         .selinux = selinuxCapability(a),
+        .auditd = commandExists(a, "ausearch"),
         .root = effectiveRoot(a),
     });
 }

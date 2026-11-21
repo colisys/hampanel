@@ -32,6 +32,15 @@ pub const Status = struct {
     denials: []const Denial,
     /// Whether the policy store could be read; a fresh host has none.
     policy_store: bool,
+    /// Whether the filesystem was relabelled at least once. Enabling SELinux on
+    /// a host that never ran restorecon leaves every process in kernel_t, so
+    /// switching to enforcing there can make the machine unbootable.
+    relabelled: bool,
+    /// How many of the panel's own paths already carry a Hampanel context rule.
+    managed_paths: u32,
+    /// How many paths the panel wants covered, so the UI can show progress
+    /// instead of a bare count.
+    managed_total: u32,
     message: []const u8 = "",
 };
 
@@ -80,7 +89,7 @@ pub const Outcome = struct {
 
 pub const config_path = "/etc/selinux/config";
 
-pub fn status(allocator: std.mem.Allocator) !Status {
+pub fn status(allocator: std.mem.Allocator, data_dir: []const u8) !Status {
     const present = exists("/sys/fs/selinux");
     const tooling = exec.commandExists(allocator, "setenforce") and
         exec.commandExists(allocator, "getsebool") and
@@ -133,6 +142,9 @@ pub fn status(allocator: std.mem.Allocator) !Status {
         .modules = modules,
         .denials = denials,
         .policy_store = policy_store,
+        .relabelled = (!present) or relabelMarker(),
+        .managed_paths = managedPathCount(allocator, data_dir),
+        .managed_total = managedPathTotal(allocator, data_dir, present and semanage),
         .message = message,
     };
 }
@@ -410,6 +422,169 @@ fn listDenials(allocator: std.mem.Allocator, present: bool) ![]const Denial {
     return parseDenials(allocator, result.stdout);
 }
 
+/// A path Hampanel needs labelled before enforcing mode is safe to enter.
+///
+/// Everything here is read or written by the daemon and by the containers it
+/// manages. If these stay `unlabeled_t`/`var_t` while SELinux is enforcing, the
+/// daemon itself is denied access and the machine may not boot.
+pub const ManagedPath = struct {
+    /// The real path.
+    path: []const u8,
+    /// Context it should carry.
+    kind: []const u8,
+    /// Human-readable reason shown in the UI.
+    why: []const u8,
+};
+
+pub fn managedPaths(allocator: std.mem.Allocator, data_dir: []const u8) ![]const ManagedPath {
+    var list = std.array_list.Managed(ManagedPath).init(allocator);
+    const pairs = .{
+        .{ "/etc/hampanel(/.*)?", "etc_t", "面板配置、证书与注册信息" },
+        .{ "/var/lib/hampanel(/.*)?", "var_lib_t", "面板数据、任务队列与日志" },
+        .{ "/var/log/hampanel(/.*)?", "var_log_t", "面板日志" },
+        .{ "/run/hampanel(/.*)?", "var_run_t", "面板运行状态" },
+        .{ "/usr/local/bin/hampaneld", "bin_t", "面板守护进程" },
+        .{ "/etc/systemd/system/hampanel*.service", "systemd_unit_file_t", "面板的 systemd 单元" },
+        .{ "/etc/systemd/system/hampaneld*.service", "systemd_unit_file_t", "面板的 systemd 单元" },
+        // Container storage: without these labels Docker/Podman are denied their
+        // own graph root once enforcing, and every managed container breaks.
+        .{ "/var/lib/docker(/.*)?", "container_var_lib_t", "Docker 存储（面板管理的容器）" },
+        .{ "/var/lib/containers(/.*)?", "container_var_lib_t", "Podman 存储（面板管理的容器）" },
+        .{ "/etc/containers(/.*)?", "container_config_t", "Podman 配置与 registries" },
+        .{ "/etc/docker(/.*)?", "etc_t", "Docker 配置" },
+        .{ "/run/containers(/.*)?", "container_var_run_t", "容器运行时状态" },
+        .{ "/run/docker.sock", "container_var_run_t", "Docker 套接字" },
+        .{ "/run/podman(/.*)?", "container_var_run_t", "Podman 套接字" },
+    };
+    inline for (pairs) |pair| {
+        try list.append(.{ .path = pair[0], .kind = pair[1], .why = pair[2] });
+    }
+    // The data dir may have been relocated; label it too.
+    if (!std.mem.startsWith(u8, data_dir, "/var/lib/hampanel")) {
+        try list.append(.{
+            .path = try std.fmt.allocPrint(allocator, "{s}(/.*)?", .{data_dir}),
+            .kind = "var_lib_t",
+            .why = "面板数据（自定义路径）",
+        });
+    }
+    return list.toOwnedSlice();
+}
+
+/// True once the host has completed at least one full relabel.
+///
+/// `/.autorelabel` is created by the panel (and by the distro) before a
+/// relabel run and removed when it completes. Its absence alone proves
+/// nothing, so the marker file the panel writes afterwards is the real signal.
+pub fn relabelMarker() bool {
+    return exists("/var/lib/selinux/.hampanel-relabelled") or
+        exists("/etc/selinux/.hampanel-relabelled");
+}
+
+fn managedPathTotal(allocator: std.mem.Allocator, data_dir: []const u8, probe: bool) u32 {
+    if (!probe) return 0;
+    const paths = managedPaths(allocator, data_dir) catch return 0;
+    defer allocator.free(paths);
+    return @intCast(paths.len);
+}
+
+fn managedPathCount(allocator: std.mem.Allocator, data_dir: []const u8) u32 {
+    const paths = managedPaths(allocator, data_dir) catch return 0;
+    defer allocator.free(paths);
+    var count: u32 = 0;
+    for (paths) |entry| {
+        const base = basePath(entry.path);
+        if (hasContextRule(allocator, base, entry.kind)) count += 1;
+    }
+    return count;
+}
+
+/// Whether `semanage fcontext -l` already maps this path to this type.
+fn hasContextRule(allocator: std.mem.Allocator, path: []const u8, kind: []const u8) bool {
+    const result = exec.run(allocator, &.{ "semanage", "fcontext", "-C", "-l" }, 2 * 1024 * 1024) catch
+        return false;
+    defer {
+        allocator.free(result.stdout);
+        allocator.free(result.stderr);
+    }
+    if (!result.ok()) return false;
+    var lines = std.mem.splitScalar(u8, result.stdout, '\n');
+    while (lines.next()) |line| {
+        if (std.mem.indexOf(u8, line, path) == null) continue;
+        if (std.mem.indexOf(u8, line, kind) != null) return true;
+    }
+    return false;
+}
+
+/// Prepares a host for enforcing mode: writes the panel's context rules,
+/// applies them, records the relabel marker and does a full filesystem relabel.
+///
+/// This is deliberately a separate, explicit step. Switching to enforcing on a
+/// host that was never relabelled is how machines stop booting: init is
+/// `unlabeled_t`, every process inherits `kernel_t`, and the policy then denies
+/// the very accesses the boot needs.
+pub fn initialize(allocator: std.mem.Allocator, data_dir: []const u8) !Outcome {
+    if (!exists("/sys/fs/selinux")) return error.NotPresent;
+    if (!exec.commandExists(allocator, "semanage")) return error.ToolingUnavailable;
+    if (!exec.commandExists(allocator, "restorecon")) return error.ToolingUnavailable;
+
+    const paths = try managedPaths(allocator, data_dir);
+    var report = std.array_list.Managed(u8).init(allocator);
+
+    // 1. Write the context rules. Existing identical rules are left alone so a
+    //    second run is not an error.
+    var written: u32 = 0;
+    for (paths) |entry| {
+        if (hasContextRule(allocator, basePath(entry.path), entry.kind)) continue;
+        const result = exec.run(allocator, &.{
+            "semanage", "fcontext", "-a", "-t", entry.kind, "-f", "a", entry.path,
+        }, 1024 * 1024) catch continue;
+        defer {
+            allocator.free(result.stdout);
+            allocator.free(result.stderr);
+        }
+        if (result.ok()) written += 1;
+    }
+    try report.appendSlice(try std.fmt.allocPrint(allocator, "已写入 {d} 条文件上下文规则（共 {d} 项）。\n", .{ written, paths.len }));
+
+    // 2. Relabel. Container storage is excluded on purpose: overlay layers hold
+    //    an entire guest filesystem, and `restorecon -R /` stamps the *host*
+    //    policy onto guest files. In practice a busybox inside an image came out
+    //    as ntp_drift_t and the container could no longer execute it. Container
+    //    runtimes label their own storage; the host must not.
+    try report.appendSlice(
+        "开始重打标签（restorecon -R /，跳过容器存储）。首次执行可能需要数分钟。\n",
+    );
+    const relabel = exec.run(allocator, &.{
+        "restorecon", "-R", "-e", "/var/lib/docker", "-e", "/var/lib/containers", "-e", "/run/containers", "/",
+    }, 8 * 1024 * 1024) catch return error.ToolingUnavailable;
+    const relabel_text = textOf(relabel);
+    allocator.free(relabel.stdout);
+    allocator.free(relabel.stderr);
+    if (relabel_text.len > 0) {
+        try report.appendSlice(relabel_text);
+        try report.appendSlice("\n");
+    }
+
+    if (!relabel.ok()) {
+        try report.appendSlice("重打标签未成功完成，已保留未就绪状态；请修复后重试。\n");
+        return .{ .ok = false, .output = try report.toOwnedSlice() };
+    }
+
+    // 3. Record completion. Written under /var/lib/selinux so it survives a
+    //    reboot alongside the policy it certifies.
+    try compat.cwd().makePath("/var/lib/selinux");
+    var marker = compat.createFileAbsolute("/var/lib/selinux/.hampanel-relabelled", .{
+        .truncate = true,
+        .mode = 0o644,
+    }) catch null;
+    if (marker) |*file| {
+        file.writeAll("hampanel relabel complete\n") catch {};
+        file.close();
+    }
+    try report.appendSlice("重打标签完成。可以安全切换到 enforcing。\n");
+    return .{ .ok = true, .output = try report.toOwnedSlice() };
+}
+
 /// Switches the live mode. `disabled` is not a live operation: SELinux can only
 /// be turned off through the config file plus a reboot.
 pub fn setMode(allocator: std.mem.Allocator, mode: []const u8) !Outcome {
@@ -417,6 +592,11 @@ pub fn setMode(allocator: std.mem.Allocator, mode: []const u8) !Outcome {
     if (!exec.commandExists(allocator, "setenforce")) return error.ToolingUnavailable;
 
     if (std.mem.eql(u8, mode, "enforcing")) {
+        // Refuse to enter enforcing before the filesystem has been relabelled.
+        // On an unrelabelled host init is unlabeled_t and every process falls
+        // back to kernel_t, so the policy denies boot-time access and the
+        // machine can hang or fail to start. `initialize` is the way out.
+        if (!relabelMarker()) return error.RelabelRequired;
         const result = exec.run(allocator, &.{ "setenforce", "1" }, 64 * 1024) catch
             return error.ToolingUnavailable;
         return .{ .ok = result.ok(), .output = textOf(result) };
