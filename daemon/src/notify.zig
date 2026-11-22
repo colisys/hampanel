@@ -5,7 +5,7 @@ const exec = @import("shared").exec;
 const platform = @import("platform_backend");
 const log = @import("log.zig");
 
-pub const Event = enum { login, ai_command, service_restart, docker_restart, availability };
+pub const Event = enum { login, ai_command, service_restart, docker_restart, availability, install, task_start, cron_change, process_kill };
 
 pub const Provider = enum { bark, ntfy };
 
@@ -27,6 +27,10 @@ pub const Config = struct {
     event_service_restart: bool = true,
     event_docker_restart: bool = true,
     event_availability: bool = true,
+    event_install: bool = false,
+    event_task_start: bool = false,
+    event_cron_change: bool = false,
+    event_process_kill: bool = false,
     memory_percent: u8 = 90,
     disk_percent: u8 = 90,
     cooldown_minutes: u32 = 30,
@@ -68,7 +72,53 @@ pub fn enabledFor(config: Config, event: Event) bool {
         .service_restart => config.event_service_restart,
         .docker_restart => config.event_docker_restart,
         .availability => config.event_availability,
+        .install => config.event_install,
+        .task_start => config.event_task_start,
+        .cron_change => config.event_cron_change,
+        .process_kill => config.event_process_kill,
     };
+}
+
+fn taskEvent(kind: []const u8) Event {
+    for ([_][]const u8{ "package.install", "package.custom", "waf.install", "store.deploy" }) |install_kind| {
+        if (std.mem.eql(u8, kind, install_kind)) return .install;
+    }
+    return .task_start;
+}
+
+pub fn taskStarted(database: *db.Db, kind: []const u8) void {
+    const event = taskEvent(kind);
+    emit(database, event, if (event == .install) "开始安装软件或部署应用" else "后台任务启动", kind);
+}
+
+const Action = struct { event: Event, message: []const u8 };
+
+fn auditedAction(method: []const u8, path: []const u8, status: u16) ?Action {
+    if (!std.mem.eql(u8, method, "POST") or status < 200 or status >= 300) return null;
+    if (std.mem.eql(u8, path, "/api/v1/cron")) return .{ .event = .cron_change, .message = "已新增定时任务" };
+    if (std.mem.eql(u8, path, "/api/v1/cron/delete")) return .{ .event = .cron_change, .message = "已删除定时任务" };
+    const prefix = "/api/v1/processes/";
+    if (!std.mem.startsWith(u8, path, prefix)) return null;
+    var parts = std.mem.splitScalar(u8, path[prefix.len..], '/');
+    _ = std.fmt.parseInt(u32, parts.next() orelse return null, 10) catch return null;
+    if (!std.mem.eql(u8, parts.next() orelse return null, "kill") or parts.next() != null) return null;
+    return .{ .event = .process_kill, .message = "已发送进程终止信号" };
+}
+
+pub fn afterRequest(database: *db.Db, method: []const u8, path: []const u8, status: u16) void {
+    const action = auditedAction(method, path, status) orelse return;
+    emit(database, action.event, "面板操作", action.message);
+}
+
+test "classify successful mutations and distinguish install from generic task starts" {
+    try std.testing.expectEqual(Event.install, taskEvent("package.custom"));
+    try std.testing.expectEqual(Event.task_start, taskEvent("package.refresh"));
+    try std.testing.expectEqual(Event.cron_change, auditedAction("POST", "/api/v1/cron/delete", 200).?.event);
+    try std.testing.expectEqual(Event.process_kill, auditedAction("POST", "/api/v1/processes/42/kill", 200).?.event);
+    try std.testing.expect(auditedAction("POST", "/api/v1/processes/42/kill", 502) == null);
+    try std.testing.expect(auditedAction("GET", "/api/v1/cron", 200) == null);
+    try std.testing.expect(auditedAction("POST", "/api/v1/tasks", 201) == null);
+    try std.testing.expect(!enabledFor(defaults(), .install));
 }
 
 pub fn validate(config: Config) ?[]const u8 {
@@ -176,11 +226,9 @@ fn sendBark(
         return .{ .ok = false, .output = "out of memory" };
     };
     const result = exec.run(allocator, &.{
-        "curl", "-fsS", "--max-time", "8",
-        "-H", "Content-Type: application/json",
-        "-X", "POST",
-        "-d", payload,
-        url,
+        "curl", "-fsS",                           "--max-time", "8",
+        "-H",   "Content-Type: application/json", "-X",         "POST",
+        "-d",   payload,                          url,
     }, 64 * 1024) catch return .{ .ok = false, .output = "curl unavailable" };
     return .{ .ok = result.ok(), .output = outputOf(result) };
 }

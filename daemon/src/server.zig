@@ -165,6 +165,7 @@ fn handleConnection(app: *app_mod.App, connection: std.Io.net.Stream) void {
         }
 
         recordAudit(app, ctx, connection, elapsed, route_path, allocator);
+        notify.afterRequest(app.db, @tagName(req.method), route_path, ctx.response.status);
         // Unmatched paths are client-controlled noise; keep them out of the
         // access log so log lines cannot be forged or leak probed paths.
         const logged_target = switch (routed) {

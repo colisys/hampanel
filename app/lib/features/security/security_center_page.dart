@@ -10,7 +10,7 @@ import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 import 'hardening_page.dart';
 import 'probe_page.dart';
-import '../cron/cron_page.dart';
+import '../software/software_page.dart';
 import '../firewall/firewall_page.dart';
 import '../ssh/ssh_page.dart';
 import '../waf/waf_page.dart';
@@ -74,10 +74,17 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
   }
 
   void _open(Widget page) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => page),
-    );
+    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
   }
+
+  // Shell panels provide their own headers but rely on the host for the
+  // Material surface and navigation. Standalone security pages do not.
+  void _openPanel(Widget panel) => _open(
+    Scaffold(
+      appBar: AppBar(title: const Text('安全中心')),
+      body: SafeArea(top: false, child: panel),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -90,11 +97,7 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
           subtitle: caps == null
               ? '服务器安全能力与策略'
               : '${caps.root ? 'root 运行' : '非 root 运行'} · '
-                    '${[
-                      if (caps.ebpf) 'eBPF',
-                      if (caps.chattr) 'chattr',
-                      if (caps.qemu) 'QEMU',
-                    ].join(' · ')}',
+                    '${[if (caps.ebpf) 'eBPF', if (caps.chattr) 'chattr', if (caps.qemu) 'QEMU'].join(' · ')}',
           actions: [PageRefreshButton(onPressed: _load, refreshing: _loading)],
         ),
         if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
@@ -118,7 +121,7 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
                           : '${overview?.ssh?.available == true ? '已安装' : '未检测到'}'
                                 ' · '
                                 '${overview?.ssh?.running == true ? '运行中' : '未运行'}',
-                      onTap: () => _open(const SshPage()),
+                      onTap: () => _openPanel(const SshPage()),
                     ),
                     _entry(
                       icon: Icons.security_outlined,
@@ -127,7 +130,7 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
                           ? 'Caddy + Coraza 防护'
                           : '${overview?.waf?.installed == true ? '已构建' : '未构建'}'
                                 ' · 模式 ${overview?.waf?.mode ?? '-'}',
-                      onTap: () => _open(const WafPage()),
+                      onTap: () => _openPanel(const WafPage()),
                     ),
                     _entry(
                       icon: Icons.shield_outlined,
@@ -136,7 +139,7 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
                           ? '主机防火墙规则'
                           : '${overview?.firewall?.available != true ? '不可用' : (overview?.firewall?.active == true ? '已启用' : '未启用')}'
                                 ' · ${overview?.firewall?.rules ?? 0} 条规则',
-                      onTap: () => _open(const FirewallPage()),
+                      onTap: () => _openPanel(const FirewallPage()),
                     ),
                     _entry(
                       icon: Icons.gavel_outlined,
@@ -146,7 +149,7 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
                           : '${overview?.fail2ban?.initialized == true ? '已托管' : '未托管'}'
                                 ' · ${overview?.fail2ban?.jails ?? 0} 个 jail'
                                 ' · ${overview?.fail2ban?.banned ?? 0} 个封禁 IP',
-                      onTap: () => _open(const CronPage()),
+                      onTap: () => _openPanel(const SoftwarePage()),
                     ),
                     const SizedBox(height: 16),
                     _sectionTitle('检测与诱捕'),
@@ -239,9 +242,11 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
       );
       if (!mounted) return;
       showAppSnackBar(context, SnackBar(content: Text('已提交任务：${task.title}')));
-      unawaited(center.waitFor(task.id).then((_) {
-        if (mounted) _load();
-      }));
+      unawaited(
+        center.waitFor(task.id).then((_) {
+          if (mounted) _load();
+        }),
+      );
     } catch (error) {
       showAppSnackBar(context, SnackBar(content: Text(describeError(error))));
     } finally {
@@ -304,7 +309,8 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
                           )
                         : const Icon(Icons.download_outlined, size: 14),
                     visualDensity: VisualDensity.compact,
-                    onPressed: _installing == null || _installing == component.id
+                    onPressed:
+                        _installing == null || _installing == component.id
                         ? () => _installComponent(component)
                         : null,
                   ),
@@ -422,10 +428,7 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
                       const SizedBox(height: 2),
                       Text(
                         subtitle,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: hampanelMuted,
-                        ),
+                        style: TextStyle(fontSize: 11, color: hampanelMuted),
                       ),
                     ],
                   ),

@@ -28,6 +28,10 @@ const _sections = {
     'event_service_restart': '服务重启',
     'event_docker_restart': '容器重启',
     'event_availability': '可用性',
+    'event_install': '开始安装软件或部署应用',
+    'event_process_kill': '发送进程终止信号',
+    'event_task_start': '启动其他后台任务',
+    'event_cron_change': '新增或删除定时任务',
   },
   '资源告警': {
     'memory_percent': '内存阈值（%）',
@@ -45,10 +49,14 @@ class NotificationSettings extends StatefulWidget {
 }
 
 class _NotificationSettingsState extends State<NotificationSettings> {
-  final _form = GlobalKey<FormState>();
+  final _forms = {
+    for (final section in _sections.keys) section: GlobalKey<FormState>(),
+  };
+  late Map<String, dynamic> _saved;
   Map<String, dynamic>? _draft;
   bool _busy = false;
-  bool _dirty = false;
+  bool _dirty(String section) =>
+      _sections[section]!.keys.any((key) => _draft![key] != _saved[key]);
   String _message = '';
 
   @override
@@ -63,6 +71,7 @@ class _NotificationSettingsState extends State<NotificationSettings> {
       final config = await widget.api.getJson(_path) as Map<String, dynamic>;
       if (mounted) {
         setState(() {
+          _saved = Map.of(config);
           _draft = Map.of(config);
           _message = '';
         });
@@ -74,27 +83,33 @@ class _NotificationSettingsState extends State<NotificationSettings> {
     }
   }
 
-  Future<void> _submit([String? provider]) async {
-    if (provider == null && !_form.currentState!.validate()) return;
+  Future<void> _submit(String section, {bool test = false}) async {
+    if (!test && !_forms[section]!.currentState!.validate()) return;
     setState(() {
       _busy = true;
       _message = '';
     });
     try {
-      if (provider == null) {
-        await widget.api.putJson(_path, Map.of(_draft!));
+      if (!test) {
+        // The server replaces the full config. Overlay only this card's draft.
+        final config = {
+          ..._saved,
+          for (final key in _sections[section]!.keys)
+            if (_draft!.containsKey(key)) key: _draft![key],
+        };
+        await widget.api.putJson(_path, config);
         if (!mounted) return;
-        _dirty = false;
-        _message = '通知设置已保存';
+        _saved = config;
+        _message = '$section 已保存';
       } else {
         final result = await widget.api.postJson('$_path/test', {
-          'provider': provider,
+          'provider': section.toLowerCase(),
         });
         if (!mounted) return;
         _message = result['ok'] == true ? '测试通知已发送' : '发送失败，请检查推送服务配置。';
       }
     } catch (_) {
-      if (mounted) _message = provider == null ? '保存失败，请检查配置和连接。' : '测试请求失败。';
+      if (mounted) _message = test ? '测试请求失败。' : '保存失败，请检查配置和连接。';
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -102,7 +117,7 @@ class _NotificationSettingsState extends State<NotificationSettings> {
 
   void _change(String key, dynamic value) => setState(() {
     _draft![key] = value;
-    _dirty = true;
+
     _message = '';
   });
 
@@ -145,7 +160,9 @@ class _NotificationSettingsState extends State<NotificationSettings> {
         }
         if (key == 'bark_key' || key == 'ntfy_topic') {
           final max = key == 'bark_key' ? 128 : 64;
-          if (v.isEmpty || v.length > max || RegExp('[^A-Za-z0-9_-]').hasMatch(v)) {
+          if (v.isEmpty ||
+              v.length > max ||
+              RegExp('[^A-Za-z0-9_-]').hasMatch(v)) {
             return '请输入 1 到 $max 位字母、数字、下划线或短横线';
           }
         }
@@ -168,65 +185,71 @@ class _NotificationSettingsState extends State<NotificationSettings> {
     }
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 720),
-      child: Form(
-        key: _form,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '推送配置保存在当前服务端。请先保存更改，再发送测试通知。',
-              style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-            ),
-            const SizedBox(height: 12),
-            // One card per concern, matching the system settings pages: a flat
-            // list of 20 fields was hard to scan and gave every provider equal
-            // weight.
-            for (final section in _sections.entries) ...[
-              PanelCard(
-                title: section.key,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '推送配置保存在当前服务端。请先保存更改，再发送测试通知。',
+            style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+          ),
+          const SizedBox(height: 12),
+          // One card per concern, matching the system settings pages: a flat
+          // list of 20 fields was hard to scan and gave every provider equal
+          // weight.
+          for (final section in _sections.entries) ...[
+            PanelCard(
+              title: section.key,
+              child: Form(
+                key: _forms[section.key],
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     for (final (index, field)
                         in section.value.entries.indexed) ...[
                       if (index > 0) const SizedBox(height: 10),
-                      _field(field.key, field.value),
+                      if (!field.key.startsWith('event_') ||
+                          _draft!.containsKey(field.key))
+                        _field(field.key, field.value),
                     ],
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        FilledButton(
+                          onPressed: _busy || !_dirty(section.key)
+                              ? null
+                              : () => _submit(section.key),
+                          child: Text('保存${section.key}'),
+                        ),
+                        if (section.key == 'Bark' || section.key == 'ntfy')
+                          OutlinedButton(
+                            onPressed:
+                                _busy ||
+                                    _dirty(section.key) ||
+                                    _saved['${section.key.toLowerCase()}_enabled'] !=
+                                        true
+                                ? null
+                                : () => _submit(section.key, test: true),
+                            child: Text('测试 ${section.key}'),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
-            ],
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton(
-                  onPressed: _busy || !_dirty ? null : () => _submit(),
-                  child: const Text('保存通知设置'),
-                ),
-                for (final name in ['Bark', 'ntfy'])
-                  OutlinedButton(
-                    onPressed:
-                        _busy ||
-                            _dirty ||
-                            _draft!['${name.toLowerCase()}_enabled'] != true
-                        ? null
-                        : () => _submit(name.toLowerCase()),
-                    child: Text('测试 $name'),
-                  ),
-              ],
             ),
-            if (_busy) ...[
-              const SizedBox(height: 10),
-              const LinearProgressIndicator(),
-            ],
-            if (_message.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(_message),
-            ],
+            const SizedBox(height: 12),
           ],
-        ),
+
+          if (_busy) ...[
+            const SizedBox(height: 10),
+            const LinearProgressIndicator(),
+          ],
+          if (_message.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(_message),
+          ],
+        ],
       ),
     );
   }

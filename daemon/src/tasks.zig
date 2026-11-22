@@ -3,6 +3,7 @@ const compat = @import("compat");
 const db = @import("db.zig");
 const config = @import("config.zig");
 const log = @import("log.zig");
+const notify = @import("notify.zig");
 
 pub const max_output: u64 = 16 * 1024 * 1024;
 pub const max_queued = 200;
@@ -705,6 +706,7 @@ pub const Manager = struct {
             .output = &output,
             .cancelled = &task.cancel,
         };
+        notify.taskStarted(self.database, task.kind);
         spec.handler(&ctx) catch |err| {
             self.finishWithOutput(task, &output, .failed, @errorName(err), "");
             return;

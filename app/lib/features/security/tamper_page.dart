@@ -121,15 +121,17 @@ class _TamperPageState extends State<TamperPage> {
       appBar: AppBar(
         title: const Text('文件防篡改'),
         actions: [
-          if (ready)
-            TextButton.icon(
-              onPressed: _add,
-              icon: const Icon(Icons.add, size: 16),
-              label: const Text('保护路径'),
-            ),
-          const SizedBox(width: 4),
           PageRefreshButton(onPressed: _load, refreshing: _loading),
           const SizedBox(width: 8),
+        ],
+      ),
+      bottomNavigationBar: ActionDock(
+        actions: [
+          ActionDockItem(
+            icon: Icons.add_moderator_outlined,
+            label: '保护路径',
+            onPressed: ready && !_loading && _error == null ? _add : null,
+          ),
         ],
       ),
       body: _loading
@@ -144,10 +146,7 @@ class _TamperPageState extends State<TamperPage> {
               children: [
                 PanelCard(
                   title: '本机状态',
-                  trailing: StatusPill(
-                    text: ready ? '可用' : '不可用',
-                    good: ready,
-                  ),
+                  trailing: StatusPill(text: ready ? '可用' : '不可用', good: ready),
                   child: Text(
                     status?['message'] as String? ??
                         (ready
@@ -169,9 +168,7 @@ class _TamperPageState extends State<TamperPage> {
                   ),
                   child: entries.isEmpty
                       ? Text(
-                          ready
-                              ? '尚未保护任何路径。'
-                              : '当前主机不具备 chattr，入口不会展示无效开关。',
+                          ready ? '尚未保护任何路径。' : '当前主机不具备 chattr，入口不会展示无效开关。',
                           style: TextStyle(
                             fontSize: 11.5,
                             color: hampanelMuted,
@@ -224,7 +221,10 @@ class _TamperPageState extends State<TamperPage> {
                                       onPressed: () => _remove(
                                         entry['path'] as String? ?? '',
                                       ),
-                                      icon: const Icon(Icons.lock_open, size: 18),
+                                      icon: const Icon(
+                                        Icons.lock_open,
+                                        size: 18,
+                                      ),
                                     ),
                                   ],
                                 ),
