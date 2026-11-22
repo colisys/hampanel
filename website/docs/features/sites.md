@@ -14,7 +14,7 @@ outline: [2, 3]
 | --- | --- |
 | 静态网站 | 直接提供目录下的静态文件 |
 | 反向代理 | 转发到本机或远端的上游服务 |
-| Webhook | 按受控端返回的能力，将回调转发到固定 HTTP(S) 上游；内部 Cron 仅在受控端明确提供时可选 |
+| Webhook | 转发到固定 HTTP(S) 上游；Nginx 后端还可触发已有计划任务 |
 | 运行环境 | 绑定一个运行环境容器 |
 | 子网站 | 依附于父站点的子路径 |
 | TCP 代理 | 四层转发 |
@@ -22,24 +22,25 @@ outline: [2, 3]
 
 ## 创建 Webhook 站点
 
-1. 打开 **网站**，确认受控端 `available` 和 `supported`。以 `/api/v1/sites`（详情页以站点详情）的 `webhook_targets` 为准：仅在 Nginx 内部监听就绪时返回 `upstream` 和 `cron`；Caddy 只返回 `upstream`。如果 Nginx 尚未就绪或 daemon 版本较旧，不要将内部 Cron 视为可用。
-2. 点击 **新建站点 → Webhook**，选择目标。选 **外部上游** 时填写 `https://receiver.example.com:8443` 这样的源地址；回调路径填写在发送方的回调 URL 中。**内部计划任务**仅支持宿主 Nginx 和面板受管的 Nginx 容器（内部监听就绪后），不支持 Caddy；从已有 Cron ID 列表绑定任务，没有任务或列表读取失败时不可提交。容器 Nginx 的外部上游须从容器内可达。
-3. 内部 Cron 必须在创建时启用 HTTPS：填写证书覆盖的回调域名，并输入服务器上证书链和配对私钥的绝对路径，或点击 **选择已有站点证书** 同时填入两条路径。路径必须在运行 Nginx 的宿主或容器内可读。这里仅引用文件，不读取或复制文件内容；不要在路径框粘贴 PEM 私钥。内部回调使用 HTTPS（443），HTTP 不会重定向到带 token 的 URL。
-4. 尚无可引用的路径时，先创建指向可信专用接收服务的外部 Webhook，在详情的 **HTTPS 证书** 中分别上传证书链和私钥，然后再选择 **内部计划任务** 和 Cron ID 并保存。已有外部 Webhook 无需重建；已有证书路径会保留，也可在切换时直接填写新的路径。没有 HTTPS 配置的旧 Cron 站点也可在详情补齐域名和两条路径后保存；如缺少可用凭据，再执行轮换。
-5. 对于外部上游，将回调域名解析到站点，在站点详情配置 HTTPS，然后在发送方登记完整回调 URL。例如，上游设为 `https://receiver.example.com:8443` 时，发往 `https://hooks.example.com/events?source=build` 的请求会转至 `https://receiver.example.com:8443/events?source=build`。
-6. 从发送方投递测试事件，在接收服务检查请求方法、查询参数和正文，并查看发送方收到的响应。修改目标时，打开站点详情，选择外部上游或已有 Cron ID 并保存。创建或更改内部 Cron 绑定成功后，响应返回的 `webhook_url` 和 `webhook_token` **仅显示一次**，立即安全保存。列表与详情不返回凭据；丢失 URL 须轮换。含 token 的 URL 属于凭据，请勿公开、截图、粘贴到工单或写入日志；不要通过公开的明文 HTTP 发送凭据。
+1. 打开 **网站 → 新建站点 → Webhook**。Nginx 后端可选 **外部上游** 或 **内部计划任务**；Caddy 后端只提供 **外部上游**。
+2. **外部上游**：填写 `https://receiver.example.com:8443` 这样的源地址，回调路径由发送方的请求路径决定。上游若在容器内，须从容器内可达。
+3. **内部计划任务**：选择已有 Cron ID，填写回调域名，以及服务器上证书链和私钥的绝对路径，或点击 **选择已有站点证书** 同时填入。路径须在运行 Nginx 的宿主或容器内可读；需上传证书时，先建外部 Webhook、在详情上传证书，再切换到计划任务。
+4. 将回调域名解析到站点并启用 HTTPS。外部上游示例：上游为 `https://receiver.example.com:8443` 时，发往 `https://hooks.example.com/events?source=build` 的请求会转至 `https://receiver.example.com:8443/events?source=build`。
+5. 保存内部计划任务后，响应中的 `webhook_url` 和 `webhook_token` 只显示一次，立即保存到密码管理器。外部上游和内部计划任务都建议先在接收端投递一条测试事件。
 
-整个外部上游站点的请求路径都会转发。请选择专用接收服务，由接收服务校验签名、处理验证请求和业务事件，避免把带有管理接口的服务整体暴露给发送方。Caddy 可以转发外部上游，但**不能**承载内部 Cron 回调，也不要把 Caddy 放在内部 Cron 入口前面。内部 Cron 不使用外部上游，也不把 Cron 命令拼入 URL。
+### 内部计划任务
 
-内部 Cron 站点详情提供独立的 **轮换凭据** 与 **撤销凭据** 操作，均需二次确认。轮换调用 `POST /api/v1/sites/:name/webhook/rotate`，旧 URL 立即失效，新 URL/token 仅在本次响应中显示；轮换也会重新启用已撤销的绑定。撤销调用 `DELETE /api/v1/sites/:name/webhook/token`，不删除站点或 Cron 任务，已接受的任务不会被终止。**详情无法得知当前凭据是否已撤销**，界面不显示有效/已撤销状态；如需恢复或遗失凭据，请轮换。
+- 触发地址为 `POST /hook/:site/:token`，返回 `202` 表示任务已接收并异步执行；最多同时运行四项，繁忙时返回 `503`。
+- 绑定的是已有 Cron 任务，投递请求不能指定命令。任务被删除、命令变化或站点停用后不再执行。
+- 回调在 daemon 进程内运行，建议使用专用、权限收敛的定时任务；含 `%` 的 Cron 命令不能绑定。
+- 详情页的 **轮换凭据** 生成新 URL 并使旧 URL 立即失效；**撤销凭据** 停用回调，不删除站点或任务。
+- 入口由 Nginx 转发至 `/run/hampanel-cron-webhook/trigger.sock`。若在 Nginx 前面还有 CDN、WAF 或反向代理，需确认它不记录请求 URI。
 
-内部触发只接受 `POST /hook/:site/:token`，不接受查询参数；`202` 表示任务已异步接收。绑定时选定现有 Cron ID，投递请求不能指定命令；任务被删除或命令发生变化后不会执行。最多同时运行四项，忙碌时返回 `503`。回调任务由 daemon 运行，建议为回调创建专用、权限收敛的定时任务；含 Cron `%` 输入约定的命令不能绑定。更改绑定会使旧凭据失效，如果站点重载失败，恢复后可能需要手动轮换。
+### Caddy 的差异
 
-内部入口只监听宿主回环地址，并通过 `/run/hampanel-cron-webhook/trigger.sock` 供 Nginx 转发；受管 Nginx 容器只读挂载 socket 目录。请为站点启用 HTTPS，并检查所有前置代理、CDN、WAF 与请求追踪配置，确保含 token 的路径不会写入访问日志。Caddy 不支持内部 Cron 入口。
+Caddy 2.6.2 会把含 token 的请求 URI 写入 `caddy.service` 的 journal，站点级日志设置无法阻止，因此面板只在 Caddy 上提供外部上游转发，不提供内部计划任务。
 
-Caddy 的差异来自实际验收：在 QEMU 客体的 Caddy 2.6.2 中，内部 Cron 站点创建、投递、拒绝与凭据轮换/撤销均能运行，但 `caddy.service` 的 `http.log.access` 会把含 token 的请求 URI 写进 journal；站点设置 `log { output discard }` 后仍观察到记录。因此 daemon 仅向 Caddy 提供外部上游转发，并拒绝 Caddy 内部 Cron 绑定与轮换。宿主 Nginx 的 HTTPS 内部回调已在 QEMU 验证正确触发、拒绝错误凭据、轮换撤销及本次检查范围内的日志不含 token；受管 Nginx 容器已在隔离环境验证只读 socket 挂载和转发，完整受管部署仍待实测。
-
-如果曾用旧版本在 Caddy 上部署内部回调，请停止向旧 URL 投递，删除旧站点并确认 Caddy 重载；历史 journal、导出和备份中含有的 URL 应作为凭据处理。重新使用内部 Cron 时通过 Nginx 轮换并分发新 HTTPS URL，避免把 Caddy 或 Caddy WAF 边缘放在该入口前。
+旧版本曾在 Caddy 上建过内部站点时：删除该站点并重载 Caddy，再在 Nginx 后端重新绑定并轮换，使用新 URL；旧的 journal 与备份按凭据泄露处理。
 
 ## 配置项
 
@@ -61,7 +62,7 @@ Caddy 的差异来自实际验收：在 QEMU 客体的 Caddy 2.6.2 中，内部 
 
 1. **宿主 Nginx**：直接使用系统安装的 Nginx。
 2. **受管 Nginx 容器**：应用商店部署的 Nginx，由面板管理配置与挂载。
-3. **Caddy**：支持 Webhook 外部上游转发，但不支持内部 Cron 回调；Caddy 模式还不支持限流、防盗链、真实 IP 与独立错误日志。
+3. **Caddy**：支持 Webhook 外部上游转发，不支持内部计划任务；Caddy 模式还不支持限流、防盗链、真实 IP 与独立错误日志。
 
 受管容器的配置与数据通过宿主机目录挂载，容器内使用相同的绝对路径。因此宿主上能用的证书路径、认证文件、日志目录在容器里同样有效。
 

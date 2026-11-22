@@ -106,9 +106,9 @@ src/util/*.zig          查询串、校验、错误名、文本工具
 每个 API 模块只依赖 `api/context.zig`、`platform/*`、`shared` 模块与标准库，
 禁止跨模块调用彼此的内部函数，也不直接调用 systemctl/ufw/crontab 等平台工具。
 
-**Webhook WebServer 差异**：固定外部上游转发支持 Nginx 与 Caddy。内部 Cron 回调仅在显式选择 Nginx 且内部监听就绪时提供；宿主和受管容器 Nginx 通过专用 Unix socket 转发，daemon 另监听本机回环地址，内部端点不复用 mTLS 管理 API。凭据是 URL 路径中的 bearer token，站点须配置 HTTPS。QEMU 客体中 Nginx 的 HTTPS 创建、触发、拒绝、轮换、撤销及日志检查通过；受管容器的只读 socket 挂载与转发仅通过隔离容器验证，尚未完成完整受管部署验收。
+**Webhook 的 WebServer 差异**：固定外部上游转发支持 Nginx 与 Caddy。内部 Cron 回调只在 Nginx（宿主或受管容器）上提供，站点须启用 HTTPS；daemon 通过独立的回环监听与 `/run/hampanel-cron-webhook/trigger.sock` 接收 Nginx 转发，不复用 mTLS 管理 API，凭据为 URL 路径中的随机 token。
 
-Caddy 2.6.2 在 QEMU 中能创建内部回调站点、成功触发并执行轮换/撤销，但 `caddy.service` 的 `http.log.access` 仍将含 token 的请求 URI 写入 journal，即使站点设置了 `log { output discard }`。因此当前 daemon 对 Caddy 不声明内部 Cron 能力，并拒绝创建、换绑和轮换该类站点；Caddy 仍可用于固定外部上游转发。升级不能清除已写入 journal 的旧凭据，也不会自动卸载先前加载的 Caddy 内部回调站点：先停止旧 URL 投递、删除旧站点并确认 Caddy 重载，限制历史日志访问，再从 Nginx 重新签发 HTTPS URL。勿将 Caddy（包括 Caddy WAF 边缘）置于路径 token 入口前，除非已独立验证其日志策略不会记录 URI。
+Caddy 2.6.2 会把含 token 的请求 URI 写入 `caddy.service` 的 `http.log.access`，站点级 `log { output discard }` 不生效。因此 `webhook_targets` 对 Caddy 只声明 `upstream`，daemon 拒绝 Caddy 的内部绑定、换绑与轮换。历史日志中的旧 URL 需按凭据处理。
 
 构建版本：`build.zig` 读取 `git rev-parse --short HEAD` 与工作区状态，通过
 `build_info` 模块注入 `src/version.zig`，格式为 `0.1.0+<hash>[.dirty]`。
