@@ -21,6 +21,8 @@ pub fn available(allocator: std.mem.Allocator) bool {
 
 pub fn render(allocator: std.mem.Allocator, site: store.Site, site_dir: []const u8) ![]const u8 {
     _ = site_dir;
+    const webhook = @import("site_webhook.zig");
+    const hook = if (std.mem.eql(u8, site.kind, "webhook")) try webhook.target(site) else null;
     if (site.custom.enabled) return allocator.dupe(u8, site.custom.content);
     if (std.mem.eql(u8, site.kind, "tcp_proxy") or std.mem.eql(u8, site.kind, "udp_proxy")) return error.UnsupportedKind;
     if (site.rate_limit.enabled) return error.UnsupportedFeature;
@@ -90,7 +92,9 @@ pub fn render(allocator: std.mem.Allocator, site: store.Site, site_dir: []const 
     }
 
     const is_proxy = std.mem.eql(u8, site.kind, "reverse_proxy") or std.mem.eql(u8, site.kind, "runtime");
-    if (is_proxy) {
+    if (hook) |t| {
+        try webhook.writeCaddy(w, t);
+    } else if (is_proxy) {
         if (site.proxy.upstreams.len == 0) return error.MissingUpstream;
         try w.print("    reverse_proxy", .{});
         for (site.proxy.upstreams) |upstream| try w.print(" {s}", .{upstream.address});

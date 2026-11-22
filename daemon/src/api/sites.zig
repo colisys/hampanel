@@ -13,6 +13,55 @@ const environments = @import("../runtime/environments.zig");
 const webserver_nginx = "nginx";
 const webserver_caddy = "caddy";
 
+const hook = @import("../runtime/cron_webhook.zig");
+fn webhookTargets(server: []const u8, listener_ready: bool) []const []const u8 {
+    return if (hook.supportsProvider(server) and listener_ready) &.{ "upstream", "cron" } else &.{"upstream"};
+}
+fn binding(ctx: *context.Context, site: store.Site) !?[]const u8 {
+    if (!hook.internal(site)) return null;
+    if (!hook.supportsProvider(webServer(ctx))) return error.InternalWebhookProviderUnsupported;
+    if (!hook.secure(site)) return error.InsecureWebhookTransport;
+    if (!hook.ready.load(.acquire)) return error.InternalWebhookUnavailable;
+    return try hook.command(ctx.arena, site.webhook.?.cron_id);
+}
+fn credential(ctx: *context.Context, site: store.Site, cmd: []const u8) !void {
+    if (!site.enabled) {
+        ctx.fail(400, "DisabledWebhook", "请先启用站点，再签发凭据");
+        return;
+    }
+    if (try nginxTarget(ctx)) |c| _ = try nginx.inspectContainer(ctx.arena, c.data_dir, c.socket, true) else if (!nginx.available(ctx.arena)) return error.ManagedNginxUnavailable;
+    const token = try hook.issue(ctx.app.db, site, cmd);
+    const path = try std.fmt.allocPrint(ctx.arena, "/hook/{s}/{s}", .{ site.name, token });
+    const origin = try std.fmt.allocPrint(ctx.arena, "https://{s}", .{site.domains[0]});
+    try ctx.json(.{ .ok = true, .site = site, .webhook_token = token[0..], .webhook_path = path, .webhook_url = try std.mem.concat(ctx.arena, u8, &.{ origin, path }) });
+}
+pub fn rotateWebhook(ctx: *context.Context) anyerror!void {
+    hook.mutation.lockUncancelable(compat.io());
+    defer hook.mutation.unlock(compat.io());
+    const site = loadSite(ctx, ctx.param("name") orelse "") orelse return;
+    const cmd = binding(ctx, site) catch |err| {
+        failForValidation(ctx, err);
+        return;
+    };
+    if (cmd) |value| {
+        try hook.revoke(ctx.app.db, site.name);
+        const outcome = try applySite(ctx, site);
+        if (!outcome.ok) {
+            ctx.fail(400, "WebhookApplyFailed", "站点配置未生效，旧凭据已撤销");
+            return;
+        }
+        return credential(ctx, site, value);
+    }
+    ctx.fail(400, "InvalidKind", "not a cron webhook");
+}
+pub fn revokeWebhook(ctx: *context.Context) anyerror!void {
+    hook.mutation.lockUncancelable(compat.io());
+    defer hook.mutation.unlock(compat.io());
+    const site = loadSite(ctx, ctx.param("name") orelse "") orelse return;
+    try hook.revoke(ctx.app.db, site.name);
+    try ctx.json(.{ .ok = true });
+}
+
 const Outcome = struct { ok: bool, output: []const u8 };
 
 pub fn index(ctx: *context.Context) anyerror!void {
@@ -23,6 +72,7 @@ pub fn index(ctx: *context.Context) anyerror!void {
     };
     if (std.mem.eql(u8, server, webserver_caddy)) {
         try ctx.json(.{
+            .webhook_targets = webhookTargets(server, hook.ready.load(.acquire)),
             .available = caddy.available(ctx.arena),
             .supported = true,
             .webserver = server,
@@ -32,10 +82,11 @@ pub fn index(ctx: *context.Context) anyerror!void {
         return;
     }
     const target = nginxTarget(ctx) catch {
-        try ctx.json(.{ .available = false, .supported = true, .webserver = server, .dir = "", .sites = sites });
+        try ctx.json(.{ .webhook_targets = webhookTargets(server, hook.ready.load(.acquire)), .available = false, .supported = true, .webserver = server, .dir = "", .sites = sites });
         return;
     };
     try ctx.json(.{
+        .webhook_targets = webhookTargets(server, hook.ready.load(.acquire)),
         .available = target != null or nginx.available(ctx.arena),
         .supported = true,
         .webserver = server,
@@ -51,14 +102,15 @@ pub fn show(ctx: *context.Context) anyerror!void {
     };
     const site = loadSite(ctx, name) orelse return;
     const site_dir = store.siteDir(ctx.arena, ctx.app.config.data_dir, name) catch "";
+    const server = webServer(ctx);
     var config: []const u8 = "";
     var config_error: []const u8 = "";
-    if (std.mem.eql(u8, webServer(ctx), webserver_nginx)) {
+    if (std.mem.eql(u8, server, webserver_nginx)) {
         config = nginx.render(ctx.arena, site, site_dir) catch |err| blk: {
             config_error = @errorName(err);
             break :blk "";
         };
-    } else if (std.mem.eql(u8, webServer(ctx), webserver_caddy)) {
+    } else if (std.mem.eql(u8, server, webserver_caddy)) {
         config = caddy.render(ctx.arena, site, site_dir) catch |err| blk: {
             config_error = @errorName(err);
             break :blk "";
@@ -68,19 +120,24 @@ pub fn show(ctx: *context.Context) anyerror!void {
         .site = site,
         .config = config,
         .config_error = config_error,
-        .webserver = webServer(ctx),
+        .webhook_targets = webhookTargets(server, hook.ready.load(.acquire)),
+        .webserver = server,
     });
 }
 
 pub fn create(ctx: *context.Context) anyerror!void {
+    hook.mutation.lockUncancelable(compat.io());
+    defer hook.mutation.unlock(compat.io());
     const Body = struct {
         name: []const u8,
         kind: []const u8 = "static",
+        tls: store.Tls = .{},
         domains: []const []const u8 = &.{},
         root: []const u8 = "",
         listen: u16 = 0,
         port: u16 = 0,
         proxy_target: []const u8 = "",
+        webhook: ?store.Webhook = null,
         runtime_id: []const u8 = "",
     };
     const body = ctx.requireJson(Body) catch {
@@ -99,7 +156,9 @@ pub fn create(ctx: *context.Context) anyerror!void {
     var site = store.Site{
         .name = body.name,
         .kind = body.kind,
+        .webhook = body.webhook,
         .domains = body.domains,
+        .tls = body.tls,
         .root = body.root,
         .listen = if (body.listen > 0) body.listen else if (body.port > 0) body.port else 80,
         .runtime_id = body.runtime_id,
@@ -123,6 +182,11 @@ pub fn create(ctx: *context.Context) anyerror!void {
         return;
     };
 
+    const cmd = binding(ctx, site) catch |err| {
+        failForValidation(ctx, err);
+        return;
+    };
+    if (cmd != null) try hook.revoke(ctx.app.db, site.name);
     const saved = store.save(ctx.arena, ctx.app.config.data_dir, site) catch |err| {
         ctx.fail(500, "save_failed", @errorName(err));
         return;
@@ -138,10 +202,13 @@ pub fn create(ctx: *context.Context) anyerror!void {
         return;
     }
 
+    if (cmd) |value| return credential(ctx, saved, value);
     try ctx.json(.{ .ok = true, .output = outcome.output, .site = saved });
 }
 
 pub fn update(ctx: *context.Context) anyerror!void {
+    hook.mutation.lockUncancelable(compat.io());
+    defer hook.mutation.unlock(compat.io());
     const name = ctx.param("name") orelse {
         ctx.fail(400, "bad_name", "missing site name");
         return;
@@ -157,6 +224,29 @@ pub fn update(ctx: *context.Context) anyerror!void {
     };
     site.name = name;
     site.created_at = old.created_at;
+    return saveUpdate(ctx, old, site);
+}
+
+pub fn updateWebhook(ctx: *context.Context) anyerror!void {
+    hook.mutation.lockUncancelable(compat.io());
+    defer hook.mutation.unlock(compat.io());
+    const old = loadSite(ctx, ctx.param("name") orelse "") orelse return;
+    if (!std.mem.eql(u8, old.kind, "webhook")) {
+        ctx.fail(400, "InvalidKind", "站点不是 webhook 类型");
+        return;
+    }
+    var site = old;
+    const body = ctx.requireJson(struct { proxy_target: []const u8 = "", webhook: ?store.Webhook = null }) catch {
+        ctx.fail(400, "bad_request", "expected proxy_target");
+        return;
+    };
+    site.webhook = body.webhook;
+    site.proxy.upstreams = if (body.proxy_target.len == 0) &.{} else &.{.{ .address = body.proxy_target }};
+    return saveUpdate(ctx, old, site);
+}
+
+fn saveUpdate(ctx: *context.Context, old: store.Site, updated: store.Site) !void {
+    var site = updated;
     prepareRuntime(ctx, &site) catch |err| {
         failForValidation(ctx, err);
         return;
@@ -170,6 +260,12 @@ pub fn update(ctx: *context.Context) anyerror!void {
         return;
     };
 
+    const changed = hook.internal(old) != hook.internal(site) or (hook.internal(site) and !std.mem.eql(u8, old.webhook.?.cron_id, site.webhook.?.cron_id));
+    const cmd = binding(ctx, site) catch |err| {
+        failForValidation(ctx, err);
+        return;
+    };
+    if (changed) try hook.revoke(ctx.app.db, site.name);
     const saved = store.save(ctx.arena, ctx.app.config.data_dir, site) catch |err| {
         ctx.fail(500, "save_failed", @errorName(err));
         return;
@@ -187,11 +283,16 @@ pub fn update(ctx: *context.Context) anyerror!void {
     }
 
     var name_buf: [96]u8 = undefined;
+    if (changed) {
+        if (cmd) |value| return credential(ctx, saved, value);
+    }
     log.info("sites: updated name={s}", .{redact.text(&name_buf, saved.name)});
     try ctx.json(.{ .ok = true, .output = outcome.output, .site = saved });
 }
 
 pub fn toggle(ctx: *context.Context) anyerror!void {
+    hook.mutation.lockUncancelable(compat.io());
+    defer hook.mutation.unlock(compat.io());
     const name = ctx.param("name") orelse {
         ctx.fail(400, "bad_name", "missing site name");
         return;
@@ -235,6 +336,8 @@ pub fn toggle(ctx: *context.Context) anyerror!void {
 }
 
 pub fn destroy(ctx: *context.Context) anyerror!void {
+    hook.mutation.lockUncancelable(compat.io());
+    defer hook.mutation.unlock(compat.io());
     const name = ctx.param("name") orelse {
         ctx.fail(400, "bad_name", "missing site name");
         return;
@@ -261,6 +364,7 @@ pub fn destroy(ctx: *context.Context) anyerror!void {
         try ctx.jsonStatus(400, .{ .ok = false, .output = outcome.output });
         return;
     }
+    if (hook.internal(site)) try hook.revoke(ctx.app.db, name);
     store.delete(ctx.arena, ctx.app.config.data_dir, name) catch {};
     try ctx.json(.{ .ok = true, .removed = true, .output = outcome.output });
 }
@@ -283,6 +387,8 @@ pub fn reload(ctx: *context.Context) anyerror!void {
 }
 
 pub fn uploadCertificate(ctx: *context.Context) anyerror!void {
+    hook.mutation.lockUncancelable(compat.io());
+    defer hook.mutation.unlock(compat.io());
     const name = ctx.param("name") orelse {
         ctx.fail(400, "bad_name", "missing site name");
         return;
@@ -352,6 +458,8 @@ pub fn uploadCertificate(ctx: *context.Context) anyerror!void {
 }
 
 pub fn updateBasicAuth(ctx: *context.Context) anyerror!void {
+    hook.mutation.lockUncancelable(compat.io());
+    defer hook.mutation.unlock(compat.io());
     const name = ctx.param("name") orelse {
         ctx.fail(400, "bad_name", "missing site name");
         return;
@@ -432,6 +540,10 @@ pub fn logs(ctx: *context.Context) anyerror!void {
         return;
     };
     const site = loadSite(ctx, name) orelse return;
+    if (hook.internal(site)) {
+        ctx.fail(404, "logs_unavailable", "request logging is disabled for cron webhooks");
+        return;
+    }
     const kind = (try ctx.query("kind")) orelse "access";
     const path = if (std.mem.eql(u8, kind, "error"))
         (if (site.error_log.len > 0) site.error_log else "/var/log/nginx/error.log")
@@ -521,13 +633,15 @@ fn prepareRuntime(ctx: *context.Context, site: *store.Site) !void {
 
 fn validateSite(site: store.Site) !void {
     if (!validate.isSlug(site.name)) return error.InvalidName;
-    const kinds = [_][]const u8{ "static", "reverse_proxy", "runtime", "subsite", "tcp_proxy", "udp_proxy" };
+    if (site.webhook != null and !std.mem.eql(u8, site.kind, "webhook")) return error.InvalidWebhookOptions;
+    const kinds = [_][]const u8{ "static", "reverse_proxy", "runtime", "subsite", "tcp_proxy", "udp_proxy", "webhook" };
     var kind_ok = false;
     for (kinds) |kind| kind_ok = kind_ok or std.mem.eql(u8, kind, site.kind);
     if (!kind_ok) return error.InvalidKind;
     if (site.domains.len > 32) return error.InvalidDomains;
     for (site.domains) |domain| if (!validate.isHostname(domain)) return error.InvalidDomains;
     if (site.listen == 0) return error.InvalidPort;
+    if (std.mem.eql(u8, site.kind, "webhook")) _ = try @import("../runtime/site_webhook.zig").target(site);
     if (site.custom.enabled) {
         if (site.custom.content.len > 1024 * 1024) return error.InvalidCustom;
         if (std.mem.indexOfScalar(u8, site.custom.content, 0) != null) return error.InvalidCustom;
@@ -610,6 +724,8 @@ fn validateServerFeatures(ctx: *context.Context, site: store.Site) !void {
 }
 
 fn validateServerFeaturesValue(site: store.Site, webserver: []const u8) !void {
+    if (std.mem.eql(u8, site.kind, "webhook") and !std.mem.eql(u8, webserver, webserver_nginx) and !std.mem.eql(u8, webserver, webserver_caddy)) return error.UnsupportedKind;
+    if (hook.internal(site) and !hook.supportsProvider(webserver)) return error.InternalWebhookProviderUnsupported;
     if (!std.mem.eql(u8, webserver, webserver_caddy)) return;
     if (std.mem.eql(u8, site.kind, "tcp_proxy") or std.mem.eql(u8, site.kind, "udp_proxy")) return error.UnsupportedKind;
     if (site.rate_limit.enabled) return error.UnsupportedFeature;
@@ -625,6 +741,12 @@ pub fn validateForTest(site: store.Site, webserver: []const u8) !void {
 
 fn failForValidation(ctx: *context.Context, err: anyerror) void {
     const message = switch (err) {
+        error.UnsupportedCronCommand => "此任务使用 cron 专属的 % 输入语法，不支持 webhook 触发",
+        error.UnknownCronId, error.AmbiguousCronId => "Cron ID 不存在或不唯一",
+        error.InvalidWebhookUrl => "Webhook 需要唯一 HTTP(S) 源地址，不含路径、查询参数、片段或凭据",
+        error.InternalWebhookProviderUnsupported => "内部 cron webhook 仅支持 nginx；Caddy 可能将路径凭据写入日志",
+        error.InternalWebhookUnavailable => "当前 daemon 未启用内部 cron webhook；不会转发到外部上游",
+        error.InvalidWebhookOptions => "Webhook 站点不支持该配置项",
         error.InvalidName => "站点标识无效",
         error.InvalidKind => "不支持的站点类型",
         error.InvalidDomains => "域名无效或为空",
@@ -632,6 +754,7 @@ fn failForValidation(ctx: *context.Context, err: anyerror) void {
         error.InvalidRoot => "目录必须是绝对路径",
         error.InvalidPath => "日志路径必须是绝对路径",
         error.InvalidValue => "配置值无效",
+        error.InsecureWebhookTransport => "内部 cron webhook 必须配置 HTTPS 域名、证书和私钥",
         error.MissingCertificate => "启用 HTTPS 前请先上传证书和私钥",
         error.InvalidCertificate => "证书路径无效",
         error.InvalidRate => "限流参数无效",
@@ -709,4 +832,14 @@ fn tailLines(allocator: std.mem.Allocator, contents: []const u8, count: usize) [
         if (line.len > 0) lines.append(line) catch {};
     }
     return lines.items;
+}
+
+test "cron capability requires nginx and a ready listener" {
+    for ([_][]const u8{ "caddy", "", "unknown" }) |server| {
+        const targets = webhookTargets(server, true);
+        try std.testing.expectEqual(@as(usize, 1), targets.len);
+        try std.testing.expectEqualStrings("upstream", targets[0]);
+    }
+    try std.testing.expectEqual(@as(usize, 1), webhookTargets("nginx", false).len);
+    try std.testing.expectEqualStrings("cron", webhookTargets("nginx", true)[1]);
 }

@@ -271,6 +271,61 @@ test "site store and nginx renderer round trip" {
     try std.testing.expectEqual(@as(usize, 0), empty.len);
 }
 
+test "webhook requires a single literal HTTP origin and a supported provider" {
+    const api = @import("api/sites.zig");
+    const hook = @import("runtime/site_webhook.zig");
+    for ([_][]const u8{ "http://receiver", "https://example.com:443", "http://127.0.0.1:3000", "http://[::1]:8080" }) |url| {
+        try std.testing.expectEqualStrings(url, (try hook.parse(url)).origin);
+    }
+    for ([_][]const u8{ "", "ftp://host", "https://", "http://a/b", "http://a/", "http://a?x", "http://a#f", "http://a@b", "http://a;", "http://a\nb", "http://a b", "http://$host", "https://{host}", "http://a:0", "http://a:65536", "http://a:+1", "http://a:", "http://unix:80", "http://[broken]", "http://[::1]x", "http://a..b" }) |url| {
+        try std.testing.expectError(error.InvalidWebhookUrl, hook.parse(url));
+    }
+    var site = @import("runtime/site_store.zig").Site{ .name = "hook", .domains = &.{"hook.example"}, .kind = "webhook" };
+    try std.testing.expectError(error.InvalidWebhookUrl, api.validateForTest(site, "nginx"));
+    site.proxy.upstreams = &.{ .{ .address = "http://a" }, .{ .address = "http://b" } };
+    try std.testing.expectError(error.InvalidWebhookUrl, api.validateForTest(site, "caddy"));
+    site.proxy.upstreams = &.{.{ .address = "https://receiver.example:8443" }};
+    try std.testing.expectError(error.UnsupportedKind, api.validateForTest(site, ""));
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    try api.validateForTest(site, "nginx");
+    try api.validateForTest(site, "caddy");
+    const n = try @import("runtime/site_nginx.zig").render(a, site, "/tmp/hook");
+    const c = try @import("runtime/site_caddy.zig").render(a, site, "/tmp/hook");
+    for ([_][]const u8{ "proxy_pass https://receiver.example:8443;", "proxy_ssl_verify on;", "proxy_set_header Host receiver.example:8443;", "location / {" }) |text| try std.testing.expect(std.mem.indexOf(u8, n, text) != null);
+    for ([_][]const u8{ "reverse_proxy https://receiver.example:8443", "header_up Host receiver.example:8443", "handle {" }) |text| try std.testing.expect(std.mem.indexOf(u8, c, text) != null);
+    // Neither provider's generated proxy config restricts methods or rewrites
+    // the request URI, so GET challenges and POST deliveries share the route.
+    for ([_][]const u8{ "request_method", "return 405", "rewrite ", "try_files" }) |text| try std.testing.expect(std.mem.indexOf(u8, n, text) == null);
+    for ([_][]const u8{ "method POST", "respond 405", "rewrite " }) |text| try std.testing.expect(std.mem.indexOf(u8, c, text) == null);
+    site.tls = .{ .enabled = true, .certificate = "/etc/ssl/certs/hook+2026.pem", .key = "/etc/ssl/private/hook+2026.key" };
+    try api.validateForTest(site, "nginx");
+    try api.validateForTest(site, "caddy");
+    for ([_][]const u8{ "/etc/ssl/certs/evil;drop.pem", "/etc/ssl/certs/evil\nnext", "/etc/ssl/certs/$variable.pem", "relative.pem" }) |path| {
+        site.tls.certificate = path;
+        try std.testing.expectError(error.InvalidWebhookOptions, api.validateForTest(site, "nginx"));
+        try std.testing.expectError(error.InvalidWebhookOptions, api.validateForTest(site, "caddy"));
+    }
+    site.tls.enabled = false;
+    site.custom.enabled = true;
+    try std.testing.expectError(error.InvalidWebhookOptions, api.validateForTest(site, "nginx"));
+    try std.testing.expectError(error.InvalidWebhookOptions, @import("runtime/site_caddy.zig").render(a, site, "/tmp/hook"));
+}
+
+test "internal webhook never falls through to an external proxy" {
+    const api = @import("api/sites.zig");
+    var site = @import("runtime/site_store.zig").Site{ .name = "hook", .domains = &.{"hook.example"}, .kind = "webhook", .proxy = .{ .upstreams = &.{.{ .address = "https://receiver.example" }} } };
+    site.webhook = .{ .target = "cron", .cron_id = "abcdef10" };
+    const a = std.testing.allocator;
+    try std.testing.expectError(error.InternalWebhookUnavailable, api.validateForTest(site, "nginx"));
+    try std.testing.expectError(error.InternalWebhookUnavailable, @import("runtime/site_nginx.zig").render(a, site, "/tmp/hook"));
+    try std.testing.expectError(error.InternalWebhookUnavailable, @import("runtime/site_caddy.zig").render(a, site, "/tmp/hook"));
+    site.webhook = .{ .target = "upstream", .cron_id = "abcdef10" };
+    try std.testing.expectError(error.InvalidWebhookOptions, api.validateForTest(site, "nginx"));
+    site.webhook = .{ .target = "upstream" };
+    try api.validateForTest(site, "nginx");
+}
 
 test "site caddy and stream renderers" {
     const site_store = @import("runtime/site_store.zig");
@@ -563,7 +618,14 @@ test "generated caddy config is accepted by caddy validate" {
         std.debug.print("caddy validate output:\n{s}\n{s}\n", .{ result.stdout, result.stderr });
     }
     try std.testing.expect(result.ok());
-    std.debug.print("caddy validate accepted generated site config\n", .{});
+    const internal_site = site_store.Site{
+        .name = "check-cron-caddy",
+        .kind = "webhook",
+        .domains = &.{"cron.example.com"},
+        .listen = 8099,
+        .webhook = .{ .target = "cron", .cron_id = "abcdef10" },
+    };
+    try std.testing.expectError(error.InternalWebhookProviderUnsupported, site_caddy.render(a, internal_site, dir));
 }
 
 test "panel cron jobs only accept curated commands" {
@@ -768,7 +830,6 @@ test "host probe accepts and rejects IPv6 literals" {
         try std.testing.expect(!hostprobe.isSafeTarget("2001:db8::1 -sV"));
     }
 }
-
 
 test "scan bans treat equivalent IPv6 notations as one host" {
     const security = @import("platform/mod.zig").security;
@@ -1333,8 +1394,8 @@ test "selinux managed paths cover the panel and its containers" {
     // Everything the daemon itself reads or writes must be present, otherwise
     // entering enforcing mode locks the panel out of its own state.
     const must = [_][]const u8{
-        "/etc/hampanel", "/var/lib/hampanel", "/var/log/hampanel",
-        "/run/hampanel",   "/usr/local/bin/hampaneld",
+        "/etc/hampanel", "/var/lib/hampanel",        "/var/log/hampanel",
+        "/run/hampanel", "/usr/local/bin/hampaneld",
     };
     for (must) |needle| {
         var found = false;
@@ -1386,9 +1447,9 @@ test "selinux refuses reboot targets before relabel" {
     // Units that take the host down must be recognised, including the target
     // and the service forms, since either can be submitted.
     const blocking = [_][]const u8{
-        "reboot.target", "poweroff.target", "halt.target", "kexec.target",
-        "systemd-reboot.service", "systemd-poweroff.service",
-        "reboot.service", "poweroff.service", "halt.service",
+        "reboot.target",          "poweroff.target",          "halt.target",    "kexec.target",
+        "systemd-reboot.service", "systemd-poweroff.service", "reboot.service", "poweroff.service",
+        "halt.service",
     };
     for (blocking) |unit| try std.testing.expect(selinux.isRebootUnit(unit));
 
@@ -1409,4 +1470,39 @@ test "selinux refuses reboot targets before relabel" {
     const status = try selinux.status(arena_state.allocator(), "/nonexistent-hampanel");
     const expect_allowed = !status.present or status.relabelled;
     try std.testing.expectEqual(expect_allowed, selinux.rebootAllowed(std.testing.allocator));
+}
+
+test "cron webhook renderers isolate the site and mount only a read-only socket directory" {
+    const h = @import("runtime/cron_webhook.zig");
+    const site = @import("runtime/site_store.zig").Site{ .name = "build", .kind = "webhook", .webhook = .{ .target = "cron", .cron_id = "abcdef10" }, .domains = &.{"build.example"}, .tls = .{ .enabled = true, .certificate = "/cert", .key = "/key" } };
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const n = try @import("runtime/site_nginx.zig").render(a, site, "/unused");
+    try std.testing.expectError(error.InternalWebhookProviderUnsupported, @import("runtime/site_caddy.zig").render(a, site, "/unused"));
+    try std.testing.expectError(error.InternalWebhookProviderUnsupported, @import("api/sites.zig").validateForTest(site, "caddy"));
+    try @import("api/sites.zig").validateForTest(site, "nginx");
+    const mounts = try @import("runtime/site_nginx_container.zig").renderOverride(a, "/test", &.{site});
+    var plain = site;
+    plain.tls.enabled = false;
+    try std.testing.expectError(error.InsecureWebhookTransport, @import("runtime/site_nginx.zig").render(a, plain, "/unused"));
+    const http = n[0..std.mem.indexOf(u8, n, "listen 443").?];
+    try std.testing.expect(std.mem.indexOf(u8, http, "return 404;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, http, "proxy_pass") == null);
+    try std.testing.expect(std.mem.indexOf(u8, n, "$request_uri") == null);
+    try std.testing.expect(std.mem.indexOf(u8, n, h.socket) != null);
+    try std.testing.expect(std.mem.indexOf(u8, n, "/hook/build/") != null);
+    try std.testing.expect(std.mem.indexOf(u8, n, "abcdef10") == null);
+    try std.testing.expect(std.mem.indexOf(u8, n, "access_log off;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, n, "error_log /dev/null;") != null);
+    const other = try @import("runtime/site_caddy.zig").render(a, .{
+        .name = "other",
+        .domains = &.{"other.example"},
+        .kind = "reverse_proxy",
+        .access_log = "/var/log/caddy/other.log",
+        .proxy = .{ .upstreams = &.{.{ .address = "127.0.0.1:8080" }} },
+    }, "/unused");
+    try std.testing.expect(std.mem.indexOf(u8, other, "output file /var/log/caddy/other.log") != null);
+    try std.testing.expect(std.mem.indexOf(u8, other, "output discard") == null);
+    try std.testing.expect(std.mem.indexOf(u8, mounts, h.dir ++ ":" ++ h.dir ++ ":ro") != null);
 }

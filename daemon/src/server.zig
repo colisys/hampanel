@@ -23,6 +23,7 @@ pub fn serve(app: *app_mod.App) !void {
     var listener = try address.listen(io, .{ .reuse_address = true });
     defer listener.deinit(io);
 
+    @import("runtime/cron_webhook.zig").start(app) catch |err| log.warn("cron webhook unavailable: {s}", .{@errorName(err)});
     log.info("hampaneld listening on {s}:{d} with mutual TLS", .{ app.config.listen, app.config.port });
 
     while (true) {

@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub const Expect = struct {
+    require_socket: bool = false,
     conf: []const u8,
     snippet: []const u8,
     main: []const u8,
@@ -16,8 +17,10 @@ fn allowedExtra(line: []const u8) bool {
     const kind = fields.next() orelse return false;
     if (!std.mem.eql(u8, kind, "bind")) return false;
     const destination = fields.next() orelse return false;
-    _ = fields.next() orelse return false;
+    const rw = fields.next() orelse return false;
     const source = fields.next() orelse return false;
+    const socket_dir = @import("cron_webhook.zig").dir;
+    if (std.mem.eql(u8, destination, socket_dir) or std.mem.eql(u8, source, socket_dir)) return std.mem.eql(u8, destination, socket_dir) and std.mem.eql(u8, source, socket_dir) and std.mem.eql(u8, rw, "false") and fields.next() == null;
     if (std.mem.eql(u8, destination, "/") or std.mem.eql(u8, source, "/")) return false;
     if (std.mem.indexOf(u8, source, "docker.sock") != null) return false;
     if (std.mem.indexOf(u8, source, "/proc") != null) return false;
@@ -56,11 +59,14 @@ pub fn catalogLayout(a: std.mem.Allocator, raw: []const u8, expect: Expect) !boo
         } else if (std.mem.startsWith(u8, line, "volume /usr/share/nginx/html true ")) {
             if (mask & 4 != 0) return false;
             mask |= 4;
+        } else if (std.mem.eql(u8, line, "bind " ++ @import("cron_webhook.zig").dir ++ " false " ++ @import("cron_webhook.zig").dir)) {
+            if (mask & 32 != 0) return false;
+            mask |= 32;
         } else if (!allowedExtra(line)) {
             return false;
         }
     }
-    return mask == 31;
+    return mask == 63 or (!expect.require_socket and mask == 31);
 }
 
 test "managed nginx rejects extra mounts and privileged containers" {
@@ -73,6 +79,12 @@ test "managed nginx rejects extra mounts and privileged containers" {
     const expect = Expect{ .conf = "/conf", .snippet = "/snippet", .main = "/main", .stream = "/stream" };
     const a = std.testing.allocator;
     try std.testing.expect(try catalogLayout(a, image ++ "false\n" ++ core, expect));
+    var cron = expect;
+    cron.require_socket = true;
+    const dir = @import("cron_webhook.zig").dir;
+    try std.testing.expect(!try catalogLayout(a, image ++ "false\n" ++ core, cron));
+    try std.testing.expect(!try catalogLayout(a, image ++ "false\n" ++ core ++ "bind " ++ dir ++ " true " ++ dir, cron));
+    try std.testing.expect(try catalogLayout(a, image ++ "false\n" ++ core ++ "bind " ++ dir ++ " false " ++ dir, cron));
     try std.testing.expect(!try catalogLayout(a, image ++ "true\n" ++ core, expect));
     try std.testing.expect(!try catalogLayout(a, image ++ "false\n" ++ core ++ "bind /host true /\n", expect));
 }

@@ -1,3 +1,13 @@
+import 'dart:convert';
+
+// Webhook TLS paths are emitted as unquoted Nginx arguments.
+bool isWebhookTlsPath(String path) =>
+    path.startsWith('/') &&
+    path.length > 1 &&
+    !path.endsWith('/') &&
+    utf8.encode(path).length <= 2048 &&
+    !RegExp(r'''[\x00-\x20\x7f;{}#"'`\\$]''').hasMatch(path);
+
 class SiteTls {
   const SiteTls({
     this.enabled = false,
@@ -203,6 +213,89 @@ class SiteRewrite {
   };
 }
 
+bool isWebhookProvider(String? webserver) =>
+    webserver == 'nginx' || webserver == 'caddy';
+
+const webhookOriginHint = '请输入 HTTP(S) 源地址，不含路径、查询参数或片段';
+
+bool isWebhookOrigin(String value) {
+  if (value.length > 512) return false;
+  final match = RegExp(
+    r'^https?://([a-zA-Z0-9.-]+|\[[a-fA-F0-9:.]+\])(?::([0-9]{1,5}))?$',
+  ).firstMatch(value);
+  if (match == null || match.end != value.length) return false;
+  final port = int.tryParse(match[2] ?? '80')!;
+  if (port == 0 || port > 65535) return false;
+  final host = match[1]!;
+  if (host.startsWith('[')) {
+    try {
+      Uri.parseIPv6Address(host.substring(1, host.length - 1));
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+  return host.length <= 253 &&
+      host.toLowerCase() != 'unix' &&
+      host
+          .split('.')
+          .every(
+            (label) =>
+                label.isNotEmpty &&
+                label.length <= 63 &&
+                !label.startsWith('-') &&
+                !label.endsWith('-'),
+          );
+}
+
+class SiteWebhook {
+  const SiteWebhook({required this.target, this.cronId = ''});
+
+  final String target;
+  final String cronId;
+
+  factory SiteWebhook.fromJson(Map<String, dynamic> json) => SiteWebhook(
+    target: json['target'] as String? ?? '',
+    cronId: json['cron_id'] as String? ?? '',
+  );
+
+  Map<String, dynamic> toJson() => {
+    'target': target,
+    if (target == 'cron') 'cron_id': cronId,
+  };
+}
+
+List<String> parseWebhookTargets(Map<String, dynamic> json) =>
+    ((json['webhook_targets'] as List<dynamic>?) ?? const [])
+        .whereType<String>()
+        .where((target) => target == 'upstream' || target == 'cron')
+        .toList();
+
+Map<String, dynamic> webhookUpdateJson({
+  required String name,
+  required bool enabled,
+  required List<String> domains,
+  required int listen,
+  required String origin,
+  SiteWebhook? webhook,
+  required SiteTls tls,
+  bool? ipv6,
+  SiteRateLimit? rateLimit,
+}) => {
+  'name': name,
+  'kind': 'webhook',
+  if (webhook != null) 'webhook': webhook.toJson(),
+  'enabled': enabled,
+  'domains': domains,
+  'listen': listen,
+  'tls': tls.toJson(),
+  'ipv6': ?ipv6,
+  if (rateLimit != null) 'rate_limit': rateLimit.toJson(),
+  'proxy': {
+    'upstreams': [SiteUpstream(address: origin).toJson()],
+  },
+};
+
 class SiteUpstream {
   const SiteUpstream({this.address = '', this.weight = 1});
 
@@ -314,6 +407,7 @@ class Site {
   const Site({
     this.name = '',
     this.kind = 'static',
+    this.webhook,
     this.enabled = true,
     this.domains = const [],
     this.listen = 80,
@@ -341,6 +435,7 @@ class Site {
 
   final String name;
   final String kind;
+  final SiteWebhook? webhook;
   final bool enabled;
   final List<String> domains;
   final int listen;
@@ -368,6 +463,9 @@ class Site {
   factory Site.fromJson(Map<String, dynamic> json) => Site(
     name: json['name'] as String? ?? '',
     kind: json['kind'] as String? ?? 'static',
+    webhook: json['webhook'] is Map<String, dynamic>
+        ? SiteWebhook.fromJson(json['webhook'] as Map<String, dynamic>)
+        : null,
     enabled: json['enabled'] as bool? ?? true,
     domains: ((json['domains'] as List<dynamic>?) ?? const [])
         .whereType<String>()
@@ -410,6 +508,7 @@ class Site {
   Map<String, dynamic> toJson() => {
     'name': name,
     'kind': kind,
+    if (webhook != null) 'webhook': webhook!.toJson(),
     'enabled': enabled,
     'domains': domains,
     'listen': listen,
@@ -436,7 +535,14 @@ class Site {
   };
 
   String get summaryTarget {
-    if (kind == 'reverse_proxy' || kind == 'runtime' || kind == 'tcp_proxy' || kind == 'udp_proxy') {
+    if (kind == 'webhook' && webhook?.target == 'cron') {
+      return 'Cron · ${webhook!.cronId}';
+    }
+    if (kind == 'reverse_proxy' ||
+        kind == 'webhook' ||
+        kind == 'runtime' ||
+        kind == 'tcp_proxy' ||
+        kind == 'udp_proxy') {
       return proxy.upstreams.map((item) => item.address).join(', ');
     }
     return root;
@@ -451,8 +557,10 @@ class SiteList {
     required this.directory,
     required this.sites,
     required this.message,
+    this.webhookTargets = const [],
   });
 
+  final List<String> webhookTargets;
   final bool available;
   final bool supported;
   final String webserver;
@@ -470,6 +578,7 @@ class SiteList {
         .map(Site.fromJson)
         .toList(),
     message: json['message'] as String? ?? '',
+    webhookTargets: parseWebhookTargets(json),
   );
 }
 
@@ -479,8 +588,10 @@ class SiteDetail {
     required this.config,
     required this.configError,
     required this.webserver,
+    this.webhookTargets = const [],
   });
 
+  final List<String> webhookTargets;
   final Site site;
   final String config;
   final String configError;
@@ -491,5 +602,6 @@ class SiteDetail {
     config: json['config'] as String? ?? '',
     configError: json['config_error'] as String? ?? '',
     webserver: json['webserver'] as String? ?? '',
+    webhookTargets: parseWebhookTargets(json),
   );
 }

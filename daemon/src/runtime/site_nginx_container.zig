@@ -101,6 +101,7 @@ pub fn renderOverride(allocator: std.mem.Allocator, data_dir: []const u8, sites:
     try list.append(.{ .source = sites_root, .writable = false });
 
     for (sites) |site| {
+        if (@import("cron_webhook.zig").internal(site)) try addBind(&list, @import("cron_webhook.zig").dir, false, &roots);
         if (site.root.len > 0) try addBind(&list, site.root, true, &roots);
         if (site.run_dir.len > 0) try addBind(&list, site.run_dir, true, &roots);
         for ([_][]const u8{ site.access_log, site.error_log }) |log_path| {

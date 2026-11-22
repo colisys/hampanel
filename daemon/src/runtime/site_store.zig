@@ -83,7 +83,13 @@ pub const Custom = struct {
     content: []const u8 = "",
 };
 
+pub const Webhook = struct {
+    target: []const u8,
+    cron_id: []const u8 = "",
+};
+
 pub const Site = struct {
+    webhook: ?Webhook = null,
     name: []const u8 = "",
     kind: []const u8 = "static",
     enabled: bool = true,

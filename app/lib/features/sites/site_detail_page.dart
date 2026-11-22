@@ -9,14 +9,18 @@ import '../../ui/layout.dart';
 import '../../ui/remote_picker.dart';
 import '../../ui/log_page.dart';
 import '../../ui/widgets.dart';
+import 'webhook_credential.dart';
+import 'cron_tls_fields.dart';
 
 class SiteDetailPage extends StatefulWidget {
   const SiteDetailPage({
     super.key,
     required this.api,
     required this.siteName,
+    this.sites = const [],
   });
 
+  final List<Site> sites;
   final ApiClient api;
   final String siteName;
 
@@ -76,6 +80,9 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
   bool _rateEnabled = false;
   bool _customEnabled = false;
   List<_RuntimeOption> _runtimes = const [];
+  List<String> _cronIds = const [];
+  String _webhookTarget = 'upstream';
+  String _cronId = '';
 
   @override
   void initState() {
@@ -120,9 +127,7 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
       _error = null;
     });
     try {
-      final json = await widget.api.getJson(
-        '/api/v1/sites/${widget.siteName}',
-      );
+      final json = await widget.api.getJson('/api/v1/sites/${widget.siteName}');
       final detail = SiteDetail.fromJson(json as Map<String, dynamic>);
       if (!mounted) return;
       setState(() {
@@ -131,7 +136,11 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
         _apply(detail.site);
         _loading = false;
       });
-      _loadRuntimes();
+      if (detail.site.kind == 'webhook') {
+        if (detail.webhookTargets.contains('cron')) _loadCronIds();
+      } else {
+        _loadRuntimes();
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -143,6 +152,8 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
 
   void _apply(Site site) {
     _kind = site.kind;
+    _webhookTarget = site.webhook?.target ?? 'upstream';
+    _cronId = site.webhook?.cronId ?? '';
     _enabled = site.enabled;
     _ipv6 = site.ipv6;
     _runtimeId = site.runtimeId;
@@ -156,12 +167,13 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
     _bodySize.text = site.clientMaxBodySize;
     _upstreams.text = [
       for (final upstream in site.proxy.upstreams)
-        upstream.weight > 1
+        site.kind != 'webhook' && upstream.weight > 1
             ? '${upstream.address} ${upstream.weight}'
             : upstream.address,
     ].join('\n');
     _proxyHeaders.text = [
-      for (final header in site.proxy.headers) '${header.name}: ${header.value}',
+      for (final header in site.proxy.headers)
+        '${header.name}: ${header.value}',
     ].join('\n');
     _loadBalance = site.proxy.loadBalance;
     _proxyWebsocket = site.proxy.websocket;
@@ -204,7 +216,8 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
     try {
       final json = await widget.api.getJson('/api/v1/runtimes');
       final items =
-          ((json as Map<String, dynamic>?)?['environments'] as List<dynamic>?) ??
+          ((json as Map<String, dynamic>?)?['environments']
+              as List<dynamic>?) ??
           const [];
       if (!mounted) return;
       setState(() {
@@ -222,81 +235,204 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
     }
   }
 
+  Future<void> _loadCronIds() async {
+    try {
+      final data =
+          await widget.api.getJson('/api/v1/cron') as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(
+        () => _cronIds = [
+          for (final entry in (data['entries'] as List<dynamic>? ?? const []))
+            if (entry is Map<String, dynamic> &&
+                entry['id'] is String &&
+                (entry['id'] as String).isNotEmpty)
+              entry['id'] as String,
+        ],
+      );
+    } catch (_) {
+      if (mounted) setState(() => _cronIds = const []);
+    }
+  }
+
+  bool get _isCron => _isWebhook && _webhookTarget == 'cron';
+
+  bool get _isWebhook => _kind == 'webhook';
+
+  bool get _canRevokeCronWebhook =>
+      _site?.kind == 'webhook' && _site?.webhook?.target == 'cron';
+
+  bool get _canManageCronWebhook =>
+      _canRevokeCronWebhook &&
+      _detail?.webserver == 'nginx' &&
+      _detail?.webhookTargets.contains('cron') == true;
+
+  Future<void> _manageCronToken({required bool rotate}) async {
+    if (_saving || (rotate ? !_canManageCronWebhook : !_canRevokeCronWebhook)) {
+      return;
+    }
+    final confirmed = await confirmDialog(
+      context,
+      title: rotate ? '轮换 Webhook 凭据？' : '撤销 Webhook 凭据？',
+      message: rotate
+          ? '旧 URL 将立即失效；新凭据仅在本次响应中显示，请先准备好安全保存并更新发送方。轮换也会重新启用已撤销的绑定。'
+          : '现有 URL 将失效，站点和 Cron 任务不会删除；已经接受的任务不会被终止。之后可通过轮换生成新凭据。',
+      confirmLabel: rotate ? '轮换' : '撤销',
+      danger: true,
+    );
+    if (!confirmed ||
+        !mounted ||
+        (rotate ? !_canManageCronWebhook : !_canRevokeCronWebhook)) {
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      final path = '/api/v1/sites/${widget.siteName}/webhook';
+      if (rotate) {
+        final json = await widget.api.postJson('$path/rotate', null);
+        if (!mounted) return;
+        final response = json as Map<String, dynamic>? ?? const {};
+        if (response['ok'] != true) throw StateError('轮换未成功');
+        if (!hasWebhookCredential(response)) {
+          _toast('轮换成功，但响应未提供凭据；请再次轮换以取得新 URL。');
+        } else {
+          await showWebhookCredential(context, response);
+        }
+      } else {
+        final json = await widget.api.deleteJson('$path/token');
+        if (!mounted) return;
+        if (json is! Map<String, dynamic> || json['ok'] != true) {
+          throw StateError('撤销未成功');
+        }
+        _toast('已请求撤销凭据；详情页无法查询凭据状态');
+      }
+    } catch (error) {
+      _toast(describeError(error));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<void> _save() async {
     final old = _site;
     if (old == null || _saving) return;
+    if (_kind == 'webhook') {
+      if (!isWebhookProvider(_detail?.webserver)) {
+        _toast('当前 WebServer 不支持 Webhook 站点');
+        return;
+      }
+      if (_detail?.webhookTargets.contains(_webhookTarget) != true) {
+        _toast('当前 daemon 不支持该 Webhook 目标');
+        return;
+      }
+      if (_isCron &&
+          (!isWebhookTlsPath(_tlsCertificate) ||
+              !isWebhookTlsPath(_tlsKey) ||
+              _lines(_domains, splitComma: true).isEmpty)) {
+        _toast('内部 Cron 需要回调域名以及证书链和私钥的服务器绝对路径');
+        return;
+      }
+      if (_webhookTarget == 'cron' && !_cronIds.contains(_cronId)) {
+        _toast('请选择已有的 Cron ID');
+        return;
+      }
+      if (_webhookTarget == 'upstream' && !isWebhookOrigin(_upstreams.text)) {
+        _toast(webhookOriginHint);
+        return;
+      }
+    }
     setState(() => _saving = true);
-    final site = Site(
-      name: widget.siteName,
-      kind: _kind,
-      enabled: _enabled,
-      domains: _lines(_domains, splitComma: true),
-      listen: int.tryParse(_listen.text.trim()) ?? 80,
-      ipv6: _ipv6,
-      root: _root.text.trim(),
-      runDir: _runDir.text.trim(),
-      index: _words(_index),
-      accessLog: _accessLog.text.trim(),
-      errorLog: _errorLog.text.trim(),
-      clientMaxBodySize: _bodySize.text.trim(),
-      runtimeId: _runtimeId,
-      tls: SiteTls(
-        enabled: _tlsEnabled,
-        certificate: _tlsCertificate,
-        key: _tlsKey,
-        acmeEmail: old.tls.acmeEmail,
-        redirectHttp: _tlsRedirect,
-        hsts: _tlsHsts,
-      ),
-      rateLimit: SiteRateLimit(
-        enabled: _rateEnabled,
-        rps: int.tryParse(_rateRps.text.trim()) ?? 10,
-        burst: int.tryParse(_rateBurst.text.trim()) ?? 20,
-        connections: int.tryParse(_rateConnections.text.trim()) ?? 0,
-      ),
-      basicAuth: SiteBasicAuth(
-        enabled: _basicEnabled,
-        users: old.basicAuth.users,
-      ),
-      cors: SiteCors(
-        enabled: _corsEnabled,
-        origins: _lines(_corsOrigins, splitComma: true),
-        methods: _lines(_corsMethods, splitComma: true),
-        headers: _lines(_corsHeaders, splitComma: true),
-        credentials: _corsCredentials,
-      ),
-      hotlink: SiteHotlink(
-        enabled: _hotlinkEnabled,
-        allowEmptyReferer: _hotlinkAllowEmpty,
-        extensions: _lines(_hotlinkExtensions, splitComma: true),
-      ),
-      redirects: _parseRedirects(),
-      rewrites: _parseRewrites(),
-      proxy: SiteProxy(
-        upstreams: _parseUpstreams(),
-        loadBalance: _loadBalance,
-        websocket: _proxyWebsocket,
-        preserveHost: _proxyPreserveHost,
-        headers: _parseHeaders(),
-      ),
-      realIp: SiteRealIp(
-        enabled: _realIpEnabled,
-        header: _realIpHeader.text.trim(),
-        trusted: _lines(_realIpTrusted, splitComma: true),
-      ),
-      custom: SiteCustom(enabled: _customEnabled, content: _custom.text),
-      createdAt: old.createdAt,
-      updatedAt: old.updatedAt,
+    final tls = SiteTls(
+      enabled: _isCron || _tlsEnabled,
+      certificate: _tlsCertificate,
+      key: _tlsKey,
+      acmeEmail: old.tls.acmeEmail,
+      redirectHttp: _tlsRedirect,
+      hsts: _tlsHsts,
     );
+    final rateLimit = SiteRateLimit(
+      enabled: _rateEnabled,
+      rps: int.tryParse(_rateRps.text.trim()) ?? 10,
+      burst: int.tryParse(_rateBurst.text.trim()) ?? 20,
+      connections: int.tryParse(_rateConnections.text.trim()) ?? 0,
+    );
+    final domains = _lines(_domains, splitComma: true);
+    final listen = int.tryParse(_listen.text.trim()) ?? 80;
+    final nginx = _detail?.webserver == 'nginx';
+    final body = _isWebhook
+        ? webhookUpdateJson(
+            name: widget.siteName,
+            enabled: _enabled,
+            domains: domains,
+            listen: listen,
+            origin: _webhookTarget == 'upstream' ? _upstreams.text : '',
+            webhook: SiteWebhook(target: _webhookTarget, cronId: _cronId),
+            tls: tls,
+            ipv6: nginx ? _ipv6 : null,
+            rateLimit: nginx ? rateLimit : null,
+          )
+        : Site(
+            name: widget.siteName,
+            kind: _kind,
+            enabled: _enabled,
+            domains: domains,
+            listen: listen,
+            ipv6: _ipv6,
+            root: _root.text.trim(),
+            runDir: _runDir.text.trim(),
+            index: _words(_index),
+            accessLog: _accessLog.text.trim(),
+            errorLog: _errorLog.text.trim(),
+            clientMaxBodySize: _bodySize.text.trim(),
+            runtimeId: _runtimeId,
+            tls: tls,
+            rateLimit: rateLimit,
+            basicAuth: SiteBasicAuth(
+              enabled: _basicEnabled,
+              users: old.basicAuth.users,
+            ),
+            cors: SiteCors(
+              enabled: _corsEnabled,
+              origins: _lines(_corsOrigins, splitComma: true),
+              methods: _lines(_corsMethods, splitComma: true),
+              headers: _lines(_corsHeaders, splitComma: true),
+              credentials: _corsCredentials,
+            ),
+            hotlink: SiteHotlink(
+              enabled: _hotlinkEnabled,
+              allowEmptyReferer: _hotlinkAllowEmpty,
+              extensions: _lines(_hotlinkExtensions, splitComma: true),
+            ),
+            redirects: _parseRedirects(),
+            rewrites: _parseRewrites(),
+            proxy: SiteProxy(
+              upstreams: _parseUpstreams(),
+              loadBalance: _loadBalance,
+              websocket: _proxyWebsocket,
+              preserveHost: _proxyPreserveHost,
+              headers: _parseHeaders(),
+            ),
+            realIp: SiteRealIp(
+              enabled: _realIpEnabled,
+              header: _realIpHeader.text.trim(),
+              trusted: _lines(_realIpTrusted, splitComma: true),
+            ),
+            custom: SiteCustom(enabled: _customEnabled, content: _custom.text),
+            createdAt: old.createdAt,
+            updatedAt: old.updatedAt,
+          ).toJson();
     try {
+      if (_isWebhook && _webhookTarget == 'cron') {
+        body['proxy'] = {'upstreams': <Map<String, dynamic>>[]};
+      }
       final json = await widget.api.putJson(
         '/api/v1/sites/${widget.siteName}',
-        site.toJson(),
+        body,
       );
       final map = json as Map<String, dynamic>? ?? const {};
       if (!mounted) return;
       final output = (map['output'] as String? ?? '').trim();
       _toast(output.isEmpty ? '已保存并重载' : output);
+      if (_isWebhook) await showWebhookCredential(context, map);
       await _load();
     } catch (error) {
       _toast(describeError(error));
@@ -359,9 +495,7 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
 
   Future<void> _editBasicUsers() async {
     final controller = TextEditingController(
-      text: [
-        for (final name in _basicUsers) '$name:',
-      ].join('\n'),
+      text: [for (final name in _basicUsers) '$name:'].join('\n'),
     );
     final submitted = await showDialog<bool>(
       context: context,
@@ -468,9 +602,7 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
           maxHeight: 560,
           child: SingleChildScrollView(
             child: SelectableText(
-              config.isEmpty
-                  ? (_detail?.configError ?? '暂无配置')
-                  : config,
+              config.isEmpty ? (_detail?.configError ?? '暂无配置') : config,
               style: monospace.copyWith(fontSize: 11.5),
             ),
           ),
@@ -539,30 +671,34 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
           : _site == null
           ? const SizedBox.shrink()
           : ListView(
-              padding: pageContentPadding(context, top: 12).copyWith(bottom: 32),
+              padding: pageContentPadding(
+                context,
+                top: 12,
+              ).copyWith(bottom: 32),
               children: [
-                if (_detail?.webserver == 'caddy')
+                if (!_isWebhook && _detail?.webserver == 'caddy')
                   _section('引擎说明', [
                     Text(
                       'Caddy 模式：限流、防盗链、真实 IP 和独立错误日志暂不支持；这些配置项仅在 Nginx 下生效。',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: hampanelMuted),
+                      style: Theme.of(context).textTheme.bodyMedium
+                          ?.copyWith(color: hampanelMuted),
                     ),
                   ]),
                 _section('基本信息', [
-                  _kindField(),
+                  if (_isWebhook) const Text('站点类型：Webhook') else _kindField(),
                   _gap(),
                   _switch('启用站点', _enabled, (value) {
                     setState(() => _enabled = value);
                   }),
-                  _switch('IPv6 监听', _ipv6, (value) {
-                    setState(() => _ipv6 = value);
-                  }),
+                  if (!_isWebhook || _detail?.webserver == 'nginx')
+                    _switch('IPv6 监听', _ipv6, (value) {
+                      setState(() => _ipv6 = value);
+                    }),
                   if (_kind == 'runtime') ...[
                     _gap(),
                     DropdownButtonFormField<String>(
-                      initialValue: _runtimes.any(
-                        (item) => item.id == _runtimeId,
-                      )
+                      initialValue:
+                          _runtimes.any((item) => item.id == _runtimeId)
                           ? _runtimeId
                           : null,
                       decoration: const InputDecoration(labelText: '运行环境'),
@@ -581,32 +717,115 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
                   _gap(),
                   _field(_domains, '域名', hint: '每行一个或逗号分隔', maxLines: 2),
                   _gap(),
-                  _field(_listen, 'HTTP 监听端口', number: true),
+                  if (!_isCron && (!_isWebhook || !_tlsEnabled))
+                    _field(_listen, 'HTTP 监听端口', number: true),
                 ]),
-                _section('目录与日志', [
-                  _pathField(_root, '站点根目录', hint: '/var/www/example'),
-                  _gap(),
-                  _pathField(_runDir, '运行目录', hint: '默认与站点根目录相同'),
-                  _gap(),
-                  _field(_index, '默认文档', hint: 'index.html index.htm'),
-                  _gap(),
-                  _pathField(
-                    _accessLog,
-                    '访问日志路径',
-                    hint: '留空使用全局日志',
-                    allowFiles: true,
-                  ),
-                  _gap(),
-                  _pathField(
-                    _errorLog,
-                    '错误日志路径',
-                    hint: '留空使用全局日志',
-                    allowFiles: true,
-                  ),
-                  _gap(),
-                  _field(_bodySize, '请求体大小限制', hint: '如 16m'),
-                ]),
-                if (_kind == 'reverse_proxy' || _kind == 'runtime' || _kind == 'tcp_proxy' || _kind == 'udp_proxy')
+                if (!_isWebhook)
+                  _section('目录与日志', [
+                    _pathField(_root, '站点根目录', hint: '/var/www/example'),
+                    _gap(),
+                    _pathField(_runDir, '运行目录', hint: '默认与站点根目录相同'),
+                    _gap(),
+                    _field(_index, '默认文档', hint: 'index.html index.htm'),
+                    _gap(),
+                    _pathField(
+                      _accessLog,
+                      '访问日志路径',
+                      hint: '留空使用全局日志',
+                      allowFiles: true,
+                    ),
+                    _gap(),
+                    _pathField(
+                      _errorLog,
+                      '错误日志路径',
+                      hint: '留空使用全局日志',
+                      allowFiles: true,
+                    ),
+                    _gap(),
+                    _field(_bodySize, '请求体大小限制', hint: '如 16m'),
+                  ]),
+                if (_kind == 'webhook')
+                  _section('Webhook', [
+                    if (!_detail!.webhookTargets.contains(_webhookTarget))
+                      const Text('当前 daemon 不支持此目标；不可保存。'),
+                    DropdownButtonFormField<String>(
+                      initialValue:
+                          _detail!.webhookTargets.contains(_webhookTarget)
+                          ? _webhookTarget
+                          : null,
+                      decoration: const InputDecoration(labelText: '回调目标'),
+                      items: [
+                        if (_detail!.webhookTargets.contains('upstream'))
+                          const DropdownMenuItem(
+                            value: 'upstream',
+                            child: Text('外部上游'),
+                          ),
+                        if (_detail!.webhookTargets.contains('cron'))
+                          const DropdownMenuItem(
+                            value: 'cron',
+                            child: Text('内部计划任务'),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _webhookTarget = value);
+                        }
+                      },
+                    ),
+                    if (_webhookTarget == 'cron')
+                      DropdownButtonFormField<String>(
+                        initialValue: _cronIds.contains(_cronId)
+                            ? _cronId
+                            : null,
+                        decoration: InputDecoration(
+                          labelText: '已有 Cron ID',
+                          helperText: _cronIds.isEmpty
+                              ? '暂无可用任务，请先创建计划任务'
+                              : null,
+                        ),
+                        items: [
+                          for (final id in _cronIds)
+                            DropdownMenuItem(value: id, child: Text(id)),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) setState(() => _cronId = value);
+                        },
+                      ),
+                    if (_webhookTarget == 'upstream')
+                      _field(
+                        _upstreams,
+                        '固定上游地址',
+                        hint: 'https://example.com:8443',
+                        mono: true,
+                      ),
+                    const Text('含 token 的回调 URL 是凭据，请勿公开或写入日志。'),
+                    if (_site?.webhook?.target == 'cron') ...[
+                      const Text('详情不返回凭据，也无法判断凭据是否已撤销；丢失 URL 时请轮换。'),
+                      if (_canRevokeCronWebhook)
+                        Wrap(
+                          spacing: 12,
+                          children: [
+                            if (_canManageCronWebhook)
+                              OutlinedButton(
+                                onPressed: _saving
+                                    ? null
+                                    : () => _manageCronToken(rotate: true),
+                                child: const Text('轮换凭据'),
+                              ),
+                            OutlinedButton(
+                              onPressed: _saving
+                                  ? null
+                                  : () => _manageCronToken(rotate: false),
+                              child: const Text('撤销凭据'),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ]),
+                if (_kind == 'reverse_proxy' ||
+                    _kind == 'runtime' ||
+                    _kind == 'tcp_proxy' ||
+                    _kind == 'udp_proxy')
                   _section('反向代理', [
                     _field(
                       _upstreams,
@@ -628,7 +847,10 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
                           value: 'least_conn',
                           child: Text('最少连接'),
                         ),
-                        DropdownMenuItem(value: 'ip_hash', child: Text('IP Hash')),
+                        DropdownMenuItem(
+                          value: 'ip_hash',
+                          child: Text('IP Hash'),
+                        ),
                       ],
                       onChanged: (value) {
                         if (value != null) {
@@ -651,86 +873,107 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
                       mono: true,
                     ),
                   ]),
-                _section('访问控制', [
-                  _switch('密码访问', _basicEnabled, (value) {
-                    setState(() => _basicEnabled = value);
-                  }),
-                  if (_basicUsers.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          for (final user in _basicUsers)
-                            Chip(label: Text(user)),
-                        ],
+                if (!_isWebhook)
+                  _section('访问控制', [
+                    _switch('密码访问', _basicEnabled, (value) {
+                      setState(() => _basicEnabled = value);
+                    }),
+                    if (_basicUsers.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            for (final user in _basicUsers)
+                              Chip(label: Text(user)),
+                          ],
+                        ),
+                      ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: _editBasicUsers,
+                        icon: const Icon(
+                          Icons.manage_accounts_outlined,
+                          size: 16,
+                        ),
+                        label: const Text('编辑用户'),
                       ),
                     ),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: OutlinedButton.icon(
-                      onPressed: _editBasicUsers,
-                      icon: const Icon(Icons.manage_accounts_outlined, size: 16),
-                      label: const Text('编辑用户'),
-                    ),
-                  ),
-                  const Divider(height: 24),
-                  _switch('CORS', _corsEnabled, (value) {
-                    setState(() => _corsEnabled = value);
-                  }),
-                  if (_corsEnabled) ...[
-                    _gap(),
-                    _field(
-                      _corsOrigins,
-                      '允许来源',
-                      hint: '每行一个，* 表示全部',
-                      maxLines: 3,
-                    ),
-                    _gap(),
-                    _field(_corsMethods, '允许方法', hint: 'GET, POST'),
-                    _gap(),
-                    _field(_corsHeaders, '允许请求头', hint: 'Content-Type'),
-                    _switch('允许凭据', _corsCredentials, (value) {
-                      setState(() => _corsCredentials = value);
+                    const Divider(height: 24),
+                    _switch('CORS', _corsEnabled, (value) {
+                      setState(() => _corsEnabled = value);
                     }),
-                  ],
-                  const Divider(height: 24),
-                  _switch('真实 IP 解析', _realIpEnabled, (value) {
-                    setState(() => _realIpEnabled = value);
-                  }),
-                  if (_realIpEnabled) ...[
-                    _gap(),
-                    _field(_realIpHeader, '真实 IP 头', hint: 'X-Forwarded-For'),
-                    _gap(),
-                    _field(
-                      _realIpTrusted,
-                      '可信代理 CIDR',
-                      hint: '每行一个，如 10.0.0.0/8',
-                      maxLines: 3,
-                      mono: true,
-                    ),
-                  ],
-                ]),
+                    if (_corsEnabled) ...[
+                      _gap(),
+                      _field(
+                        _corsOrigins,
+                        '允许来源',
+                        hint: '每行一个，* 表示全部',
+                        maxLines: 3,
+                      ),
+                      _gap(),
+                      _field(_corsMethods, '允许方法', hint: 'GET, POST'),
+                      _gap(),
+                      _field(_corsHeaders, '允许请求头', hint: 'Content-Type'),
+                      _switch('允许凭据', _corsCredentials, (value) {
+                        setState(() => _corsCredentials = value);
+                      }),
+                    ],
+                    const Divider(height: 24),
+                    _switch('真实 IP 解析', _realIpEnabled, (value) {
+                      setState(() => _realIpEnabled = value);
+                    }),
+                    if (_realIpEnabled) ...[
+                      _gap(),
+                      _field(_realIpHeader, '真实 IP 头', hint: 'X-Forwarded-For'),
+                      _gap(),
+                      _field(
+                        _realIpTrusted,
+                        '可信代理 CIDR',
+                        hint: '每行一个，如 10.0.0.0/8',
+                        maxLines: 3,
+                        mono: true,
+                      ),
+                    ],
+                  ]),
                 _section('HTTPS 证书', [
-                  _switch('启用 HTTPS', _tlsEnabled, (value) {
-                    setState(() => _tlsEnabled = value);
-                  }),
-                  _switch('HTTP 自动跳转 HTTPS', _tlsRedirect, (value) {
-                    setState(() => _tlsRedirect = value);
-                  }),
+                  if (_isCron)
+                    CronTlsFields(
+                      certificate: _tlsCertificate,
+                      privateKeyPath: _tlsKey,
+                      sites: widget.sites,
+                      onChanged: (cert, key) => setState(() {
+                        _tlsCertificate = cert;
+                        _tlsKey = key;
+                      }),
+                    )
+                  else
+                    _switch('启用 HTTPS', _tlsEnabled, (value) {
+                      setState(() => _tlsEnabled = value);
+                    }),
+                  if (!_isCron &&
+                      (!_isWebhook || _detail?.webserver == 'nginx'))
+                    _switch('HTTP 自动跳转 HTTPS', _tlsRedirect, (value) {
+                      setState(() => _tlsRedirect = value);
+                    }),
                   _switch('HSTS', _tlsHsts, (value) {
                     setState(() => _tlsHsts = value);
                   }),
                   _gap(),
-                  Text(
-                    _tlsCertificate.isEmpty ? '证书：未上传' : '证书：$_tlsCertificate',
-                    style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-                  ),
-                  Text(
-                    _tlsKey.isEmpty ? '私钥：未上传' : '私钥：$_tlsKey',
-                    style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-                  ),
+                  if (!_isCron)
+                    Text(
+                      _tlsCertificate.isEmpty
+                          ? '证书：未上传'
+                          : '证书：$_tlsCertificate',
+                      style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+                    ),
+                  if (!_isCron)
+                    Text(
+                      _tlsKey.isEmpty ? '私钥：未上传' : '私钥：$_tlsKey',
+                      style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+                    ),
                   _gap(),
                   Wrap(
                     spacing: 8,
@@ -749,98 +992,103 @@ class _SiteDetailPageState extends State<SiteDetailPage> {
                     ],
                   ),
                 ]),
-                _section('重定向与伪静态', [
-                  _field(
-                    _redirects,
-                    '重定向',
-                    hint: '每行 /old -> /new 301',
-                    maxLines: 4,
-                    mono: true,
-                  ),
-                  _gap(),
-                  _field(
-                    _rewrites,
-                    '伪静态',
-                    hint: '每行 pattern replacement [last]',
-                    maxLines: 4,
-                    mono: true,
-                  ),
-                ]),
-                _section('限流与防盗链', [
-                  _switch('启用限流', _rateEnabled, (value) {
-                    setState(() => _rateEnabled = value);
-                  }),
-                  if (_rateEnabled) ...[
-                    _gap(),
-                    _field(_rateRps, '每秒请求数', number: true),
-                    _gap(),
-                    _field(_rateBurst, '突发请求数', number: true),
-                    _gap(),
-                    _field(_rateConnections, '并发连接数（0 不限制）', number: true),
-                  ],
-                  const Divider(height: 24),
-                  _switch('启用防盗链', _hotlinkEnabled, (value) {
-                    setState(() => _hotlinkEnabled = value);
-                  }),
-                  if (_hotlinkEnabled) ...[
-                    _switch('允许空 Referer', _hotlinkAllowEmpty, (value) {
-                      setState(() => _hotlinkAllowEmpty = value);
-                    }),
+                if (!_isWebhook)
+                  _section('重定向与伪静态', [
+                    _field(
+                      _redirects,
+                      '重定向',
+                      hint: '每行 /old -> /new 301',
+                      maxLines: 4,
+                      mono: true,
+                    ),
                     _gap(),
                     _field(
-                      _hotlinkExtensions,
-                      '受保护扩展名',
-                      hint: 'png, jpg, gif',
-                      maxLines: 2,
+                      _rewrites,
+                      '伪静态',
+                      hint: '每行 pattern replacement [last]',
+                      maxLines: 4,
+                      mono: true,
                     ),
-                  ],
-                ]),
-                _section('高级', [
-                  _switch('使用自定义配置', _customEnabled, (value) {
-                    setState(() {
-                      _customEnabled = value;
-                      if (value && _custom.text.trim().isEmpty) {
-                        _custom.text = _detail?.config ?? '';
-                      }
-                    });
-                  }),
-                  if (_customEnabled) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      '启用后，面板直接使用下面的配置，不再生成上面的字段。保存时仍会执行 WebServer 校验。',
-                      style: TextStyle(fontSize: 11.5, color: hampanelMuted),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _custom,
-                      minLines: 12,
-                      maxLines: 24,
-                      style: monospace.copyWith(fontSize: 11.5),
-                      decoration: const InputDecoration(
-                        labelText: '自定义配置',
-                        alignLabelWithHint: true,
-                      ),
-                    ),
-                  ],
-                ]),
-                _section('日志', [
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: () => _showLogs('access'),
-                        icon: const Icon(Icons.list_alt_outlined, size: 16),
-                        label: const Text('查看访问日志'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: () => _showLogs('error'),
-                        icon: const Icon(Icons.error_outline, size: 16),
-                        label: const Text('查看错误日志'),
+                  ]),
+                if (!_isWebhook || _detail?.webserver == 'nginx')
+                  _section(_isWebhook ? '限流' : '限流与防盗链', [
+                    _switch('启用限流', _rateEnabled, (value) {
+                      setState(() => _rateEnabled = value);
+                    }),
+                    if (_rateEnabled) ...[
+                      _gap(),
+                      _field(_rateRps, '每秒请求数', number: true),
+                      _gap(),
+                      _field(_rateBurst, '突发请求数', number: true),
+                      _gap(),
+                      _field(_rateConnections, '并发连接数（0 不限制）', number: true),
+                    ],
+                    if (!_isWebhook) const Divider(height: 24),
+                    if (!_isWebhook)
+                      _switch('启用防盗链', _hotlinkEnabled, (value) {
+                        setState(() => _hotlinkEnabled = value);
+                      }),
+                    if (!_isWebhook && _hotlinkEnabled) ...[
+                      _switch('允许空 Referer', _hotlinkAllowEmpty, (value) {
+                        setState(() => _hotlinkAllowEmpty = value);
+                      }),
+                      _gap(),
+                      _field(
+                        _hotlinkExtensions,
+                        '受保护扩展名',
+                        hint: 'png, jpg, gif',
+                        maxLines: 2,
                       ),
                     ],
-                  ),
-                ]),
+                  ]),
+                if (!_isWebhook)
+                  _section('高级', [
+                    _switch('使用自定义配置', _customEnabled, (value) {
+                      setState(() {
+                        _customEnabled = value;
+                        if (value && _custom.text.trim().isEmpty) {
+                          _custom.text = _detail?.config ?? '';
+                        }
+                      });
+                    }),
+                    if (_customEnabled) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '启用后，面板直接使用下面的配置，不再生成上面的字段。保存时仍会执行 WebServer 校验。',
+                        style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _custom,
+                        minLines: 12,
+                        maxLines: 24,
+                        style: monospace.copyWith(fontSize: 11.5),
+                        decoration: const InputDecoration(
+                          labelText: '自定义配置',
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                    ],
+                  ]),
+                if (!_isWebhook)
+                  _section('日志', [
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () => _showLogs('access'),
+                          icon: const Icon(Icons.list_alt_outlined, size: 16),
+                          label: const Text('查看访问日志'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: () => _showLogs('error'),
+                          icon: const Icon(Icons.error_outline, size: 16),
+                          label: const Text('查看错误日志'),
+                        ),
+                      ],
+                    ),
+                  ]),
               ],
             ),
     );
@@ -998,7 +1246,10 @@ class _RuntimeOption {
   final String status;
 }
 
-List<String> _lines(TextEditingController controller, {bool splitComma = false}) {
+List<String> _lines(
+  TextEditingController controller, {
+  bool splitComma = false,
+}) {
   final pattern = splitComma ? RegExp(r'[\n,]+') : RegExp(r'\n');
   return controller.text
       .split(pattern)
@@ -1014,7 +1265,6 @@ List<String> _words(TextEditingController controller) {
       .where((value) => value.isNotEmpty)
       .toList();
 }
-
 
 List<String> _linesInput(TextEditingController controller) {
   return controller.text

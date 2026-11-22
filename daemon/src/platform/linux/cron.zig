@@ -160,7 +160,9 @@ fn parseEntries(allocator: std.mem.Allocator, contents: []const u8) ![]Entry {
         }
 
         const schedule = try std.mem.join(allocator, " ", tokens.items[0..schedule_end]);
-        const command = try std.mem.join(allocator, " ", tokens.items[schedule_end..]);
+        // Preserve whitespace inside quoted shell arguments.
+        const first = tokens.items[schedule_end];
+        const command = body[@intFromPtr(first.ptr) - @intFromPtr(body.ptr) ..];
         if (command.len == 0) continue;
 
         try entries.append(.{

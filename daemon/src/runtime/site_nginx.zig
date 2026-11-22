@@ -17,6 +17,8 @@ pub fn available(allocator: std.mem.Allocator) bool {
 }
 
 pub fn render(allocator: std.mem.Allocator, site: store.Site, site_dir: []const u8) ![]const u8 {
+    const webhook = @import("site_webhook.zig");
+    const hook = if (std.mem.eql(u8, site.kind, "webhook")) try webhook.target(site) else null;
     if (site.custom.enabled) return allocator.dupe(u8, site.custom.content);
     if (std.mem.eql(u8, site.kind, "tcp_proxy") or std.mem.eql(u8, site.kind, "udp_proxy")) {
         return renderStream(allocator, site);
@@ -71,11 +73,13 @@ pub fn render(allocator: std.mem.Allocator, site: store.Site, site_dir: []const 
         try w.print("}}\n", .{});
     }
 
-    if (site.tls.enabled and site.tls.redirect_http) {
+    const cron_hook = @import("cron_webhook.zig").internal(site);
+    if (cron_hook and !@import("cron_webhook.zig").secure(site)) return error.InsecureWebhookTransport;
+    if (site.tls.enabled and (site.tls.redirect_http or cron_hook)) {
         try writeServerHead(w, site, zone, false);
         try w.print("    listen 80;\n", .{});
         try w.print("    listen [::]:80;\n", .{});
-        try w.print("    return 301 https://$host$request_uri;\n", .{});
+        if (cron_hook) try w.writeAll("    return 404;\n") else try w.print("    return 301 https://$host$request_uri;\n", .{});
         try w.print("}}\n\n", .{});
     }
 
@@ -155,6 +159,11 @@ pub fn render(allocator: std.mem.Allocator, site: store.Site, site_dir: []const 
         try w.print("    }}\n", .{});
     }
 
+    if (hook) |t| {
+        try webhook.writeNginx(w, t);
+        try w.writeAll("}\n");
+        return allocator.dupe(u8, output.written());
+    }
     try w.print("    location / {{\n", .{});
     if (is_proxy) {
         try w.print("        proxy_pass http://hampanel_{s};\n", .{zone});
@@ -210,6 +219,7 @@ fn writeServerHead(w: *std.Io.Writer, site: store.Site, zone: []const u8, main: 
     _ = zone;
     _ = main;
     try w.print("server {{\n", .{});
+    if (@import("cron_webhook.zig").internal(site)) try w.writeAll("    access_log off;\n    error_log /dev/null;\n");
     try w.print("    server_name", .{});
     if (site.domains.len == 0) {
         try w.print(" _", .{});
@@ -252,6 +262,10 @@ pub const Container = struct {
 };
 
 pub fn resolveContainer(a: std.mem.Allocator, data_dir: []const u8, socket: []const u8) !Container {
+    return inspectContainer(a, data_dir, socket, false);
+}
+
+pub fn inspectContainer(a: std.mem.Allocator, data_dir: []const u8, socket: []const u8, require_socket: bool) !Container {
     const dir = try compat.path.join(a, &.{ data_dir, "apps/nginx/sites-conf" });
     const engine = try engine_mod.detect(a, socket);
     const ps = try engine_mod.run(a, engine, socket, &.{ engine.name, "ps", "--no-trunc", "--filter", "label=com.docker.compose.project=hampanel-nginx", "--filter", "label=com.docker.compose.service=web", "--format", "{{.ID}}" }, .{});
@@ -268,6 +282,7 @@ pub fn resolveContainer(a: std.mem.Allocator, data_dir: []const u8, socket: []co
         .snippet = snippet,
         .main = try container_mod.mainConfigPath(a, data_dir),
         .stream = try container_mod.streamDir(a, data_dir),
+        .require_socket = require_socket,
     };
     if (!inspect.ok() or !try @import("site_nginx_layout.zig").catalogLayout(a, inspect.stdout, expect)) return error.ManagedNginxUnavailable;
     return .{ .engine = engine, .socket = socket, .id = id, .dir = dir, .data_dir = data_dir };
@@ -316,9 +331,12 @@ pub fn apply(allocator: std.mem.Allocator, container_in: ?Container, site: store
             restoreFile(alternate, previous_alternate);
             return .{ .ok = false, .output = sync.output };
         }
-        if (sync.recreated) {
-            container = resolveContainer(allocator, current.data_dir, current.socket) catch {
-                return .{ .ok = false, .output = "managed nginx did not return after applying site mounts" };
+        const require_socket = site.enabled and @import("cron_webhook.zig").internal(site);
+        if (sync.recreated or require_socket) {
+            container = inspectContainer(allocator, current.data_dir, current.socket, require_socket) catch {
+                restoreFile(target, previous_target);
+                restoreFile(alternate, previous_alternate);
+                return .{ .ok = false, .output = "managed nginx mount verification failed" };
             };
         }
     }

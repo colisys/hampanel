@@ -9,6 +9,8 @@ import '../../ui/remote_picker.dart';
 import '../../ui/log_page.dart';
 import '../../ui/widgets.dart';
 import 'site_detail_page.dart';
+import 'cron_tls_fields.dart';
+import 'webhook_credential.dart';
 
 class SitesPage extends StatefulWidget {
   const SitesPage({super.key});
@@ -55,7 +57,11 @@ class _SitesPageState extends State<SitesPage> {
     final api = _api;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SiteDetailPage(api: api, siteName: site.name),
+        builder: (_) => SiteDetailPage(
+          api: api,
+          siteName: site.name,
+          sites: _list?.sites ?? const [],
+        ),
       ),
     );
     if (mounted) await _load();
@@ -71,6 +77,31 @@ class _SitesPageState extends State<SitesPage> {
     final targetController = TextEditingController(text: '127.0.0.1:3000');
     final portController = TextEditingController(text: '80');
     var kind = 'static';
+    var webhookTarget = '';
+    var webhookMode = _list?.webhookTargets.contains('upstream') == true
+        ? 'upstream'
+        : 'cron';
+    var certificate = '';
+    var keyPath = '';
+    var cronId = '';
+    var cronEntries = <String>[];
+    if (_list?.webhookTargets.contains('cron') == true) {
+      try {
+        final data = await api.getJson('/api/v1/cron') as Map<String, dynamic>;
+        cronEntries = [
+          for (final entry in (data['entries'] as List<dynamic>? ?? const []))
+            if (entry is Map<String, dynamic> &&
+                entry['id'] is String &&
+                (entry['id'] as String).isNotEmpty)
+              entry['id'] as String,
+        ];
+        if (cronEntries.isNotEmpty) cronId = cronEntries.first;
+      } catch (_) {
+        // A failed cron listing must not offer an unverified binding.
+      }
+    }
+    if (!mounted) return;
+    String? webhookError;
     var runtimeId = runtimes.isNotEmpty ? runtimes.first.id : '';
 
     final submitted = await showDialog<bool>(
@@ -87,7 +118,13 @@ class _SitesPageState extends State<SitesPage> {
                 DropdownButtonFormField<String>(
                   initialValue: kind,
                   decoration: const InputDecoration(labelText: '站点类型'),
-                  items: const [
+                  items: [
+                    if (isWebhookProvider(_list?.webserver) &&
+                        _list!.webhookTargets.isNotEmpty)
+                      const DropdownMenuItem(
+                        value: 'webhook',
+                        child: Text('Webhook'),
+                      ),
                     DropdownMenuItem(value: 'static', child: Text('静态网站')),
                     DropdownMenuItem(
                       value: 'reverse_proxy',
@@ -132,6 +169,73 @@ class _SitesPageState extends State<SitesPage> {
                       hintText: '127.0.0.1:3000',
                     ),
                   ),
+                if (kind == 'webhook') ...[
+                  DropdownButtonFormField<String>(
+                    initialValue: webhookMode,
+                    decoration: const InputDecoration(labelText: '回调目标'),
+                    items: [
+                      if (_list?.webhookTargets.contains('upstream') == true)
+                        const DropdownMenuItem(
+                          value: 'upstream',
+                          child: Text('外部上游'),
+                        ),
+                      if (_list?.webhookTargets.contains('cron') == true)
+                        const DropdownMenuItem(
+                          value: 'cron',
+                          child: Text('内部计划任务'),
+                        ),
+                    ],
+                    onChanged: (value) => setDialogState(() {
+                      webhookMode = value ?? webhookMode;
+                      webhookError = null;
+                    }),
+                  ),
+                  if (webhookMode == 'cron')
+                    DropdownButtonFormField<String>(
+                      initialValue: cronEntries.contains(cronId)
+                          ? cronId
+                          : null,
+                      decoration: InputDecoration(
+                        labelText: '已有 Cron ID',
+                        errorText: webhookError,
+                        helperText: cronEntries.isEmpty
+                            ? '暂无可用任务，请先创建计划任务'
+                            : null,
+                      ),
+                      items: [
+                        for (final id in cronEntries)
+                          DropdownMenuItem(value: id, child: Text(id)),
+                      ],
+                      onChanged: (value) =>
+                          setDialogState(() => cronId = value ?? ''),
+                    ),
+                  if (webhookMode == 'cron')
+                    CronTlsFields(
+                      certificate: certificate,
+                      privateKeyPath: keyPath,
+                      sites: _list?.sites ?? const [],
+                      onChanged: (cert, key) => setDialogState(() {
+                        certificate = cert;
+                        keyPath = key;
+                        webhookError = null;
+                      }),
+                    ),
+                  if (webhookMode == 'upstream')
+                    TextFormField(
+                      key: const ValueKey('webhookTarget'),
+                      initialValue: webhookTarget,
+                      decoration: InputDecoration(
+                        labelText: '固定上游地址',
+                        hintText: 'https://example.com:8443',
+                        errorText: webhookError,
+                      ),
+                      onChanged: (value) => setDialogState(() {
+                        webhookTarget = value;
+                        webhookError = null;
+                      }),
+                    ),
+                  const Text('含 token 的回调 URL 是凭据，请勿公开或写入日志。'),
+                ],
                 if (kind == 'runtime')
                   DropdownButtonFormField<String>(
                     initialValue: runtimes.any((item) => item.id == runtimeId)
@@ -152,11 +256,12 @@ class _SitesPageState extends State<SitesPage> {
                         setDialogState(() => runtimeId = value ?? ''),
                   ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: portController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'HTTP 监听端口'),
-                ),
+                if (kind != 'webhook' || webhookMode != 'cron')
+                  TextField(
+                    controller: portController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'HTTP 监听端口'),
+                  ),
               ],
             ),
           ),
@@ -166,7 +271,33 @@ class _SitesPageState extends State<SitesPage> {
               child: const Text('取消'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(context, true),
+              onPressed: () {
+                if (kind == 'webhook') {
+                  if (webhookMode == 'upstream' &&
+                      !isWebhookOrigin(webhookTarget)) {
+                    setDialogState(() => webhookError = webhookOriginHint);
+                    return;
+                  }
+                  if (webhookMode == 'cron' &&
+                      (!isWebhookTlsPath(certificate) ||
+                          !isWebhookTlsPath(keyPath))) {
+                    setDialogState(() => webhookError = '请填写证书链和私钥的服务器绝对路径');
+                    return;
+                  }
+                  if (webhookMode == 'cron' &&
+                      !domainsController.text
+                          .split(RegExp(r'[,\s]+'))
+                          .any((d) => d.isNotEmpty)) {
+                    setDialogState(() => webhookError = '请填写证书覆盖的回调域名');
+                    return;
+                  }
+                  if (webhookMode == 'cron' && !cronEntries.contains(cronId)) {
+                    setDialogState(() => webhookError = '请选择已有的 Cron ID');
+                    return;
+                  }
+                }
+                Navigator.pop(context, true);
+              },
               child: const Text('创建'),
             ),
           ],
@@ -200,6 +331,21 @@ class _SitesPageState extends State<SitesPage> {
     if (kind == 'reverse_proxy' || kind == 'tcp_proxy' || kind == 'udp_proxy') {
       body['proxy_target'] = targetController.text.trim();
     }
+    if (kind == 'webhook') {
+      body['webhook'] = SiteWebhook(
+        target: webhookMode,
+        cronId: cronId,
+      ).toJson();
+      if (webhookMode == 'upstream') {
+        body['proxy_target'] = webhookTarget;
+      } else {
+        body['tls'] = SiteTls(
+          enabled: true,
+          certificate: certificate,
+          key: keyPath,
+        ).toJson();
+      }
+    }
     if (kind == 'runtime') {
       body['runtime_id'] = runtimeId;
     }
@@ -209,6 +355,9 @@ class _SitesPageState extends State<SitesPage> {
       final map = json as Map<String, dynamic>? ?? const {};
       final output = (map['output'] as String? ?? '').trim();
       if (output.isNotEmpty) _toast(output);
+      if (kind == 'webhook' && mounted) {
+        await showWebhookCredential(context, map);
+      }
       await _load();
     } catch (error) {
       _toast(describeError(error));
@@ -469,10 +618,11 @@ class _SitesPageState extends State<SitesPage> {
                                         value: 'edit',
                                         child: Text('编辑配置'),
                                       ),
-                                      const PopupMenuItem(
-                                        value: 'logs',
-                                        child: Text('访问日志'),
-                                      ),
+                                      if (site.kind != 'webhook')
+                                        const PopupMenuItem(
+                                          value: 'logs',
+                                          child: Text('访问日志'),
+                                        ),
                                       PopupMenuItem(
                                         value: 'toggle',
                                         child: Text(
@@ -543,6 +693,7 @@ class _Info extends StatelessWidget {
 
 String _kindLabel(String kind) => switch (kind) {
   'reverse_proxy' => '反向代理',
+  'webhook' => 'Webhook',
   'runtime' => '运行环境',
   'subsite' => '子网站',
   'tcp_proxy' => 'TCP 代理',
