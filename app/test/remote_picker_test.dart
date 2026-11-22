@@ -101,7 +101,7 @@ void main() {
 
     final dirsOnly = await source.list(dir.path);
     expect(dirsOnly.map((entry) => entry.name), ['sub']);
-    expect(source.parentOf('${dir.path}/sub'), dir.path);
+    expect(source.parentOf('${dir.path}/sub'), dir.path.replaceAll(r'\', '/'));
 
     // A file can only be confirmed when the caller allows files.
     final fileEntry = RemotePickerEntry(
