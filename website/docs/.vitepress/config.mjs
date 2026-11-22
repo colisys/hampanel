@@ -56,6 +56,7 @@ export default defineConfig({
             { text: '功能总览', link: '/features/' },
             { text: '概览与主机运维', link: '/features/host' },
             { text: '文件与恢复', link: '/features/files' },
+            { text: '数据库与 GraphQL', link: '/features/databases' },
             { text: '网站与证书', link: '/features/sites' },
             { text: '容器与运行环境', link: '/features/containers' },
             { text: '网络接入与防护', link: '/features/network' },
