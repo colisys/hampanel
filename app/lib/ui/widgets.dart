@@ -208,6 +208,22 @@ class StyledProgress extends StatelessWidget {
   }
 }
 
+class InlineAlert extends StatelessWidget {
+  const InlineAlert({super.key, required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    decoration: BoxDecoration(
+      border: Border(left: BorderSide(color: hampanelDanger, width: 3)),
+    ),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    child: Text(message),
+  );
+}
+
 class ErrorBanner extends StatelessWidget {
   const ErrorBanner({super.key, required this.message, this.onRetry});
 

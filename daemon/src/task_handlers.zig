@@ -565,15 +565,17 @@ fn honeypotBuild(ctx: *tasks.Context) !void {
 
 fn honeypotStart(ctx: *tasks.Context) !void {
     const mode_text = try stringParam(ctx, "mode");
-    const mode = platform_mod.honeypot.Mode.fromString(if (mode_text.len == 0) "web" else mode_text) orelse
+    const mode = platform_mod.honeypot.Mode.fromString(mode_text) orelse
         return error.InvalidParams;
     const port: u16 = switch (ctx.params) {
         .object => |object| blk: {
-            const value = object.get("port") orelse break :blk 0;
-            if (value != .integer or value.integer < 0 or value.integer > 65535) break :blk 0;
+            const confirmed = object.get("confirmed") orelse return error.ConfirmationRequired;
+            if (confirmed != .bool or !confirmed.bool) return error.ConfirmationRequired;
+            const value = object.get("port") orelse return error.InvalidPort;
+            if (value != .integer or value.integer < 1024 or value.integer > 65535) return error.InvalidPort;
             break :blk @intCast(value.integer);
         },
-        else => 0,
+        else => return error.InvalidParams,
     };
     try ctx.setPhase("starting");
     const outcome = platform_mod.honeypot.start(ctx.allocator, ctx.manager.data_dir, mode, port) catch |err| {

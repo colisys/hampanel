@@ -9,6 +9,7 @@ const engineLabels = {
   'mariadb': 'MariaDB',
   'postgres': 'PostgreSQL',
   'mongo': 'MongoDB',
+  'sqlite': 'SQLite',
 };
 const modeLabels = {'host': '主机', 'container': 'Docker / Podman 容器'};
 const fieldLabels = {
@@ -20,7 +21,7 @@ const fieldLabels = {
   'socket': 'Socket 路径（可选）',
   'password': '密码',
   'confirm': '输入名称以确认',
-  'path': '本地文件绝对路径',
+  'path': '受管主机上的 SQLite 文件绝对路径',
 };
 
 Future<Map<String, dynamic>?> databaseDialog(
@@ -51,8 +52,10 @@ Future<Map<String, dynamic>?> databaseDialog(
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, update) {
+        final sqlite = instance && values['engine'] == 'sqlite';
         Widget choice(String key, String label, Map<String, String> choices) =>
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: values[key] as String,
               decoration: InputDecoration(labelText: label),
               items: [
@@ -97,7 +100,8 @@ Future<Map<String, dynamic>?> databaseDialog(
             final v = raw ?? '';
             if (key == 'confirm' && v != confirm) return '名称不匹配';
             if (key == 'port' &&
-                ((int.tryParse(v) ?? 0) < 1 || (int.tryParse(v) ?? 0) > 65535)) {
+                ((int.tryParse(v) ?? 0) < 1 ||
+                    (int.tryParse(v) ?? 0) > 65535)) {
               return '请输入 1–65535 的端口';
             }
             if (v.trim().isEmpty &&
@@ -116,21 +120,24 @@ Future<Map<String, dynamic>?> databaseDialog(
             key: form,
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              spacing: 14,
               children: [
                 if (message != null) Text(message),
                 if (instance) ...[
                   choice('engine', '数据库引擎', engineLabels),
-                  choice('mode', '连接方式', modeLabels),
+                  if (!sqlite) choice('mode', '连接方式', modeLabels),
                 ],
-                for (final key in fields)
+                for (final key in sqlite ? ['name', 'path'] : fields)
                   if (key != 'container' || values['mode'] == 'container')
                     // A socket lives on the daemon host, so it is picked rather
                     // than typed; everything else here is ordinary text.
-                    if (key == 'socket' && api != null)
-                      _SocketField(
+                    if ((key == 'socket' || key == 'path') && api != null)
+                      _HostPathField(
+                        key: ValueKey(key),
+                        field: key,
                         api: api,
-                        initial: '${values['socket'] ?? ''}',
-                        onChanged: (v) => values['socket'] = v,
+                        initial: '${values[key] ?? ''}',
+                        onChanged: (v) => values[key] = v,
                       )
                     else
                       input(key),
@@ -145,6 +152,21 @@ Future<Map<String, dynamic>?> databaseDialog(
             FilledButton(
               onPressed: () {
                 if (!form.currentState!.validate()) return;
+                if (sqlite) {
+                  if ('${values['path'] ?? ''}'.trim().isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('请选择已有 SQLite 文件')),
+                    );
+                    return;
+                  }
+                  Navigator.pop(context, {
+                    'name': values['name'],
+                    'engine': 'sqlite',
+                    'mode': 'host',
+                    'path': values['path'],
+                  });
+                  return;
+                }
                 final result = <String, dynamic>{
                   for (final k in fields) k: values[k] ?? '',
                 };
@@ -170,22 +192,25 @@ Future<Map<String, dynamic>?> databaseDialog(
 /// The unix socket is a host path, so it gets the remote picker. Kept as its
 /// own widget because RemotePathField needs a persistent controller while this
 /// dialog is a stateless builder.
-class _SocketField extends StatefulWidget {
-  const _SocketField({
+class _HostPathField extends StatefulWidget {
+  const _HostPathField({
+    super.key,
+    required this.field,
     required this.api,
     required this.initial,
     required this.onChanged,
   });
 
+  final String field;
   final ApiClient api;
   final String initial;
   final ValueChanged<String> onChanged;
 
   @override
-  State<_SocketField> createState() => _SocketFieldState();
+  State<_HostPathField> createState() => _HostPathFieldState();
 }
 
-class _SocketFieldState extends State<_SocketField> {
+class _HostPathFieldState extends State<_HostPathField> {
   late final _controller = TextEditingController(text: widget.initial);
 
   @override
@@ -200,9 +225,12 @@ class _SocketFieldState extends State<_SocketField> {
     child: RemotePathField(
       api: widget.api,
       controller: _controller,
-      label: fieldLabels['socket']!,
+      label: fieldLabels[widget.field]!,
       allowFiles: true,
-      hintText: '/var/run/mysqld/mysqld.sock',
+      hintText: widget.field == 'path'
+          ? '/srv/data/app.db'
+          : '/var/run/mysqld/mysqld.sock',
+      onChanged: widget.onChanged,
       onPicked: widget.onChanged,
     ),
   );

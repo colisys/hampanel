@@ -6,13 +6,15 @@ const S = []const u8;
 const eq = std.mem.eql;
 var mutex: std.Io.Mutex = .init;
 
-pub const Op = enum { list, register, update, remove, overview, tables, create, drop, user, password, backup, backups, download, restore };
+pub const Op = enum { graphql, list, register, update, remove, overview, tables, create, drop, user, password, backup, backups, download, restore };
 pub fn handler(comptime op: Op) *const fn (*Ctx) anyerror!void {
     return struct {
         fn handle(ctx: *Ctx) anyerror!void {
             mutex.lockUncancelable(compat.io());
             defer mutex.unlock(compat.io());
             dispatch(ctx, op) catch |err| switch (err) {
+                error.InvalidSqliteFile => ctx.fail(400, "invalid_sqlite_file", "Cannot read existing SQLite database file"),
+                error.SqliteUnsupported => ctx.fail(400, "sqlite_unsupported", "SQLite file connections support schema inspection only"),
                 error.SqlUnsupported => ctx.fail(400, "sql_unsupported", "Redis instances support terminal access only"),
                 error.BadInput => ctx.fail(400, "invalid_request", "Invalid name, connection parameters, password or confirmation"),
                 error.NotFound => ctx.fail(404, "not_found", "Instance or backup not found"),
@@ -22,8 +24,8 @@ pub fn handler(comptime op: Op) *const fn (*Ctx) anyerror!void {
         }
     }.handle;
 }
-const View = struct { id: S, name: S, engine: db.Engine, mode: db.Mode, host: S, port: u16, user: S, container: S };
-const Input = struct { name: S, engine: db.Engine, mode: db.Mode, host: S = "localhost", port: ?u16 = null, user: ?S = null, password: S = "", container: S = "", socket: ?S = null };
+const View = struct { id: S, name: S, engine: db.Engine, mode: db.Mode, host: S, port: u16, user: S, container: S, path: S, socket: S };
+const Input = struct { name: S, engine: db.Engine, mode: db.Mode, host: S = "localhost", port: ?u16 = null, user: ?S = null, password: S = "", container: S = "", socket: ?S = null, path: S = "" };
 fn body(ctx: *Ctx, comptime T: type) !T {
     return ctx.requireJson(T) catch error.BadInput;
 }
@@ -50,13 +52,27 @@ fn literal(a: std.mem.Allocator, password: S) !S {
     for (password) |ch| if (ch < 32 or ch == 127 or ch == '\\') return error.BadInput;
     return std.mem.replaceOwned(u8, a, password, "'", "''");
 }
+fn databaseNames(ctx: *Ctx, i: db.Instance) ![]const S {
+    return rows(ctx, i, null, if (i.engine == .mongo) "return client.getDB('admin').runCommand({listDatabases: 1}).databases.map(d => d.name);" else if (i.engine == .postgres) "SELECT datname FROM pg_database ORDER BY 1" else "SHOW DATABASES");
+}
+
+fn graphql(ctx: *Ctx, i: db.Instance) !void {
+    const gql = @import("graphql.zig");
+    if (ctx.req.body.len > 16384) return ctx.jsonStatus(413, .{ .errors = .{.{ .message = "Request too large" }} });
+    const b = std.json.parseFromSliceLeaky(struct { query: S }, ctx.arena, ctx.req.body, .{}) catch return ctx.jsonStatus(400, .{ .errors = .{.{ .message = "Expected query string" }} });
+    const field = gql.catalogField(b.query) catch |err| return ctx.jsonStatus(400, .{ .errors = .{.{ .message = @errorName(err) }} });
+    if (field == .tables and i.engine == .sqlite) return ctx.json(.{ .data = .{ .tables = try db.sqliteTables(ctx.arena, i.path) } });
+    if (field == .databases and i.engine.isManaged()) return ctx.json(.{ .data = .{ .databases = try databaseNames(ctx, i) } });
+    return ctx.jsonStatus(400, .{ .errors = .{.{ .message = "Field unavailable for this connector" }} });
+}
+
 fn dispatch(ctx: *Ctx, op: Op) !void {
     const a = ctx.arena;
     const store = ctx.app.db;
     var cat = try db.load(a, store);
     if (op == .list) {
         var items = std.array_list.Managed(View).init(a);
-        for (cat.instances) |i| try items.append(.{ .id = i.id, .name = i.name, .engine = i.engine, .mode = i.mode, .host = i.host, .port = i.port, .user = i.user, .container = i.container });
+        for (cat.instances) |i| try items.append(.{ .id = i.id, .name = i.name, .engine = i.engine, .mode = i.mode, .host = i.host, .port = i.port, .user = i.user, .container = i.container, .path = i.path, .socket = i.socket });
         return ctx.json(.{ .items = items.items });
     }
     const id = ctx.param("id") orelse try db.token(a);
@@ -64,8 +80,9 @@ fn dispatch(ctx: *Ctx, op: Op) !void {
     if (op != .register and old == null) return error.NotFound;
     if (op == .register or op == .update) {
         const b = try body(ctx, Input);
-        const i: db.Instance = .{ .id = id, .name = b.name, .engine = b.engine, .mode = b.mode, .host = b.host, .port = b.port orelse db.defaultPort(b.engine), .user = b.user orelse db.defaultUser(b.engine), .password = if (b.password.len == 0 and old != null) old.?.password else b.password, .container = b.container, .socket = b.socket orelse if (old) |item| item.socket else "" };
+        const i: db.Instance = .{ .id = id, .name = b.name, .engine = b.engine, .mode = b.mode, .host = b.host, .path = if (b.engine == .sqlite) b.path else "", .port = b.port orelse db.defaultPort(b.engine), .user = b.user orelse db.defaultUser(b.engine), .password = if (b.engine == .sqlite) "" else if (b.password.len == 0 and old != null) old.?.password else b.password, .container = b.container, .socket = b.socket orelse if (old) |item| item.socket else "" };
         if (db.validate(i) != null) return error.BadInput;
+        if (i.engine == .sqlite) _ = try db.sqliteTables(a, i.path);
         try db.upsert(a, &cat, i);
         try db.save(a, store, cat);
         return ctx.json(.{ .id = id });
@@ -76,11 +93,16 @@ fn dispatch(ctx: *Ctx, op: Op) !void {
         return ctx.empty(204);
     }
     var i = old.?;
+    if (op == .graphql) return graphql(ctx, i);
+    if (i.engine == .sqlite) {
+        if (op != .overview) return error.SqliteUnsupported;
+        return ctx.json(.{ .tables = try db.sqliteTables(a, i.path) });
+    }
     if (i.engine == .redis) return error.SqlUnsupported;
     const pg = i.engine == .postgres;
     const mongo = i.engine == .mongo;
     if (op == .overview) return ctx.json(.{
-        .databases = try rows(ctx, i, null, if (mongo) "return client.getDB('admin').runCommand({listDatabases: 1}).databases.map(d => d.name);" else if (pg) "SELECT datname FROM pg_database ORDER BY 1" else "SHOW DATABASES"),
+        .databases = try databaseNames(ctx, i),
         .users = try rows(ctx, i, null, if (mongo) "return client.getDB('admin').runCommand({usersInfo: {forAllDBs: true}}).users.map(u => u.user + '@' + u.db);" else if (pg) "SELECT rolname FROM pg_roles ORDER BY 1" else "SELECT CONCAT(User,'@',Host) FROM mysql.user ORDER BY 1"),
     });
     if (op == .password or op == .user) {
@@ -198,6 +220,24 @@ test "instance CRUD hides and preserves the credential and rejects destructive r
     try std.testing.expect(std.mem.indexOf(u8, ctx.response.body, "mongo-secret") == null);
     ctx.req.query = "confirm=other";
     try std.testing.expectError(error.BadInput, dispatch(&ctx, .drop));
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", a);
+    const path = try compat.path.join(a, &.{ dir, "existing.db" });
+    ctx.req.body = try std.json.Stringify.valueAlloc(a, .{ .name = "local", .engine = "sqlite", .mode = "host", .path = path }, .{});
+    try std.testing.expectError(error.InvalidSqliteFile, dispatch(&ctx, .update));
+    var external = try @import("../db.zig").Db.open(path);
+    defer external.close();
+    try external.exec("CREATE TABLE orders(id INTEGER PRIMARY KEY AUTOINCREMENT)");
+    try dispatch(&ctx, .update);
+    try dispatch(&ctx, .overview);
+    try std.testing.expectEqualStrings("{\"tables\":[\"orders\"]}", ctx.response.body);
+    try std.testing.expectError(error.SqliteUnsupported, dispatch(&ctx, .drop));
+    try external.exec("CREATE TABLE receipts(id INTEGER)");
+    ctx.req.body = "{\"query\":\"query Catalog { tables }\"}";
+    try dispatch(&ctx, .graphql);
+    try std.testing.expectEqualStrings("{\"data\":{\"tables\":[\"orders\",\"receipts\"]}}", ctx.response.body);
     try dispatch(&ctx, .remove);
+    try std.testing.expectEqual(@as(usize, 2), (try db.sqliteTables(a, path)).len);
     try std.testing.expect(db.find(try db.load(a, &store), id) == null);
 }

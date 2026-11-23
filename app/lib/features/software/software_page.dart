@@ -151,9 +151,11 @@ class _SoftwarePageState extends State<SoftwarePage>
       );
       if (!mounted) return;
       _toast('已提交任务：${task.title}');
-      unawaited(center.waitFor(task.id).then((_) {
-        if (mounted) _load();
-      }));
+      unawaited(
+        center.waitFor(task.id).then((_) {
+          if (mounted) _load();
+        }),
+      );
     } catch (error) {
       _toast(describeError(error));
     } finally {
@@ -399,12 +401,9 @@ class _SoftwarePageState extends State<SoftwarePage>
       children: [
         PageHeader(
           title: '软件管理',
-          actions: [
-            PageRefreshButton(onPressed: _loading ? null : _load),
-          ],
+          actions: [PageRefreshButton(onPressed: _loading ? null : _load)],
         ),
-        if (_error != null)
-          ErrorBanner(message: _error!, onRetry: _load),
+        if (_error != null) ErrorBanner(message: _error!, onRetry: _load),
         if (_loading)
           const Expanded(child: LoadingView())
         else if (_items.isEmpty)
@@ -441,18 +440,27 @@ class _SoftwarePageState extends State<SoftwarePage>
           item: item,
           initializing: _initializingId == item.id,
           onInitialize: () => _initialize(item),
-          dedicatedControls: const {'clamav', 'supervisord', 'pure-ftpd'}
-              .contains(item.id),
+          dedicatedControls: const {
+            'clamav',
+            'supervisord',
+            'pure-ftpd',
+          }.contains(item.id),
           configPaths: _configPaths(item.id),
           onEditConfig: _editConfig,
         ),
         if (item.installed && item.id == 'clamav') ...[
           const SizedBox(height: 12),
-          PanelCard(title: 'ClamAV 管理', child: ClamavPanel(client: _api, onInitialized: _load)),
+          PanelCard(
+            title: 'ClamAV 管理',
+            child: ClamavPanel(client: _api, onInitialized: _load),
+          ),
         ],
         if (item.installed && item.id == 'supervisord') ...[
           const SizedBox(height: 12),
-          PanelCard(title: 'Supervisord 进程', child: SupervisordPanel.connected(_api, onLaunched: _load)),
+          PanelCard(
+            title: 'Supervisord 进程',
+            child: SupervisordPanel.connected(_api, onLaunched: _load),
+          ),
         ],
         if (item.installed && item.id == 'pure-ftpd') ...[
           const SizedBox(height: 12),
@@ -466,7 +474,8 @@ class _SoftwarePageState extends State<SoftwarePage>
               },
               add: (name, password) async {
                 await _api.postJson('/api/v1/pure-ftpd/add', {
-                  'name': name, 'password': password,
+                  'name': name,
+                  'password': password,
                 });
               },
               remove: (name) async {
@@ -575,7 +584,10 @@ class _SoftwarePageState extends State<SoftwarePage>
                   style: TextStyle(fontSize: 12, color: hampanelMuted),
                 )
               else
-                for (final jail in status.jails) _jailCard(jail, wide: wide),
+                for (final (index, jail) in status.jails.indexed) ...[
+                  if (index > 0) const SizedBox(height: 8),
+                  _jailCard(jail, wide: wide),
+                ],
             ],
           ),
         ),
@@ -614,7 +626,7 @@ class _SoftwarePageState extends State<SoftwarePage>
   Widget _jailCard(Fail2banJail jail, {required bool wide}) {
     final all = jail.bannedIps.isEmpty
         ? null
-        : TextButton(
+        : OutlinedButton(
             onPressed: () => _showAllBanned(jail),
             child: Text('查看全部 ${jail.bannedIps.length} 个封禁 IP'),
           );
@@ -637,7 +649,6 @@ class _SoftwarePageState extends State<SoftwarePage>
       ],
     );
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: hampanelSurfaceAlt,
@@ -673,5 +684,4 @@ class _SoftwarePageState extends State<SoftwarePage>
             ),
     );
   }
-
 }

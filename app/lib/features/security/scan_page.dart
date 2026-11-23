@@ -86,6 +86,7 @@ class _ScanPageState extends State<ScanPage> {
     final installed = status['scanner_installed'] == true;
     final running = status['scanner_running'] == true;
     final bpftrace = status['bpftrace_available'] == true;
+    final ready = ebpf && bpftrace;
     final hits = ((status['hits'] as List<dynamic>?) ?? const [])
         .whereType<Map<String, dynamic>>()
         .toList();
@@ -114,20 +115,14 @@ class _ScanPageState extends State<ScanPage> {
                 PanelCard(
                   title: '采集能力',
                   trailing: StatusPill(
-                    text: running ? '采集中' : (ebpf ? '可用' : '不可用'),
-                    good: ebpf,
+                    text: running ? '采集中' : (ready ? '可用' : '不可用'),
+                    good: running || ready,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        status['message'] as String? ?? '',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: hampanelMuted,
-                          height: 1.5,
-                        ),
-                      ),
+                      if ((status['message'] as String?)?.isNotEmpty == true)
+                        InlineAlert(message: status['message'] as String),
                       const SizedBox(height: 10),
                       _row('内核 BPF', status['kernel_bpf'] == true ? '已启用' : '未启用'),
                       _row('bpftrace', bpftrace ? '已安装' : '未安装'),
@@ -143,7 +138,7 @@ class _ScanPageState extends State<ScanPage> {
                             ? '未安装'
                             : (running ? '已安装 · 运行中' : '已安装 · 已停止'),
                       ),
-                      if (ebpf) ...[
+                      if (ready || running) ...[
                         const SizedBox(height: 4),
                         Wrap(
                           spacing: 8,
@@ -182,7 +177,7 @@ class _ScanPageState extends State<ScanPage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                if (!ebpf)
+                if (!ready)
                   PanelCard(
                     title: '为什么不能用',
                     child: Text(

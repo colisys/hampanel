@@ -808,7 +808,8 @@ jobs:
           mkdir -p daemon-linux/daemon/libexec daemon-linux/deploy
           mkdir -p daemon-linux/tool
           cp tool/clamav.py daemon-linux/tool/
-          cp daemon/libexec/pure_ftpd.py daemon-linux/daemon/libexec/
+          /usr/bin/clang -g -O2 -target bpfel -c daemon/libexec/tamper.bpf.c -o daemon-linux/daemon/libexec/tamper.bpf.o
+          cp daemon/libexec/tamper_lsm.py daemon/libexec/pure_ftpd.py daemon-linux/daemon/libexec/
           cp deploy/hampanel-pure-ftpd.service daemon-linux/deploy/
           chmod +x daemon-linux/hampaneld daemon-linux/hampanel-risk \
             daemon-linux/bootstrap.sh daemon-linux/install.sh
@@ -820,7 +821,7 @@ jobs:
           mkdir -p daemon-linux-musl/daemon/libexec daemon-linux-musl/deploy
           mkdir -p daemon-linux-musl/tool
           cp tool/clamav.py daemon-linux-musl/tool/
-          cp daemon/libexec/pure_ftpd.py daemon-linux-musl/daemon/libexec/
+          cp daemon-linux/daemon/libexec/tamper.bpf.o daemon/libexec/tamper_lsm.py daemon/libexec/pure_ftpd.py daemon-linux-musl/daemon/libexec/
           cp deploy/hampanel-pure-ftpd.service daemon-linux-musl/deploy/
           chmod +x daemon-linux-musl/hampaneld daemon-linux-musl/hampanel-risk \
             daemon-linux-musl/bootstrap.sh daemon-linux-musl/install.sh

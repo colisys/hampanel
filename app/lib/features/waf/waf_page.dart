@@ -9,6 +9,7 @@ import '../../ui/theme.dart';
 import '../../ui/layout.dart';
 import '../../ui/log_page.dart';
 import '../../ui/widgets.dart';
+import '../security/honeypot_page.dart';
 import '../store/deploy_dialog.dart';
 
 class WafPage extends StatefulWidget {
@@ -635,7 +636,16 @@ class _WafPageState extends State<WafPage>
       children: [
         PageHeader(
           title: 'WAF',
-          actions: [PageRefreshButton(onPressed: _load)],
+          actions: [
+            IconButton(
+              tooltip: 'Web 蜜罐管理',
+              icon: const Icon(Icons.hive_outlined),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => const HoneypotPage(initialMode: 'web'),
+              )),
+            ),
+            PageRefreshButton(onPressed: _load),
+          ],
         ),
         if (!_loading)
           TabBar(

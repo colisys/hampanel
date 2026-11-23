@@ -14,7 +14,15 @@ import 'graphql_client.dart';
 /// response in one column, which read as a wall of controls. Each part now has
 /// its own card with room to breathe, and the editors get real height.
 class GraphqlPage extends StatefulWidget {
-  const GraphqlPage({super.key, this.client = const GraphqlClient()});
+  const GraphqlPage({
+    super.key,
+    this.client = const GraphqlClient(),
+    this.catalogQuery,
+    this.executeCatalog,
+  });
+
+  final String? catalogQuery;
+  final Future<dynamic> Function(String query)? executeCatalog;
 
   final GraphqlClient client;
 
@@ -23,7 +31,8 @@ class GraphqlPage extends StatefulWidget {
 }
 
 class _GraphqlPageState extends State<GraphqlPage> {
-  String endpoint = '', query = '', variables = '', headers = '';
+  String endpoint = '', variables = '', headers = '';
+  late String query = widget.catalogQuery ?? '';
   String status = '', body = '';
   bool busy = false;
 
@@ -35,6 +44,13 @@ class _GraphqlPageState extends State<GraphqlPage> {
       body = '';
     });
     try {
+      if (widget.executeCatalog case final execute?) {
+        final result = await execute(query);
+        if (!mounted) return;
+        status = 'HTTP 200';
+        body = const JsonEncoder.withIndent('  ').convert(result);
+        return;
+      }
       final response = await widget.client.execute(
         endpoint: endpoint,
         query: query,
@@ -51,8 +67,12 @@ class _GraphqlPageState extends State<GraphqlPage> {
       }
     } on FormatException catch (error) {
       if (mounted) status = error.message;
-    } catch (_) {
-      if (mounted) status = '请求失败，请检查地址和网络连接';
+    } catch (error) {
+      if (mounted) {
+        status = widget.executeCatalog == null
+            ? '请求失败，请检查地址和网络连接'
+            : '查询失败：$error';
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -65,16 +85,21 @@ class _GraphqlPageState extends State<GraphqlPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          TextField(
-            enabled: !busy,
-            autocorrect: false,
-            enableSuggestions: false,
-            decoration: const InputDecoration(
-              labelText: 'HTTP(S) 端点',
-              hintText: 'https://example.com/graphql',
+          if (widget.executeCatalog != null)
+            Text('只读目录查询：${widget.catalogQuery}')
+          else
+            TextField(
+              enabled: !busy,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: const InputDecoration(
+                labelText: 'HTTP(S) 端点',
+                helperText: '连接已有数据库对外提供的 GraphQL 服务，不接受 SQL 连接串。',
+                helperMaxLines: 3,
+                hintText: 'https://example.com/graphql',
+              ),
+              onChanged: (value) => endpoint = value,
             ),
-            onChanged: (value) => endpoint = value,
-          ),
           const SizedBox(height: 14),
           _EditorBlock(
             label: 'GraphQL 查询',
@@ -82,20 +107,22 @@ class _GraphqlPageState extends State<GraphqlPage> {
             language: CodeLanguage.plain,
             onChanged: (value) => query = value,
           ),
-          const SizedBox(height: 14),
-          _EditorBlock(
-            label: '变量（可选 JSON 对象）',
-            initial: variables,
-            language: CodeLanguage.json,
-            onChanged: (value) => variables = value,
-          ),
-          const SizedBox(height: 14),
-          _EditorBlock(
-            label: '请求头（可选 JSON 对象）',
-            initial: headers,
-            language: CodeLanguage.json,
-            onChanged: (value) => headers = value,
-          ),
+          if (widget.executeCatalog == null) ...[
+            const SizedBox(height: 14),
+            _EditorBlock(
+              label: '变量（可选 JSON 对象）',
+              initial: variables,
+              language: CodeLanguage.json,
+              onChanged: (value) => variables = value,
+            ),
+            const SizedBox(height: 14),
+            _EditorBlock(
+              label: '请求头（可选 JSON 对象）',
+              initial: headers,
+              language: CodeLanguage.json,
+              onChanged: (value) => headers = value,
+            ),
+          ],
           const SizedBox(height: 16),
           Align(
             alignment: AlignmentDirectional.centerEnd,

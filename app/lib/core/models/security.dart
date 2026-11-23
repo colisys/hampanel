@@ -105,6 +105,7 @@ class SecurityFail2banSummary {
 class SecurityCapabilities {
   const SecurityCapabilities({
     required this.ebpf,
+    this.bpftrace = false,
     required this.chattr,
     required this.qemu,
     required this.nft,
@@ -115,6 +116,7 @@ class SecurityCapabilities {
   });
 
   final bool ebpf;
+  final bool bpftrace;
   final bool chattr;
   final bool qemu;
   final bool nft;
@@ -126,6 +128,7 @@ class SecurityCapabilities {
   factory SecurityCapabilities.fromJson(Map<String, dynamic> json) =>
       SecurityCapabilities(
         ebpf: json['ebpf'] as bool? ?? false,
+        bpftrace: json['bpftrace_available'] as bool? ?? false,
         chattr: json['chattr'] as bool? ?? false,
         qemu: json['qemu'] as bool? ?? false,
         nft: json['nft'] as bool? ?? false,

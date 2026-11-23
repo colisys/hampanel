@@ -12,6 +12,8 @@ pub const Entry = struct {
 pub const Status = struct {
     available: bool,
     tooling: bool,
+    ebpf_detection: bool = false,
+    ebpf_reason: []const u8 = "LinuxOnly",
     entries: []const Entry,
     message: []const u8 = "",
 };
@@ -36,6 +38,14 @@ pub fn status(allocator: std.mem.Allocator, data_dir: []const u8) !Status {
         .entries = &.{},
         .message = "chattr 不可变保护仅 Linux 可用",
     };
+}
+
+pub fn lsm(_: std.mem.Allocator, _: []const u8, _: []const u8) ![]const u8 {
+    return error.Unsupported;
+}
+
+pub fn detectWrites(_: std.mem.Allocator, _: []const u8) !u64 {
+    return error.Unsupported;
 }
 
 pub fn protect(allocator: std.mem.Allocator, data_dir: []const u8, path: []const u8) !Outcome {

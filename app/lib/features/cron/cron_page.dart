@@ -20,6 +20,7 @@ class _CronPageState extends State<CronPage> {
   List<CronPanelJob> _panelJobs = const [];
   String? _error;
   bool _loading = true;
+
   /// "panel" or "user"; groups the list so curated daemon jobs are never
   /// mistaken for the operator's own crontab.
   String _filter = 'all';
@@ -75,9 +76,7 @@ class _CronPageState extends State<CronPage> {
               ListTile(
                 leading: const Icon(Icons.dashboard_customize_outlined),
                 title: const Text('面板任务'),
-                subtitle: const Text(
-                  '证书续签、软件重启、Supervisord 重启、WAF 汇报等内置任务',
-                ),
+                subtitle: const Text('选择证书、软件服务或维护检查'),
                 onTap: () => Navigator.pop(context, 'panel'),
               ),
               const Divider(height: 1),
@@ -108,70 +107,84 @@ class _CronPageState extends State<CronPage> {
 
   Future<void> _addPanelJob() async {
     if (_panelJobs.isEmpty) {
-      // A current daemon always returns the curated catalog, so an empty list
-      // means it is running an older build that predates panel jobs. Say so
-      // instead of blaming the backend, which cannot fix itself.
-      _toast('当前 daemon 版本较旧，未提供面板任务目录；请升级并重启 daemon 后重试');
+      _toast('当前平台或 daemon 未提供面板任务');
       return;
     }
-    var jobId = _panelJobs.first.id;
+    final jobs = _panelJobs;
+    var job = jobs.first;
+    String groupOf(CronPanelJob job) => job.group ?? '内置任务';
+    final groups = jobs.map(groupOf).toSet();
     var schedule = '0 3 * * *';
     final submitted = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('新增面板任务'),
-        content: DialogBody(
-          maxWidth: 680,
-          maxHeight: 620,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                DropdownButtonFormField<String>(
-                  initialValue: jobId,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: '任务类型'),
-                  items: [
-                    for (final job in _panelJobs)
-                      DropdownMenuItem(value: job.id, child: Text(job.label)),
-                  ],
-                  onChanged: (value) => jobId = value ?? jobId,
-                ),
-                const SizedBox(height: 12),
-                CronBuilder(
-                  initial: schedule,
-                  onChanged: (value) => schedule = value,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  '面板任务只能执行内置命令，不接受自定义 shell。',
-                  style: TextStyle(fontSize: 11, color: hampanelMuted),
-                ),
-              ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('新增面板任务'),
+          content: DialogBody(
+            maxWidth: 680,
+            maxHeight: 620,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: groupOf(job),
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: '任务类型'),
+                    items: [
+                      for (final group in groups)
+                        DropdownMenuItem(value: group, child: Text(group)),
+                    ],
+                    onChanged: (value) => update(
+                      () => job = jobs.firstWhere((j) => groupOf(j) == value),
+                    ),
+                  ),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey(groupOf(job)),
+                    initialValue: job.id,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: '执行目标'),
+                    items: [
+                      for (final j in jobs.where(
+                        (j) => groupOf(j) == groupOf(job),
+                      ))
+                        DropdownMenuItem(value: j.id, child: Text(j.label)),
+                    ],
+                    onChanged: (id) =>
+                        update(() => job = jobs.firstWhere((j) => j.id == id)),
+                  ),
+                  const SizedBox(height: 12),
+                  CronBuilder(
+                    initial: schedule,
+                    onChanged: (value) => schedule = value,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    '面板任务只能执行内置命令，不接受自定义 shell。',
+                    style: TextStyle(fontSize: 11, color: hampanelMuted),
+                  ),
+                ],
+              ),
             ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('创建'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('创建'),
-          ),
-        ],
       ),
     );
     if (submitted != true) return;
-    final job = _panelJobs.firstWhere(
-      (candidate) => candidate.id == jobId,
-      orElse: () => _panelJobs.first,
-    );
     try {
       await _api.postJson('/api/v1/cron', {
         'schedule': schedule.trim(),
-        'command': job.command,
+        if (job.group == null) 'command': job.command else 'jobId': job.id,
         'kind': 'panel',
       });
       await _load();
@@ -284,7 +297,8 @@ class _CronPageState extends State<CronPage> {
       children: [
         PageHeader(
           title: '计划任务',
-          subtitle: '${_entries.where((entry) => entry.isPanel).length} 个面板任务'
+          subtitle:
+              '${_entries.where((entry) => entry.isPanel).length} 个面板任务'
               ' · ${_entries.where((entry) => !entry.isPanel).length} 个普通任务',
           actions: [
             if (!compact) ...[

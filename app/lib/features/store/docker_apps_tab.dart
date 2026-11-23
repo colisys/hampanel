@@ -268,6 +268,15 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
                         onChanged: (value) => setState(() => _query = value),
                       ),
                       const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: OutlinedButton.icon(
+                          onPressed: _load,
+                          icon: const Icon(Icons.refresh, size: 16),
+                          label: const Text('刷新状态'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -365,10 +374,12 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
                                 StatusPill(
                                   text: !app.installed
                                       ? '未部署'
-                                      : app.running
+                                      : app.running == null
+                                      ? '状态未知'
+                                      : app.running == true
                                       ? '运行中'
                                       : '已停止',
-                                  good: app.running,
+                                  good: app.running == true,
                                 ),
                               ],
                             ),
@@ -396,12 +407,12 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
                                     ),
                                     label: const Text('部署'),
                                   )
-                                else if (app.running)
+                                else if (app.running == true)
                                   OutlinedButton(
                                     onPressed: () => _action(app, 'stop'),
                                     child: const Text('停止'),
                                   )
-                                else
+                                else if (app.running == false)
                                   OutlinedButton(
                                     onPressed: () => _action(app, 'start'),
                                     child: const Text('启动'),
@@ -417,7 +428,9 @@ class _DockerAppsTabState extends State<DockerAppsTab> {
                                         value: 'logs',
                                         child: Text('查看日志'),
                                       ),
-                                    if (app.installed && app.slug == 'nginx')
+                                    if (app.installed &&
+                                        app.slug == 'nginx' &&
+                                        app.legacyUpgradeAvailable)
                                       const PopupMenuItem(
                                         value: 'upgrade-nginx',
                                         child: Text('升级旧版部署（保留端口）'),

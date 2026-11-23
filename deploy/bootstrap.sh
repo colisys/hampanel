@@ -251,6 +251,23 @@ else
   fi
 fi
 
+# Optional CO-RE backend. Release archives supply the object; source installs
+# build it when BPF clang is available. Never mount bpffs or change boot args.
+if [[ "$ROOT" == "1" ]]; then
+  tamper_assets="$SOURCE_DIR/daemon/libexec"
+  if [[ "$MODE" == "source" ]]; then tamper_assets="$BUILD_DIR/daemon/libexec"; fi
+  if [[ -f "$tamper_assets/tamper_lsm.py" ]]; then
+    obj="$tamper_assets/tamper.bpf.o"
+    if [[ ! -f "$obj" && -f "$tamper_assets/tamper.bpf.c" ]] && command -v clang >/dev/null; then
+      clang -O2 -g -target bpfel -c "$tamper_assets/tamper.bpf.c" -o "$obj" || log "optional BPF object build failed"
+    fi
+    if [[ -s "$obj" ]]; then
+      install -d -m 0755 /usr/libexec/hampanel
+      install -m 0644 "$obj" "$tamper_assets/tamper_lsm.py" /usr/libexec/hampanel/
+    fi
+  fi
+fi
+
 # Private FTPS files are optional in older release archives. Never enable or
 # start the dedicated unit during installation; initialization is explicit.
 if [[ "$ROOT" == "1" && "$NO_SYSTEMD" == "0" ]]; then

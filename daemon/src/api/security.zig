@@ -60,6 +60,65 @@ pub fn tamper(ctx: *context.Context) anyerror!void {
     try ctx.json(status);
 }
 
+/// GET /tamper/lsm; POST /tamper/lsm and /tamper/lsm/remove take {"path":"/absolute/file"}.
+/// Success returns backend, scope, guards, excludes, degraded and per-inode entries.
+pub fn lsmStatus(ctx: *context.Context) anyerror!void {
+    try lsmRequest(ctx, "status");
+}
+pub fn lsmAdd(ctx: *context.Context) anyerror!void {
+    try lsmRequest(ctx, "add");
+}
+pub fn lsmRemove(ctx: *context.Context) anyerror!void {
+    try lsmRequest(ctx, "remove");
+}
+
+fn lsmRequest(ctx: *context.Context, op: []const u8) anyerror!void {
+    const path = if (std.mem.eql(u8, op, "status")) "" else blk: {
+        const body = ctx.requireJson(struct { path: []const u8 }) catch {
+            ctx.fail(400, "bad_request", "expected path");
+            return;
+        };
+        break :blk body.path;
+    };
+    const json = platform.tamper.lsm(ctx.arena, op, path) catch |err| {
+        ctx.fail(switch (@as(anyerror, err)) {
+            error.Unsupported => 501,
+            error.InvalidPath => 400,
+            error.FileNotFound => 404,
+            error.PolicyConflict => 409,
+            error.LoaderTimedOut => 504,
+            else => 503,
+        }, "tamper_lsm_failed", @errorName(err));
+        return;
+    };
+    ctx.response.content_type = "application/json";
+    ctx.response.body = json;
+}
+
+pub fn detectTamperWrites(ctx: *context.Context) anyerror!void {
+    const body = ctx.requireJson(struct { path: []const u8 }) catch {
+        ctx.fail(400, "bad_request", "expected path");
+        return;
+    };
+    const path = platform.files.resolve(ctx.arena, body.path) catch {
+        ctx.fail(400, "bad_path", "path must be absolute");
+        return;
+    };
+    const attempts = platform.tamper.detectWrites(ctx.arena, path) catch |err| {
+        ctx.fail(switch (@as(anyerror, err)) {
+            error.RegularFileRequired, error.InvalidPath => 400,
+            error.FileNotFound => 404,
+            error.AccessDenied => 403,
+            error.ProbeTimedOut => 504,
+            error.ProbeBusy => 409,
+            error.Unsupported => 501,
+            else => 503,
+        }, "tamper_detection_failed", @errorName(err));
+        return;
+    };
+    try ctx.json(.{ .mode = "ebpf_detect", .blocking = false, .write_attempts = attempts });
+}
+
 pub fn protect(ctx: *context.Context) anyerror!void {
     const Body = struct { path: []const u8 };
     const body = ctx.requireJson(Body) catch {
@@ -486,7 +545,8 @@ pub fn probeStatus(ctx: *context.Context) anyerror!void {
 pub fn capabilities(ctx: *context.Context) anyerror!void {
     const a = ctx.arena;
     try ctx.json(.{
-        .ebpf = ebpfCapability(a),
+        .ebpf = platform.security.kernelBpfAvailable(),
+        .bpftrace_available = platform.security.bpftraceAvailable(a),
         .chattr = commandExists(a, "chattr"),
         .qemu = commandExists(a, "qemu-system-x86_64"),
         .nft = commandExists(a, "nft"),
@@ -495,22 +555,6 @@ pub fn capabilities(ctx: *context.Context) anyerror!void {
         .auditd = commandExists(a, "ausearch"),
         .root = effectiveRoot(a),
     });
-}
-
-/// `bpftool feature probe kernel` prints "CONFIG_X is set to y" lines; look for
-/// the two that actually gate loading a program.
-fn ebpfCapability(a: std.mem.Allocator) bool {
-    if (!commandExists(a, "bpftool")) return false;
-    if (!exists("/sys/kernel/btf/vmlinux")) return false;
-    const probe = exec.run(a, &.{ "bpftool", "feature", "probe", "kernel" }, 256 * 1024) catch return false;
-    if (!probe.ok()) return false;
-    return std.mem.indexOf(u8, probe.stdout, "CONFIG_BPF_SYSCALL is set to y") != null and
-        std.mem.indexOf(u8, probe.stdout, "CONFIG_BPF is set to y") != null;
-}
-
-fn exists(path: []const u8) bool {
-    compat.cwd().access(path, .{}) catch return false;
-    return true;
 }
 
 /// SELinux is a probe, not an assumption: a host that runs AppArmor has no

@@ -27,6 +27,14 @@ pub const FirewallEntry = struct {
     output: []const u8,
 };
 
+pub fn kernelBpfAvailable() bool {
+    return false;
+}
+
+pub fn bpftraceAvailable(_: std.mem.Allocator) bool {
+    return false;
+}
+
 pub fn scanStatus(allocator: std.mem.Allocator, data_dir: []const u8) !ScanStatus {
     _ = allocator;
     _ = data_dir;

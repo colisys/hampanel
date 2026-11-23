@@ -15,97 +15,30 @@ const AppView = struct {
     category: []const u8,
     icon: []const u8,
     installed: bool,
-    running: bool,
+    running: ?bool,
+    legacy_upgrade_available: bool,
     params: []const catalog.Param,
-};
-
-const ProjectHealth = struct {
-    running: bool = false,
-    stopped: bool = false,
 };
 
 pub fn apps(ctx: *context.Context) anyerror!void {
     const data_dir = ctx.app.config.data_dir;
     const engine_ctx = engineContext(ctx);
-    var health = if (engine_ctx) |value|
-        composeHealth(ctx, value.engine, value.socket) catch
-            std.StringHashMap(ProjectHealth).init(ctx.arena)
+    const health = if (engine_ctx) |value|
+        store.composeHealth(ctx.arena, value.engine, value.socket) catch null
     else
-        std.StringHashMap(ProjectHealth).init(ctx.arena);
+        null;
 
     var items = std.array_list.Managed(AppView).init(ctx.arena);
     for (&catalog.apps) |*app| {
         const project = try std.fmt.allocPrint(ctx.arena, "hampanel-{s}", .{app.slug});
-        const state = health.get(project);
-        try items.append(view(ctx.arena, data_dir, app, projectRunning(state)));
+        const running = if (health) |map| store.projectRunning(map.get(project)) else null;
+        const legacy = if (engine_ctx) |value|
+            store.legacyUpgradeAvailable(ctx.arena, value.engine, value.socket, data_dir, app)
+        else
+            false;
+        try items.append(view(ctx.arena, data_dir, app, running, legacy));
     }
     try ctx.json(.{ .apps = items.items });
-}
-
-/// One `ps` call annotates every installed app. A compose app counts as
-/// running when it has a running container and none of its containers is
-/// stopped or restarting.
-fn composeHealth(
-    ctx: *context.Context,
-    engine: engine_mod.Engine,
-    socket: []const u8,
-) !std.StringHashMap(ProjectHealth) {
-    const health = std.StringHashMap(ProjectHealth).init(ctx.arena);
-    const result = engine_mod.run(ctx.arena, engine, socket, &.{
-        engine.name,
-        "ps",
-        "-a",
-        "--format",
-        "{{.Label \"com.docker.compose.project\"}}\t{{.State}}",
-    }, .{ .max_output = 4 * 1024 * 1024 }) catch return health;
-    if (!result.ok()) return health;
-    return parseComposeHealth(ctx.arena, result.stdout);
-}
-
-/// A compose app is running only when every container of its project is up.
-fn projectRunning(state: ?ProjectHealth) bool {
-    const value = state orelse return false;
-    return value.running and !value.stopped;
-}
-
-fn parseComposeHealth(
-    allocator: std.mem.Allocator,
-    raw: []const u8,
-) !std.StringHashMap(ProjectHealth) {
-    var health = std.StringHashMap(ProjectHealth).init(allocator);
-    var lines = std.mem.splitScalar(u8, raw, '\n');
-    while (lines.next()) |line| {
-        const tab = std.mem.indexOfScalar(u8, line, '\t') orelse continue;
-        const project = std.mem.trim(u8, line[0..tab], " \r");
-        if (project.len == 0) continue;
-        const state = std.mem.trim(u8, line[tab + 1 ..], " \r");
-        const entry = try health.getOrPut(project);
-        if (!entry.found_existing) entry.value_ptr.* = .{};
-        if (std.mem.eql(u8, state, "running")) {
-            entry.value_ptr.running = true;
-        } else {
-            entry.value_ptr.stopped = true;
-        }
-    }
-    return health;
-}
-
-test "compose health marks partially stopped projects" {
-    const raw =
-        "hampanel-redis\trunning\n" ++
-        "hampanel-gitea\trunning\n" ++
-        "hampanel-gitea\texited\n" ++
-        "hampanel-minio\texited\n" ++
-        "\trunning\n";
-    var health = try parseComposeHealth(std.testing.allocator, raw);
-    defer health.deinit();
-
-    try std.testing.expect(projectRunning(health.get("hampanel-redis")));
-    try std.testing.expect(!projectRunning(health.get("hampanel-gitea")));
-    try std.testing.expect(health.get("hampanel-gitea").?.running);
-    try std.testing.expect(health.get("hampanel-gitea").?.stopped);
-    try std.testing.expect(!projectRunning(health.get("hampanel-minio")));
-    try std.testing.expect(!projectRunning(health.get("hampanel-absent")));
 }
 
 pub fn appDetail(ctx: *context.Context) anyerror!void {
@@ -123,16 +56,20 @@ pub fn appDetail(ctx: *context.Context) anyerror!void {
         store.status(ctx.arena, value.engine, value.socket, ctx.app.config.data_dir, app) catch null
     else
         null;
-    var running = false;
+    var running: ?bool = null;
     if (engine_ctx) |value| {
-        var health = composeHealth(ctx, value.engine, value.socket) catch null;
-        if (health) |*map| {
+        const health = store.composeHealth(ctx.arena, value.engine, value.socket) catch null;
+        if (health) |map| {
             const project = try std.fmt.allocPrint(ctx.arena, "hampanel-{s}", .{app.slug});
-            running = projectRunning(map.get(project));
+            running = store.projectRunning(map.get(project));
         }
     }
+    const legacy = if (engine_ctx) |value|
+        store.legacyUpgradeAvailable(ctx.arena, value.engine, value.socket, ctx.app.config.data_dir, app)
+    else
+        false;
     try ctx.json(.{
-        .app = view(ctx.arena, ctx.app.config.data_dir, app, running),
+        .app = view(ctx.arena, ctx.app.config.data_dir, app, running, legacy),
         .status = if (status) |value| value.output else "",
         .running = running,
     });
@@ -451,7 +388,8 @@ fn view(
     allocator: std.mem.Allocator,
     data_dir: []const u8,
     app: *const catalog.App,
-    running: bool,
+    running: ?bool,
+    legacy: bool,
 ) AppView {
     return .{
         .slug = app.slug,
@@ -461,6 +399,7 @@ fn view(
         .icon = app.icon,
         .installed = store.installed(allocator, data_dir, app),
         .running = running,
+        .legacy_upgrade_available = legacy,
         .params = app.params,
     };
 }

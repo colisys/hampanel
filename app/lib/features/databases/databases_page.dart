@@ -9,6 +9,7 @@ import '../../ui/layout.dart';
 import '../../ui/remote_picker.dart';
 import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
+import '../graphql/graphql_page.dart';
 import '../terminal/terminal_page.dart';
 import 'database_dialogs.dart';
 
@@ -95,7 +96,18 @@ class _DatabasesPageState extends State<DatabasesPage> {
       ['name', 'host', 'port', 'user', 'password', 'container', 'socket'],
       instance: true,
       editing: item != null,
-      initial: item ?? {},
+      initial:
+          item ??
+          {
+            if (engineLabels.containsKey(_engineFilter))
+              'engine': _engineFilter,
+            if (_engineFilter == 'postgres') ...{
+              'port': 5432,
+              'user': 'postgres',
+            },
+            if (_engineFilter == 'redis') ...{'port': 6379, 'user': ''},
+            if (_engineFilter == 'mongo') ...{'port': 27017, 'user': 'admin'},
+          },
       api: api,
     );
     if (body == null || !mounted) return;
@@ -218,10 +230,6 @@ class _DatabasesPageState extends State<DatabasesPage> {
   );
 
   List<Widget> instances(_Json data) => [
-    Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: action('登记实例', () => registration()),
-    ),
     if ((data['items'] as List).isEmpty)
       const ListTile(title: Text('暂无实例，请先登记数据库连接。'))
     else if (_engineFilter.isNotEmpty &&
@@ -233,50 +241,65 @@ class _DatabasesPageState extends State<DatabasesPage> {
       ),
     for (final item in (data['items'] as List).cast<_Json>())
       if (_engineFilter.isEmpty || item['engine'] == _engineFilter)
-      ListTile(
-        leading: const Icon(Icons.storage),
-        title: Text(item['name']),
-        subtitle: Text(
-          '${engineLabels[item['engine']]} · ${modeLabels[item['mode']]} · ${item['mode'] == 'host' ? '${item['host']}:${item['port']}' : item['container']}',
+        ListTile(
+          leading: const Icon(Icons.storage),
+          title: Text(item['name']),
+          subtitle: Text(
+            item['engine'] == 'sqlite'
+                ? 'SQLite · ${item['path']}'
+                : '${engineLabels[item['engine']]} · ${modeLabels[item['mode']]} · ${item['mode'] == 'host' ? '${item['host']}:${item['port']}' : item['container']}',
+          ),
+          onTap: busy ? null : () => navigate(item),
+          trailing: PopupMenuButton<String>(
+            enabled: !busy,
+            onSelected: (v) =>
+                run(() => v == 'edit' ? registration(item) : unregister(item)),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'edit', child: Text('编辑实例')),
+              PopupMenuItem(value: 'remove', child: Text('移除登记')),
+            ],
+          ),
         ),
-        onTap: busy ? null : () => navigate(item),
-        trailing: PopupMenuButton<String>(
-          enabled: !busy,
-          onSelected: (v) =>
-              run(() => v == 'edit' ? registration(item) : unregister(item)),
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'edit', child: Text('编辑实例')),
-            PopupMenuItem(value: 'remove', child: Text('移除登记')),
-          ],
-        ),
-      ),
   ];
 
-  List<Widget> overview(_Json data) => [
-    Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        action('创建数据库', () => create('创建数据库', 'databases', ['name'])),
-        action('创建账号', () => create('创建账号', 'users', ['name', 'password'])),
-        action(
-          '重置管理账号密码',
-          () => create('重置 ${instance!['user']} 的密码', 'password', ['password']),
-        ),
-      ],
-    ),
-    heading('数据库'),
-    if ((data['databases'] as List).isEmpty) const Text('暂无数据库'),
-    for (final name in data['databases'] as List)
-      ListTile(
-        title: Text(name),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: busy ? null : () => navigate(instance, name),
-      ),
-    heading('实例账号'),
-    if ((data['users'] as List).isEmpty) const Text('暂无账号'),
-    for (final user in data['users'] as List) ListTile(title: Text(user)),
-  ];
+  List<Widget> overview(_Json data) => instance?['engine'] == 'sqlite'
+      ? [
+          Text('只读连接：${instance!['path']}'),
+          heading('表'),
+          if ((data['tables'] as List).isEmpty) const Text('暂无表'),
+          for (final name in data['tables'] as List)
+            ListTile(title: Text(name)),
+        ]
+      : [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              action('创建数据库', () => create('创建数据库', 'databases', ['name'])),
+              action(
+                '创建账号',
+                () => create('创建账号', 'users', ['name', 'password']),
+              ),
+              action(
+                '重置管理账号密码',
+                () => create('重置 ${instance!['user']} 的密码', 'password', [
+                  'password',
+                ]),
+              ),
+            ],
+          ),
+          heading('数据库'),
+          if ((data['databases'] as List).isEmpty) const Text('暂无数据库'),
+          for (final name in data['databases'] as List)
+            ListTile(
+              title: Text(name),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: busy ? null : () => navigate(instance, name),
+            ),
+          heading('实例账号'),
+          if ((data['users'] as List).isEmpty) const Text('暂无账号'),
+          for (final user in data['users'] as List) ListTile(title: Text(user)),
+        ];
 
   List<Widget> details(_Json data) {
     final backups = (data['backups'] as List).cast<_Json>().where(
@@ -323,12 +346,56 @@ class _DatabasesPageState extends State<DatabasesPage> {
     'postgres',
     'mongo',
     'redis',
+    'sqlite',
+    'GraphQL',
   ];
 
   List<String> get _engineLabels => [
     '全部',
     for (final engine in _engineOrder) engineLabels[engine] ?? engine,
   ];
+
+  String? _graphqlId;
+
+  Widget _graphqlConsole(List<_Json> items) {
+    final supported = items.where((i) => i['engine'] != 'redis');
+    final selected = supported.where((i) => i['id'] == _graphqlId).firstOrNull;
+    return Column(
+      children: [
+        Padding(
+          padding: pageContentPadding(context),
+          child: DropdownButtonFormField<String>(
+            decoration: const InputDecoration(labelText: 'GraphQL 连接'),
+            isExpanded: true,
+            initialValue: selected?['id'] ?? '',
+            items: [
+              const DropdownMenuItem(value: '', child: Text('外部 HTTP(S) 端点')),
+              for (final i in supported)
+                DropdownMenuItem(
+                  value: i['id'],
+                  child: Text('${i['name']} · ${engineLabels[i['engine']]}'),
+                ),
+            ],
+            onChanged: (id) => setState(() => _graphqlId = id),
+          ),
+        ),
+        Expanded(
+          child: selected == null
+              ? const GraphqlPage()
+              : GraphqlPage(
+                  key: ValueKey(selected['id']),
+                  catalogQuery: selected['engine'] == 'sqlite'
+                      ? '{ tables }'
+                      : '{ databases }',
+                  executeCatalog: (query) => api.postJson(
+                    '$_root/${Uri.encodeComponent(selected['id'])}/graphql',
+                    {'query': query},
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
 
   int get _engineIndex {
     if (_engineFilter.isEmpty) return 0;
@@ -348,17 +415,17 @@ class _DatabasesPageState extends State<DatabasesPage> {
         final narrow = constraints.maxWidth < 760;
         if (narrow) {
           return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(child: list),
               Container(
                 decoration: BoxDecoration(
-                  border: Border(
-                    top: BorderSide(color: hampanelBorder),
-                  ),
+                  border: Border(top: BorderSide(color: hampanelBorder)),
                 ),
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
                 child: SafeArea(
                   top: false,
+                  bottom: _engineFilter == 'GraphQL',
                   child: SubNavMenu(
                     items: _engineLabels,
                     index: _engineIndex,
@@ -366,6 +433,16 @@ class _DatabasesPageState extends State<DatabasesPage> {
                   ),
                 ),
               ),
+              if (_engineFilter != 'GraphQL')
+                ActionDock(
+                  actions: [
+                    ActionDockItem(
+                      icon: Icons.add,
+                      label: '登记实例',
+                      onPressed: busy ? null : () => run(() => registration()),
+                    ),
+                  ],
+                ),
             ],
           );
         }
@@ -377,7 +454,19 @@ class _DatabasesPageState extends State<DatabasesPage> {
               index: _engineIndex,
               onChanged: _selectEngine,
             ),
-            Expanded(child: list),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_engineFilter != 'GraphQL')
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: action('登记实例', () => registration()),
+                    ),
+                  Expanded(child: list),
+                ],
+              ),
+            ),
           ],
         );
       },
@@ -405,7 +494,8 @@ class _DatabasesPageState extends State<DatabasesPage> {
                   ? null
                   : () => navigate(database == null ? null : instance),
             ),
-          if (!isRedis) PageRefreshButton(onPressed: busy ? null : refresh),
+          if (!isRedis && _engineFilter != 'GraphQL')
+            PageRefreshButton(onPressed: busy ? null : refresh),
         ],
       ),
       if (busy) const LinearProgressIndicator(),
@@ -413,37 +503,42 @@ class _DatabasesPageState extends State<DatabasesPage> {
         Expanded(child: TerminalPage(redisId: instance!['id'].toString()))
       else
         Expanded(
-          child: FutureBuilder<_Json>(
-            future: request,
-            builder: (context, state) {
-              if (state.connectionState != ConnectionState.done) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (state.hasError) {
-                return ListView(
-                  padding: pageContentPadding(context),
-                  children: [
-                    Text('读取失败：${state.error}'),
-                    TextButton(onPressed: refresh, child: const Text('重试')),
-                  ],
-                );
-              }
-              final data = state.requireData;
-              final list = ListView(
-                key: ValueKey((instance?['id'], database, _engineFilter)),
-                padding: pageContentPadding(context),
-                children: instance == null
-                    ? instances(data)
-                    : database == null
-                    ? overview(data)
-                    : details(data),
-              );
-              // The engine rail only makes sense while browsing instances; once
-              // an instance is open the page drills into its contents.
-              return instance == null ? _withEngineNav(list) : list;
-            },
-          ),
+          child: instance == null ? _withEngineNav(_dataList()) : _dataList(),
         ),
     ],
+  );
+
+  Widget _dataList() => FutureBuilder<_Json>(
+    future: request,
+    builder: (context, state) {
+      if (state.connectionState != ConnectionState.done) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      if (state.hasError) {
+        return ListView(
+          padding: pageContentPadding(context),
+          children: [
+            Text('读取失败：${state.error}'),
+            TextButton(onPressed: refresh, child: const Text('重试')),
+          ],
+        );
+      }
+      final data = state.requireData;
+      if (instance == null && _engineFilter == 'GraphQL') {
+        return _graphqlConsole((data['items'] as List).cast<_Json>());
+      }
+      final list = ListView(
+        key: ValueKey((instance?['id'], database, _engineFilter)),
+        padding: pageContentPadding(context),
+        children: instance == null
+            ? instances(data)
+            : database == null
+            ? overview(data)
+            : details(data),
+      );
+      // The engine rail only makes sense while browsing instances; once
+      // an instance is open the page drills into its contents.
+      return list;
+    },
   );
 }

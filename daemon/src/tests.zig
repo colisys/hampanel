@@ -630,9 +630,9 @@ test "generated caddy config is accepted by caddy validate" {
 
 test "panel cron jobs only accept curated commands" {
     const cron = @import("platform/mod.zig").cron;
-    try std.testing.expect(cron.panelJobFor("hampaneld waf-report --json") != null);
+    try std.testing.expect(cron.panelJobFor("systemctl restart nginx.service") != null);
     try std.testing.expect(cron.panelJobFor("rm -rf /") == null);
-    try std.testing.expect(cron.panelJobFor("hampaneld renew-certificates --json") != null);
+    try std.testing.expect(cron.panelJobFor("certbot renew --quiet") != null);
     try std.testing.expect(cron.panel_jobs.len >= 4);
 }
 
@@ -1046,6 +1046,46 @@ test "honeypot mirrors host identity without passing hardware through" {
     const plain = try hp.qemuEscapeForTest(allocator, "FreeBook");
     defer allocator.free(plain);
     try std.testing.expectEqualStrings("FreeBook", plain);
+}
+
+test "opt-in disposable honeypot ingress VM smoke" {
+    if (@import("builtin").os.tag != .linux or std.testing.environ.getPosix("HAMPANEL_TEST_DECOY_VM") == null) return error.SkipZigTest;
+    const hp = @import("platform/mod.zig").honeypot;
+    const exec = @import("shared").exec;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", allocator);
+    for ([_]hp.Mode{ .web, .ssh }) |mode| {
+        const built = try hp.buildImage(allocator, dir, mode);
+        try std.testing.expect(built.ok);
+        if (mode == .web) try std.testing.expectError(error.ImageNotBuilt, hp.start(allocator, dir, .ssh, 12222));
+        const selected = try exec.run(allocator, &.{ "python3", "-c", "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1])" }, 1024);
+        const port = try std.fmt.parseInt(u16, std.mem.trim(u8, selected.stdout, "\r\n "), 10);
+        const guest = try hp.start(allocator, dir, mode, port);
+        const id = guest.session_id.?;
+        defer _ = hp.stop(allocator, dir, id) catch {};
+        const port_text = try std.fmt.allocPrint(allocator, "{d}", .{port});
+        const probe = try exec.run(allocator, &.{ "python3", "-c",
+            \\import socket, sys
+            \\with socket.create_connection(('127.0.0.1',int(sys.argv[1])), 5) as s:
+            \\ if sys.argv[2]=='web': s.sendall(b'GET / HTTP/1.1\r\nHost: test\r\n\r\n')
+            \\ data=s.makefile('rb').read()
+            \\ assert (data.startswith(b'HTTP/1.0 200 OK') and b'Service online' in data) if sys.argv[2]=='web' else data==b'SSH-2.0-Hampanel_Decoy\r\n', data
+        , port_text, mode.name() }, 4096);
+        if (!probe.ok()) std.debug.print("probe: {s}\n", .{probe.stderr});
+        try std.testing.expect(probe.ok());
+        if (mode == .ssh) {
+            const client = try exec.run(allocator, &.{ "ssh", "-vv", "-F", "/dev/null", "-oBatchMode=yes", "-oConnectTimeout=5", "-p", port_text, "127.0.0.1" }, 32 * 1024);
+            try std.testing.expect(!client.ok());
+            try std.testing.expect(std.mem.indexOf(u8, client.stderr, "remote software version Hampanel_Decoy") != null);
+        }
+        try std.testing.expectError(error.QemuExitedCheckPortOrKernel, hp.start(allocator, dir, mode, port));
+        try std.testing.expect((try hp.stop(allocator, dir, id)).ok);
+        for ((try hp.status(allocator, dir)).sessions) |session| try std.testing.expect(!session.running);
+    }
 }
 
 test "honeypot session ids are restricted to safe characters" {

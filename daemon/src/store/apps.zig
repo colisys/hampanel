@@ -166,7 +166,93 @@ pub fn deploy(
     };
 }
 
+const ProjectHealth = struct {
+    running: bool = false,
+    stopped: bool = false,
+};
+
+/// One `ps` call annotates every installed app. A compose app counts as
+/// running when it has a running container and none of its containers is
+/// stopped or restarting.
+pub fn composeHealth(
+    allocator: std.mem.Allocator,
+    engine: engine_mod.Engine,
+    socket: []const u8,
+) !std.StringHashMap(ProjectHealth) {
+    const result = try engine_mod.run(allocator, engine, socket, &.{
+        engine.name,
+        "ps",
+        "-a",
+        "--format",
+        // CLI table formatters may expand tabs; use a literal separator.
+        if (engine.podman)
+            "{{or (index .Labels \"com.docker.compose.project\") (index .Labels \"io.podman.compose.project\")}}|{{.State}}"
+        else
+            "{{.Label \"com.docker.compose.project\"}}|{{.State}}",
+    }, .{ .max_output = 4 * 1024 * 1024 });
+    if (!result.ok()) return error.HealthUnavailable;
+    return parseComposeHealth(allocator, result.stdout);
+}
+
+/// A compose app is running only when every container of its project is up.
+pub fn projectRunning(state: ?ProjectHealth) ?bool {
+    const value = state orelse return null;
+    return value.running and !value.stopped;
+}
+
+fn parseComposeHealth(
+    allocator: std.mem.Allocator,
+    raw: []const u8,
+) !std.StringHashMap(ProjectHealth) {
+    var health = std.StringHashMap(ProjectHealth).init(allocator);
+    var lines = std.mem.splitScalar(u8, raw, '\n');
+    while (lines.next()) |line| {
+        const separator = std.mem.indexOfScalar(u8, line, '|') orelse continue;
+        const project = std.mem.trim(u8, line[0..separator], " \r");
+        if (project.len == 0) continue;
+        const state = std.mem.trim(u8, line[separator + 1 ..], " \r");
+        const entry = try health.getOrPut(project);
+        if (!entry.found_existing) entry.value_ptr.* = .{};
+        if (std.ascii.eqlIgnoreCase(state, "running")) {
+            entry.value_ptr.running = true;
+        } else {
+            entry.value_ptr.stopped = true;
+        }
+    }
+    return health;
+}
+
+test "compose health marks partially stopped projects" {
+    const raw =
+        "hampanel-redis|Running\n" ++
+        "hampanel-gitea|running\n" ++
+        "hampanel-gitea|exited\n" ++
+        "hampanel-minio|exited\n" ++
+        "|running\n";
+    var health = try parseComposeHealth(std.testing.allocator, raw);
+    defer health.deinit();
+
+    try std.testing.expectEqual(true, projectRunning(health.get("hampanel-redis")));
+    try std.testing.expectEqual(false, projectRunning(health.get("hampanel-gitea")));
+    try std.testing.expect(health.get("hampanel-gitea").?.running);
+    try std.testing.expect(health.get("hampanel-gitea").?.stopped);
+    try std.testing.expectEqual(false, projectRunning(health.get("hampanel-minio")));
+    try std.testing.expectEqual(null, projectRunning(health.get("hampanel-absent")));
+}
+
 const legacy_nginx = @embedFile("catalog/nginx-legacy.yml");
+
+pub fn legacyUpgradeAvailable(a: std.mem.Allocator, engine: engine_mod.Engine, socket: []const u8, data_dir: []const u8, app: *const catalog.App) bool {
+    if (!std.mem.eql(u8, app.slug, "nginx")) return false;
+    const path = composePath(a, data_dir, app) catch return false;
+    defer a.free(path);
+    const raw = compat.cwd().readFileAlloc(a, path, 16384) catch return false;
+    defer a.free(raw);
+    const port = legacyPort(raw) catch return false;
+    const dir = compat.path.dirname(path) orelse return false;
+    verifyLegacyContainer(a, engine, socket, dir, port) catch return false;
+    return true;
+}
 
 fn legacyPort(raw: []const u8) ![]const u8 {
     const marker = "{{port}}";
@@ -189,16 +275,9 @@ pub fn upgradeNginx(a: std.mem.Allocator, engine: engine_mod.Engine, socket: []c
     const old = try compat.cwd().readFileAlloc(a, path, 16384);
     const port = try legacyPort(old);
     const updated = try replaceAll(a, app.compose, "{{port}}", port);
-    // Do not adopt a same-name Compose project from another checkout or
-    // silently replace a drifted HTML mount / host port. Fail closed when a
-    // provider cannot attest the working directory and legacy runtime layout.
-    const lookup = try engine_mod.run(a, engine, socket, &.{ engine.name, "ps", "-a", "--no-trunc", "--filter", "label=com.docker.compose.project=hampanel-nginx", "--format", "{{.ID}}" }, .{});
-    const id = std.mem.trim(u8, lookup.stdout, " \t\r\n");
-    if (!lookup.ok() or id.len != 64) return error.LegacyContainerMismatch;
-    for (id) |ch| if (!std.ascii.isHex(ch)) return error.LegacyContainerMismatch;
-    const format = "{{index .Config.Labels \"com.docker.compose.project.working_dir\"}}\n{{index .Config.Labels \"com.docker.compose.service\"}}\n{{.Config.Image}}\n{{.HostConfig.Privileged}}\n{{range .Mounts}}{{.Type}} {{.Name}} {{.Destination}} {{.RW}}\n{{end}}{{range $p, $bindings := .HostConfig.PortBindings}}{{range $bindings}}{{$p}} {{.HostIp}} {{.HostPort}}\n{{end}}{{end}}";
-    const inspected = try engine_mod.run(a, engine, socket, &.{ engine.name, "inspect", "--format", format, id }, .{});
-    if (!inspected.ok() or !legacyRuntime(inspected.stdout, dir, port)) return error.LegacyContainerMismatch;
+    // Never adopt a same-name project from another checkout or replace a
+    // drifted mount / port, even if the manifest still matches the catalog.
+    try verifyLegacyContainer(a, engine, socket, dir, port);
     // Exclusive files: refuse to overwrite backups or load pre-existing site snippets.
     try writeNew(backup, old, 0o600);
     errdefer compat.deleteFileAbsolute(backup) catch {};
@@ -219,6 +298,16 @@ pub fn upgradeNginx(a: std.mem.Allocator, engine: engine_mod.Engine, socket: []c
     if (!result.ok()) return .{ .ok = false, .output = textOf(result) };
     _ = @import("../runtime/site_nginx.zig").resolveContainer(a, data_dir, socket) catch return .{ .ok = false, .output = "Updated mounts not verified; review compose.yml and compose.pre-upgrade.yml" };
     return .{ .ok = true, .output = textOf(result) };
+}
+
+fn verifyLegacyContainer(a: std.mem.Allocator, engine: engine_mod.Engine, socket: []const u8, dir: []const u8, port: []const u8) !void {
+    const lookup = try engine_mod.run(a, engine, socket, &.{ engine.name, "ps", "-a", "--no-trunc", "--filter", "label=com.docker.compose.project=hampanel-nginx", "--format", "{{.ID}}" }, .{});
+    const id = std.mem.trim(u8, lookup.stdout, " \t\r\n");
+    if (!lookup.ok() or id.len != 64) return error.LegacyContainerMismatch;
+    for (id) |ch| if (!std.ascii.isHex(ch)) return error.LegacyContainerMismatch;
+    const format = "{{index .Config.Labels \"com.docker.compose.project.working_dir\"}}\n{{index .Config.Labels \"com.docker.compose.service\"}}\n{{.Config.Image}}\n{{.HostConfig.Privileged}}\n{{range .Mounts}}{{.Type}} {{.Name}} {{.Destination}} {{.RW}}\n{{end}}{{range $p, $bindings := .HostConfig.PortBindings}}{{range $bindings}}{{$p}} {{.HostIp}} {{.HostPort}}\n{{end}}{{end}}";
+    const inspected = try engine_mod.run(a, engine, socket, &.{ engine.name, "inspect", "--format", format, id }, .{});
+    if (!inspected.ok() or !legacyRuntime(inspected.stdout, dir, port)) return error.LegacyContainerMismatch;
 }
 
 fn legacyRuntime(raw: []const u8, dir: []const u8, port: []const u8) bool {
@@ -252,6 +341,8 @@ test "nginx upgrade accepts only the exact legacy layout and preserves published
     const a = arena.allocator();
     const old = try replaceAll(a, legacy_nginx, "{{port}}", "49101");
     try std.testing.expectEqualStrings("49101", try legacyPort(old));
+    const updated = try replaceAll(a, catalog.find("nginx").?.compose, "{{port}}", "49101");
+    try std.testing.expectError(error.NotLegacyCatalogLayout, legacyPort(updated));
     try std.testing.expectError(error.NotLegacyCatalogLayout, legacyPort(try replaceAll(a, old, "html:", "custom:")));
     try std.testing.expectError(error.InvalidParam, legacyPort(try replaceAll(a, old, "49101", "65536")));
 }

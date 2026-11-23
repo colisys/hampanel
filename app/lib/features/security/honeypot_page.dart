@@ -12,7 +12,9 @@ import '../../ui/widgets.dart';
 /// memory, DMI strings) but none of its hardware: storage is our own image and
 /// networking is QEMU user-mode, so an attacker cannot reach the LAN.
 class HoneypotPage extends StatefulWidget {
-  const HoneypotPage({super.key});
+  const HoneypotPage({super.key, this.initialMode = 'web'});
+
+  final String initialMode;
 
   @override
   State<HoneypotPage> createState() => _HoneypotPageState();
@@ -23,7 +25,7 @@ class _HoneypotPageState extends State<HoneypotPage> {
   bool _loading = true;
   bool _busy = false;
   String? _error;
-  String _mode = 'web';
+  late String _mode = widget.initialMode;
 
   ApiClient get _api => PanelScope.of(context).api;
 
@@ -89,7 +91,7 @@ class _HoneypotPageState extends State<HoneypotPage> {
   }
 
   Future<void> _start() async {
-    final controller = TextEditingController(text: '18080');
+    var selectedPort = _mode == 'ssh' ? '12222' : '18080';
     final portText = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -99,8 +101,9 @@ class _HoneypotPageState extends State<HoneypotPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '选择一个本机端口转发到 guest 的服务端口。'
-              'guest 只能通过该端口被访问，不接触宿主机网卡。',
+              '确认在所有 IPv4 接口公开独立的 $_mode 蜜罐端口（1024–65535）。'
+              '已占用端口将启动失败；不会修改防火墙、生产服务或重定向流量。'
+              '${_mode == 'ssh' ? '仅发送 SSH 标识后断开，不进行密钥交换或登录。' : '仅提供静态 HTTP 状态页，无登录表单。'}',
               style: TextStyle(
                 fontSize: 11.5,
                 color: hampanelMuted,
@@ -108,8 +111,9 @@ class _HoneypotPageState extends State<HoneypotPage> {
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: controller,
+            TextFormField(
+              initialValue: selectedPort,
+              onChanged: (value) => selectedPort = value,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(labelText: '本机端口'),
             ),
@@ -121,23 +125,23 @@ class _HoneypotPageState extends State<HoneypotPage> {
             child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: const Text('启动'),
+            onPressed: () => Navigator.of(context).pop(selectedPort.trim()),
+            child: const Text('确认公开并启动'),
           ),
         ],
       ),
     );
-    controller.dispose();
+
     if (portText == null) return;
     if (!mounted) return;
     final port = int.tryParse(portText);
-    if (port == null || port < 1 || port > 65535) {
+    if (port == null || port < 1024 || port > 65535) {
       showAppSnackBar(context, const SnackBar(content: Text('端口不合法')));
       return;
     }
     await _submit(
       'security.honeypot.start',
-      params: {'mode': _mode, 'port': port},
+      params: {'mode': _mode, 'port': port, 'confirmed': true},
       title: '启动蜜罐（$_mode）',
     );
   }
@@ -202,12 +206,12 @@ class _HoneypotPageState extends State<HoneypotPage> {
     final status = _status ?? const <String, dynamic>{};
     final qemu = status['qemu'] == true;
     final kvm = status['kvm'] == true;
-    final imageReady = status['image_ready'] == true;
+    final imageReady = status['${_mode}_image_ready'] == true;
     final profile = status['profile'] as Map<String, dynamic>? ?? const {};
     final sessions = ((status['sessions'] as List<dynamic>?) ?? const [])
         .whereType<Map<String, dynamic>>()
         .toList();
-    final ready = qemu && kvm && imageReady;
+    final ready = qemu && imageReady && (status['kernel'] as String?)?.isNotEmpty == true;
 
     return Scaffold(
       appBar: AppBar(
@@ -236,17 +240,11 @@ class _HoneypotPageState extends State<HoneypotPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        status['message'] as String? ?? '',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: hampanelMuted,
-                          height: 1.6,
-                        ),
-                      ),
+                      if ((status['message'] as String?)?.isNotEmpty == true)
+                        InlineAlert(message: status['message'] as String),
                       const SizedBox(height: 10),
                       _row('QEMU', qemu ? '已安装' : '未安装'),
-                      _row('KVM 加速', kvm ? '/dev/kvm 可用' : '不可用'),
+                      _row('KVM 加速', kvm ? '/dev/kvm 可用' : '未启用（软件模拟）'),
                       _row(
                         '宿主内核',
                         (status['kernel'] as String?)?.isNotEmpty == true
@@ -264,7 +262,7 @@ class _HoneypotPageState extends State<HoneypotPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'guest 看到的是宿主机的 CPU、内存与 DMI 信息，'
+                        '下列为宿主参考配置；软件模拟使用虚拟 CPU，最多 2 核 / 1024 MB。'
                         '但所有设备均由 QEMU 模拟：没有磁盘或网卡透传，'
                         '网络为隔离的用户态网络，无法访问宿主所在局域网。',
                         style: TextStyle(
@@ -277,7 +275,7 @@ class _HoneypotPageState extends State<HoneypotPage> {
                       _row('CPU', '${profile['cpu_model'] ?? '—'}'),
                       _row('核心数', '${profile['cpu_cores'] ?? '—'}'),
                       _row('内存', '${profile['memory_mb'] ?? '—'} MB'),
-                      _row('磁盘', '${profile['disk_gb'] ?? '—'} GB（自建 qcow2）'),
+                      _row('存储', '仅内存文件系统，无磁盘挂载'),
                       _row('厂商', '${profile['vendor'] ?? '—'}'),
                       _row('型号', '${profile['product'] ?? '—'}'),
                       _row('序列号', '${profile['serial'] ?? '—'}'),
@@ -296,14 +294,14 @@ class _HoneypotPageState extends State<HoneypotPage> {
                         items: const [
                           DropdownMenuItem(value: 'web', child: Text('Web 蜜罐')),
                           DropdownMenuItem(value: 'ssh', child: Text('SSH 蜜罐')),
-                          DropdownMenuItem(value: 'both', child: Text('两者')),
+
                         ],
                         onChanged: _busy
                             ? null
                             : (value) => setState(() => _mode = value ?? 'web'),
                       ),
                       OutlinedButton.icon(
-                        onPressed: _busy || !qemu || !kvm
+                        onPressed: _busy || !qemu
                             ? null
                             : () => _submit(
                                 'security.honeypot.build',

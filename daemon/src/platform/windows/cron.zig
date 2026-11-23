@@ -33,6 +33,10 @@ pub fn panelJobFor(command: []const u8) ?PanelJob {
     return null;
 }
 
+pub fn catalog(_: std.mem.Allocator) ![]const PanelJob {
+    return &panel_jobs;
+}
+
 const task_path = "\\Hampanel\\";
 
 pub fn list(allocator: std.mem.Allocator) ![]Entry {
@@ -72,7 +76,7 @@ pub fn add(
     command: []const u8,
     kind: []const u8,
 ) !Outcome {
-    _ = kind;
+    if (std.mem.eql(u8, kind, "panel")) return error.UnknownPanelJob;
     const parsed = translateSchedule(allocator, schedule) catch return error.Unsupported;
 
     var random: [4]u8 = undefined;

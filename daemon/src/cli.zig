@@ -548,6 +548,12 @@ fn cmdRun(allocator: std.mem.Allocator, opts: *Options) !u8 {
     }
     {
         const tamper = @import("platform/mod.zig").tamper;
+        if (tamper.lsm(allocator, "restore", "")) |report| {
+            defer allocator.free(report);
+            if (std.mem.indexOf(u8, report, "\"degraded\": true") != null) log.warn("tamper LSM: stale identities; inspect /tamper/lsm", .{});
+        } else |err| {
+            if (@as(anyerror, err) != error.Unsupported) log.warn("tamper LSM restore: {s}", .{@errorName(err)});
+        }
         if (tamper.restoreAll(allocator, cfg.data_dir)) |restored| {
             if (restored > 0) log.info("tamper: re-applied immutable flag on {d} path(s)", .{restored});
         } else |err| {

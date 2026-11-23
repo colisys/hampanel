@@ -3,9 +3,11 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/api_client.dart';
 import '../../core/format.dart';
 import '../../core/models/log_source.dart';
+import '../../core/log_parse.dart';
 import '../../core/session.dart';
 import '../../ui/layout.dart';
 import '../../ui/log_viewer.dart';
+import '../../ui/theme.dart';
 import '../../ui/widgets.dart';
 
 class LogsPage extends StatefulWidget {
@@ -25,6 +27,13 @@ class _LogsPageState extends State<LogsPage> {
   String? _error;
   String? _path;
   int _lines = 200;
+  final _filter = LogFilterController();
+
+  @override
+  void dispose() {
+    _filter.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -126,31 +135,22 @@ class _LogsPageState extends State<LogsPage> {
     await _loadTail();
   }
 
-  Future<void> _pickLines() async {
-    final lines = await showModalBottomSheet<int>(
+  Future<void> _openAdvancedFilters() async {
+    final result = await showDialog<_LogFilters>(
       context: context,
-      builder: (context) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            for (final value in const [100, 200, 500, 1000, 2000])
-              ListTile(
-                leading: Icon(
-                  value == _lines
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_unchecked,
-                  size: 18,
-                ),
-                title: Text('$value 行'),
-                onTap: () => Navigator.pop(context, value),
-              ),
-          ],
-        ),
+      builder: (_) => _LogFiltersDialog(
+        severities: _filter.severities,
+        range: _filter.range,
+        lines: _lines,
       ),
     );
-    if (lines == null || lines == _lines) return;
-    setState(() => _lines = lines);
-    await _loadTail();
+    if (result == null || !mounted) return;
+    _filter.setSeverities(result.severities);
+    _filter.setRange(result.range);
+    if (result.lines != _lines) {
+      setState(() => _lines = result.lines);
+      await _loadTail();
+    }
   }
 
   @override
@@ -160,6 +160,10 @@ class _LogsPageState extends State<LogsPage> {
         .where((source) => source.id == _selected)
         .map((source) => source.label)
         .firstOrNull;
+    final mobileSourceLabel = (selectedLabel ?? '日志源').runes
+        .take(5)
+        .map(String.fromCharCode)
+        .join();
     return Column(
       children: [
         PageHeader(
@@ -201,28 +205,6 @@ class _LogsPageState extends State<LogsPage> {
                     },
                   ),
                 ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  width: 120,
-                  child: DropdownButtonFormField<int>(
-                    initialValue: _lines,
-                    decoration: const InputDecoration(
-                      labelText: '行数',
-                      isDense: true,
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 100, child: Text('100')),
-                      DropdownMenuItem(value: 200, child: Text('200')),
-                      DropdownMenuItem(value: 500, child: Text('500')),
-                      DropdownMenuItem(value: 1000, child: Text('1000')),
-                      DropdownMenuItem(value: 2000, child: Text('2000')),
-                    ],
-                    onChanged: (value) {
-                      setState(() => _lines = value ?? 200);
-                      _loadTail();
-                    },
-                  ),
-                ),
               ],
             ),
           ),
@@ -237,6 +219,9 @@ class _LogsPageState extends State<LogsPage> {
                     content: _content,
                     path: _path,
                     truncated: _truncated,
+                    controller: _filter,
+                    compactFilters: true,
+                    onAdvancedFilter: _openAdvancedFilters,
                   ),
                 ),
         ),
@@ -245,16 +230,162 @@ class _LogsPageState extends State<LogsPage> {
             actions: [
               ActionDockItem(
                 icon: Icons.source_outlined,
-                label: selectedLabel ?? '日志源',
+                label: mobileSourceLabel,
                 onPressed: _pickSource,
-              ),
-              ActionDockItem(
-                icon: Icons.format_list_numbered,
-                label: '$_lines 行',
-                onPressed: _pickLines,
               ),
             ],
           ),
+      ],
+    );
+  }
+}
+
+class _LogFilters {
+  const _LogFilters(this.severities, this.range, this.lines);
+
+  final Set<LogSeverity> severities;
+  final DateTimeRange? range;
+  final int lines;
+}
+
+class _LogFiltersDialog extends StatefulWidget {
+  const _LogFiltersDialog({
+    required this.severities,
+    required this.range,
+    required this.lines,
+  });
+
+  final Set<LogSeverity> severities;
+  final DateTimeRange? range;
+  final int lines;
+
+  @override
+  State<_LogFiltersDialog> createState() => _LogFiltersDialogState();
+}
+
+class _LogFiltersDialogState extends State<_LogFiltersDialog> {
+  late Set<LogSeverity> _severities = {...widget.severities};
+  late DateTimeRange? _range = widget.range;
+  late int _lines = widget.lines;
+
+  Future<void> _pickRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 3),
+      lastDate: DateTime(now.year + 1, 12, 31),
+      initialDateRange: _range,
+      helpText: '选择日志时间范围',
+      saveText: '应用',
+      locale: const Locale('zh', 'CN'),
+    );
+    if (picked != null && mounted) setState(() => _range = picked);
+  }
+
+  String _date(DateTime value) =>
+      '${value.year}-${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('高级筛选'),
+      content: DialogBody(
+        maxWidth: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '日志类型',
+              style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final severity in LogSeverity.values)
+                  FilterChip(
+                    label: Text(severity.label),
+                    selected: _severities.contains(severity),
+                    showCheckmark: false,
+                    onSelected: (selected) => setState(() {
+                      if (selected) {
+                        _severities.add(severity);
+                      } else {
+                        _severities.remove(severity);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              '时间范围',
+              style: TextStyle(fontSize: 11.5, color: hampanelMuted),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickRange,
+                    icon: const Icon(Icons.date_range, size: 16),
+                    label: Text(
+                      _range == null
+                          ? '不限时间'
+                          : '${_date(_range!.start)} ~ ${_date(_range!.end)}',
+                    ),
+                  ),
+                ),
+                if (_range != null)
+                  IconButton(
+                    tooltip: '清除时间范围',
+                    onPressed: () => setState(() => _range = null),
+                    icon: const Icon(Icons.close, size: 16),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<int>(
+              key: ValueKey(_lines),
+              initialValue: _lines,
+              decoration: const InputDecoration(
+                labelText: '读取行数',
+                isDense: true,
+              ),
+              items: [
+                for (final count in const [100, 200, 500, 1000, 2000])
+                  DropdownMenuItem(value: count, child: Text('$count 行')),
+              ],
+              onChanged: (value) {
+                if (value != null) setState(() => _lines = value);
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          onPressed: () => setState(() {
+            _severities = LogSeverity.values.toSet();
+            _range = null;
+            _lines = 200;
+          }),
+          child: const Text('重置'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            context,
+            _LogFilters({..._severities}, _range, _lines),
+          ),
+          child: const Text('应用'),
+        ),
       ],
     );
   }

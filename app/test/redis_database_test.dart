@@ -6,6 +6,8 @@ import 'package:hampanel/core/api_client.dart';
 import 'package:hampanel/core/session.dart';
 import 'package:hampanel/features/databases/database_dialogs.dart';
 import 'package:hampanel/features/databases/databases_page.dart';
+import 'package:hampanel/ui/layout.dart';
+import 'package:hampanel/ui/widgets.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:xterm/xterm.dart';
 
@@ -73,6 +75,27 @@ void main() {
     expect(result?['port'], 6379);
     expect(result?['user'], '');
     expect(result?['mode'], 'host');
+  });
+
+  testWidgets('phone footer stretches and registration is docked', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(PanelScope(session: _Session(), child: const MaterialApp(home: Scaffold(body: DatabasesPage()))));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(ActionDock)).width, 390);
+    expect(tester.getSize(find.byType(SubNavMenu)).width, 390 - 32);
+    expect(find.descendant(of: find.byType(ActionDock), matching: find.text('登记实例')), findsOneWidget);
+    await tester.tap(find.byType(SubNavMenu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('SQLite').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('登记实例'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('受管主机上的 SQLite 文件绝对路径'), findsOneWidget);
+    expect(find.text('连接方式'), findsNothing);
   });
 
   testWidgets('opening Redis connects xterm without loading SQL data', (tester) async {

@@ -34,9 +34,11 @@ SQLite 使用 vendored amalgamation，不依赖系统 `libsqlite3`。
 | --- | --- |
 | 扫描感知探针脚本 | `<data-dir>/security/scan-sensor.bt` |
 | 扫描封禁来源清单 | `<data-dir>/security/scan-banned.txt` |
-| 文件防篡改保护清单 | `<data-dir>/security/tamper-manifest.txt` |
+| chattr 保护清单 | `<data-dir>/security/tamper-manifest.txt` |
+| eBPF LSM 规则清单 | `/var/lib/hampanel-tamper-lsm/manifest`（root 私有） |
+| eBPF LSM 内核规则与链接 | `/sys/fs/bpf/hampanel_tamper_v1/` |
 
-蜜罐 guest 的镜像与磁盘也在数据目录下，由面板构建；它不是发行版镜像，不会从外网下载。SELinux 首次初始化的就绪标记由系统策略目录维护，不在此表内。
+蜜罐 guest 镜像在数据目录下按 Web/SSH 模式分别构建；构建不从外网下载。SELinux 首次初始化的就绪标记由系统策略目录维护，不在此表内。
 
 ### 容器引擎的选择
 

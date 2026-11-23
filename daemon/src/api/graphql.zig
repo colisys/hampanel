@@ -34,7 +34,7 @@ const Parser = struct {
     }
 };
 
-fn parse(query: []const u8) !Selection {
+fn begin(query: []const u8) !Parser {
     if (query.len > 4096) return error.QueryTooLong;
     var p = Parser{ .rest = query };
     if (!p.eat('{')) {
@@ -44,6 +44,22 @@ fn parse(query: []const u8) !Selection {
             if (!p.eat('{')) return error.ExpectedSelection;
         }
     }
+    return p;
+}
+
+pub const CatalogField = enum { databases, tables };
+
+pub fn catalogField(query: []const u8) !CatalogField {
+    var p = try begin(query);
+    const field = std.meta.stringToEnum(CatalogField, try p.name()) orelse return error.UnknownQueryField;
+    if (!p.eat('}')) return error.ExpectedSingleField;
+    p.skip();
+    if (p.rest.len != 0) return error.TrailingInput;
+    return field;
+}
+
+fn parse(query: []const u8) !Selection {
+    var p = try begin(query);
     var result = Selection{};
     while (!p.eat('}')) {
         const root = try p.name();

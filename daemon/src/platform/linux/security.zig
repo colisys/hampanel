@@ -1,6 +1,6 @@
 const std = @import("std");
 const compat = @import("compat");
-const exec = @import("shared").exec;
+pub const bpftraceAvailable = sensor.bpftraceAvailable;
 const sensor = @import("scansensor.zig");
 
 /// Passive scan sensing. eBPF needs CAP_BPF/CAP_SYS_ADMIN plus a kernel with
@@ -26,7 +26,7 @@ pub const FirewallEntry = struct {
 };
 
 pub fn scanStatus(allocator: std.mem.Allocator, data_dir: []const u8) !ScanStatus {
-    const kernel_bpf = bpfSyscallAvailable(allocator);
+    const kernel_bpf = kernelBpfAvailable();
     const unprivileged = readInt(allocator, "/proc/sys/kernel/unprivileged_bpf_disabled") orelse -1;
     const scanner = try sensor.buildPaths(allocator, data_dir);
     defer scanner.deinit(allocator);
@@ -139,19 +139,9 @@ fn sameAddress(a: []const u8, b: []const u8) bool {
     return left.eql(&right);
 }
 
-fn bpfSyscallAvailable(allocator: std.mem.Allocator) bool {
-    // BTF is required before a kprobe can be typed against kernel structures.
-    if (!sensor.exists("/sys/kernel/btf/vmlinux")) return false;
-    var probe = exec.run(allocator, &.{ "bpftool", "feature", "probe", "kernel" }, 64 * 1024) catch return false;
-    // exec.run hands back owned buffers; callers own them. Freed even on the
-    // early-return paths below.
-    defer {
-        allocator.free(probe.stdout);
-        allocator.free(probe.stderr);
-    }
-    if (!probe.ok()) return false;
-    return std.mem.indexOf(u8, probe.stdout, "CONFIG_BPF_SYSCALL is set to y") != null and
-        std.mem.indexOf(u8, probe.stdout, "CONFIG_BPF is set to y") != null;
+pub fn kernelBpfAvailable() bool {
+    // The unprivileged_bpf_disabled sysctl is registered by CONFIG_BPF_SYSCALL.
+    return sensor.exists("/sys/kernel/btf/vmlinux") and sensor.exists("/proc/sys/kernel/unprivileged_bpf_disabled");
 }
 
 fn readInt(allocator: std.mem.Allocator, path: []const u8) ?i64 {

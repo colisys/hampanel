@@ -37,6 +37,23 @@ void main() {
     }
   });
 
+  testWidgets('registered connection executes only the read-only catalog document', (tester) async {
+    String? sent;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: GraphqlPage(
+      catalogQuery: '{ tables }', executeCatalog: (query) async {
+        sent = query;
+        return {'data': {'tables': ['orders']}};
+      },
+    ))));
+    expect(sent, isNull);
+    expect(find.byType(re.CodeEditor), findsOneWidget);
+    expect(find.text('HTTP(S) 端点'), findsNothing);
+    await tester.tap(find.text('执行查询'));
+    await tester.pumpAndSettle();
+    expect(sent, '{ tables }');
+    expect(tester.widget<SelectableText>(find.byType(SelectableText)).data, contains('orders'));
+  });
+
   testWidgets('only submits on demand and displays the full response', (tester) async {
     var calls = 0;
     const payload = '{"data":{"node":null},"errors":[{"message":"Denied"}]}';

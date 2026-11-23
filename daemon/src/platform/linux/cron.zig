@@ -18,26 +18,71 @@ pub const Entry = struct {
     kind: []const u8,
 };
 
-/// Curated panel jobs. A panel job may only run one of these commands, so the
-/// kind cannot be used to smuggle in arbitrary shell text.
-pub const panel_jobs = [_]PanelJob{
-    .{ .id = "cert-renew", .label = "证书续签", .command = "hampaneld renew-certificates --json" },
-    .{ .id = "software-restart", .label = "软件重启", .command = "hampaneld restart-software --json" },
-    .{ .id = "supervisord-restart", .label = "Supervisord 守护进程重启", .command = "systemctl restart supervisor" },
-    .{ .id = "waf-report", .label = "WAF 防护汇报", .command = "hampaneld waf-report --json" },
-};
-
 pub const PanelJob = struct {
     id: []const u8,
     label: []const u8,
+    group: []const u8,
     command: []const u8,
 };
 
-pub fn panelJobFor(command: []const u8) ?PanelJob {
-    for (panel_jobs) |job| {
-        if (std.mem.eql(u8, job.command, command)) return job;
+fn fixed(comptime id: []const u8, comptime group: []const u8, comptime label: []const u8, comptime argv: []const []const u8) PanelJob {
+    comptime var command: []const u8 = "";
+    inline for (argv, 0..) |arg, i| command = command ++ (if (i == 0) "" else " ") ++ arg;
+    return .{ .id = id, .group = group, .label = label, .command = command };
+}
+
+pub const panel_jobs = [_]PanelJob{
+    fixed("cert-renew", "Certbot 证书续签", "全部 Certbot 证书", &.{ "certbot", "renew", "--quiet" }),
+    fixed("restart-nginx", "软件重启", "Nginx", &.{ "systemctl", "restart", "nginx.service" }),
+    fixed("restart-caddy", "软件重启", "Caddy", &.{ "systemctl", "restart", "caddy.service" }),
+    fixed("restart-mariadb", "软件重启", "MariaDB", &.{ "systemctl", "restart", "mariadb.service" }),
+    fixed("supervisord-restart", "软件重启", "Supervisor", &.{ "systemctl", "restart", "supervisor" }),
+    fixed("nginx-check", "维护检查", "检查 Nginx 配置", &.{ "nginx", "-t" }),
+    fixed("disk-usage", "维护检查", "报告文件系统使用量", &.{ "df", "-hP" }),
+};
+
+// Cron stores a shell command, not argv. Only accept lineage names that
+// remain exactly one literal argument in both cron and the shell.
+fn certificateJob(a: std.mem.Allocator, name: []const u8) !?PanelJob {
+    if (name.len == 0 or name.len > 253 or !std.ascii.isAlphanumeric(name[0])) return null;
+    for (name) |c| if (!std.ascii.isAlphanumeric(c) and c != '.' and c != '-' and c != '_') return null;
+    return .{ .id = try std.mem.concat(a, u8, &.{ "cert-renew:", name }), .group = panel_jobs[0].group, .label = try a.dupe(u8, name), .command = try std.mem.join(a, " ", &.{ "certbot", "renew", "--quiet", "--cert-name", name }) };
+}
+
+pub fn catalog(a: std.mem.Allocator) ![]const PanelJob {
+    var dir = compat.openDirAbsolute("/etc/letsencrypt/renewal", .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return &panel_jobs,
+        else => return err,
+    };
+    defer dir.close();
+    var jobs = std.array_list.Managed(PanelJob).init(a);
+    try jobs.appendSlice(&panel_jobs);
+    var it = dir.iterate();
+    while (try it.next()) |item| {
+        if (item.kind != .file or !std.mem.endsWith(u8, item.name, ".conf")) continue;
+        if (try certificateJob(a, item.name[0 .. item.name.len - 5])) |job| try jobs.append(job);
     }
+    return jobs.items;
+}
+
+pub fn panelJobFor(command: []const u8) ?PanelJob {
+    for (panel_jobs) |job| if (std.mem.eql(u8, job.command, command)) return job;
     return null;
+}
+
+test "restart commands are exact allowlisted argv" {
+    try std.testing.expectEqualStrings("restart-nginx", panelJobFor("systemctl restart nginx.service").?.id);
+    try std.testing.expect(panelJobFor("systemctl restart other.service") == null);
+    try std.testing.expect(panelJobFor("systemctl restart nginx.service; true") == null);
+}
+
+test "certificate lineage becomes one literal argument" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const job = (try certificateJob(a, "example.org-0001")).?;
+    try std.testing.expectEqualStrings("certbot renew --quiet --cert-name example.org-0001", job.command);
+    for ([_][]const u8{ "", "--flag", "other site", "a;b", "a%b", "a/b", "a\nb" }) |name| try std.testing.expect((try certificateJob(a, name)) == null);
 }
 
 pub const Outcome = struct {
@@ -57,7 +102,11 @@ pub fn add(
     kind: []const u8,
 ) !Outcome {
     const is_panel = std.mem.eql(u8, kind, "panel");
-    if (is_panel and panelJobFor(command) == null) return error.UnknownPanelJob;
+    if (is_panel) {
+        for (try catalog(allocator)) |job| {
+            if (std.mem.eql(u8, command, job.command)) break;
+        } else return error.UnknownPanelJob;
+    }
     const current = try readCrontab(allocator);
     var entries = std.array_list.Managed(Entry).init(allocator);
     for (try parseEntries(allocator, current)) |entry| try entries.append(entry);

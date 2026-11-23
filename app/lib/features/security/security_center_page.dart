@@ -159,10 +159,11 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
                       title: '扫描感知',
                       subtitle: caps == null
                           ? 'eBPF 被动采集扫描来源'
-                          : caps.ebpf
-                          ? 'eBPF 可用 · 自动拉黑命中来源'
-                          : 'eBPF 不可用，无法被动采集',
-                      enabled: caps?.ebpf ?? false,
+                          : !caps.ebpf
+                          ? '内核缺少 BPF 或 BTF，查看采集条件'
+                          : caps.bpftrace
+                          ? '被动采集 · 查看探针状态'
+                          : '缺少 bpftrace，查看采集条件',
                       onTap: () => _open(const ScanPage()),
                     ),
                     _entry(
@@ -175,7 +176,7 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
                       icon: Icons.hive_outlined,
                       title: 'SSH / Web 蜜罐',
                       subtitle: caps == null
-                          ? 'QEMU 嵌套虚拟化诱捕'
+                          ? 'QEMU 隔离诱捕（KVM 或软件模拟）'
                           : caps.qemu
                           ? 'QEMU 可用 · 隔离观察攻击行为'
                           : 'QEMU 不可用',
@@ -194,12 +195,7 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
                     _entry(
                       icon: Icons.lock_outline,
                       title: '文件防篡改',
-                      subtitle: caps == null
-                          ? 'chattr 与 eBPF 路径保护'
-                          : caps.chattr
-                          ? 'chattr 可用 · 关键路径只读保护'
-                          : 'chattr 不可用',
-                      enabled: caps?.chattr ?? false,
+                      subtitle: 'chattr 不可变保护 · eBPF LSM inode 防护 · 短时写入监测（不阻止）',
                       onTap: () => _open(const TamperPage()),
                     ),
                     _entry(
@@ -224,7 +220,7 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
   /// dependency is a one-click fix instead of a package name the operator has
   /// to look up.
   static const _componentFor = <String, ({String id, String name})>{
-    'ebpf': (id: 'bpftrace', name: 'bpftrace'),
+    'bpftrace': (id: 'bpftrace', name: 'bpftrace'),
     'qemu': (id: 'qemu', name: 'QEMU'),
     'chattr': (id: 'e2fsprogs', name: 'e2fsprogs'),
     'selinux': (id: 'selinux-tools', name: 'SELinux 工具与策略'),
@@ -256,7 +252,7 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
 
   Widget _capabilityBanner(SecurityCapabilities caps) {
     final missing = <String>[
-      if (!caps.ebpf) 'ebpf',
+      if (!caps.bpftrace) 'bpftrace',
       if (!caps.qemu) 'qemu',
       if (!caps.chattr) 'chattr',
       if (!caps.selinux) 'selinux',
@@ -266,13 +262,13 @@ class _SecurityCenterPageState extends State<SecurityCenterPage> {
       return PanelCard(
         title: '运行环境',
         child: Text(
-          '所有依赖均已就绪，扫描感知与蜜罐可在本机运行。',
+          '所列工具均已就绪；实际运行条件请查看各功能页。',
           style: TextStyle(fontSize: 11.5, color: hampanelMuted, height: 1.5),
         ),
       );
     }
     final labels = <String, String>{
-      'ebpf': 'eBPF（扫描感知）',
+      'bpftrace': 'bpftrace（扫描感知）',
       'qemu': 'QEMU（蜜罐）',
       'chattr': 'chattr（防篡改）',
       'selinux': 'SELinux',

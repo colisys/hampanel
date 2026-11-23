@@ -14,14 +14,15 @@ pub fn index(ctx: *context.Context) anyerror!void {
     try ctx.json(.{
         .available = true,
         .entries = entries,
-        .panelJobs = platform.cron.panel_jobs,
+        .panelJobs = try platform.cron.catalog(ctx.arena),
     });
 }
 
 pub fn add(ctx: *context.Context) anyerror!void {
     const Body = struct {
         schedule: []const u8,
-        command: []const u8,
+        command: []const u8 = "",
+        jobId: ?[]const u8 = null,
         /// "panel" for curated jobs, "user" for free-form crontab entries.
         kind: []const u8 = "user",
     };
@@ -34,25 +35,31 @@ pub fn add(ctx: *context.Context) anyerror!void {
         ctx.fail(400, "bad_schedule", "schedule must be a five-field cron expression or @macro");
         return;
     }
-    if (body.command.len == 0 or body.command.len > 512 or hasControlChars(body.command)) {
-        ctx.fail(400, "bad_command", "command is empty, too long, or contains control characters");
-        return;
-    }
     const is_panel = std.mem.eql(u8, body.kind, "panel");
     if (!is_panel and !std.mem.eql(u8, body.kind, "user")) {
         ctx.fail(400, "bad_kind", "kind must be panel or user");
         return;
     }
-    if (is_panel and platform.cron.panelJobFor(body.command) == null) {
-        ctx.fail(400, "bad_panel_job", "panel jobs must use a curated command");
+    var command = body.command;
+    if (is_panel) {
+        command = selectPanelCommand(try platform.cron.catalog(ctx.arena), body.jobId, command) orelse {
+            ctx.fail(400, "bad_panel_job", "unknown or conflicting panel job selection");
+            return;
+        };
+    } else if (body.jobId != null) {
+        ctx.fail(400, "bad_kind", "jobId requires panel kind");
         return;
     }
-    if (std.mem.eql(u8, ctx.app.config.install_mode, "source") and update.isUpdateCommand(body.command)) {
+    if (command.len == 0 or command.len > 512 or hasControlChars(command)) {
+        ctx.fail(400, "bad_command", "command is empty, too long, or contains control characters");
+        return;
+    }
+    if (std.mem.eql(u8, ctx.app.config.install_mode, "source") and update.isUpdateCommand(command)) {
         ctx.fail(400, "update_disabled", "source installs cannot schedule update checks");
         return;
     }
 
-    const outcome = platform.cron.add(ctx.arena, body.schedule, body.command, body.kind) catch |err| {
+    const outcome = platform.cron.add(ctx.arena, body.schedule, command, body.kind) catch |err| {
         if (err == error.UnknownPanelJob) {
             ctx.fail(400, "bad_panel_job", "panel jobs must use a curated command");
         } else if (errutil.isUnsupported(err)) {
@@ -105,6 +112,14 @@ pub fn remove(ctx: *context.Context) anyerror!void {
         log.warn("cron: remove failed id={s}", .{redact.text(&id_buf, body.id)});
     }
     try ctx.json(.{ .ok = outcome.ok, .output = outcome.output });
+}
+
+fn selectPanelCommand(jobs: []const platform.cron.PanelJob, id: ?[]const u8, command: []const u8) ?[]const u8 {
+    for (jobs) |job| {
+        const matches = if (id) |value| command.len == 0 and std.mem.eql(u8, value, job.id) else std.mem.eql(u8, command, job.command);
+        if (matches) return job.command;
+    }
+    return null;
 }
 
 fn validSchedule(schedule: []const u8) bool {

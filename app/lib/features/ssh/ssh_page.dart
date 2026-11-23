@@ -8,6 +8,7 @@ import '../../ui/log_page.dart';
 import '../../ui/theme.dart';
 import '../../ui/layout.dart';
 import '../../ui/widgets.dart';
+import '../security/honeypot_page.dart';
 import '../store/deploy_dialog.dart';
 
 class SshPage extends StatefulWidget {
@@ -487,7 +488,16 @@ class _SshPageState extends State<SshPage> {
       children: [
         PageHeader(
           title: 'SSH 管理',
-          actions: [PageRefreshButton(onPressed: _loadStatus)],
+          actions: [
+            IconButton(
+              tooltip: 'SSH 蜜罐管理',
+              icon: const Icon(Icons.hive_outlined),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => const HoneypotPage(initialMode: 'ssh'),
+              )),
+            ),
+            PageRefreshButton(onPressed: _loadStatus),
+          ],
         ),
         Expanded(
           child: _loading

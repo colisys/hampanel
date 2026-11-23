@@ -22,6 +22,8 @@ pub const Status = struct {
     /// chattr/lsattr resolved from PATH.
     tooling: bool,
     entries: []const Entry,
+    ebpf_detection: bool,
+    ebpf_reason: []const u8,
     message: []const u8 = "",
 };
 
@@ -60,7 +62,13 @@ pub fn status(allocator: std.mem.Allocator, data_dir: []const u8) !Status {
     // still holds its capacity makes `free(entries)` an invalid free, which the
     // CI test runner (root, so `chattr` succeeds) aborts on.
     const owned = try entries.toOwnedSlice();
+    const probe_error: ?anyerror = blk: {
+        _ = sampleWrites(allocator, 0, 0, 1) catch |err| break :blk err;
+        break :blk null;
+    };
     return .{
+        .ebpf_detection = probe_error == null,
+        .ebpf_reason = if (probe_error) |err| @errorName(err) else "",
         .available = tooling and owned.len > 0,
         .tooling = tooling,
         .entries = owned,
@@ -251,6 +259,120 @@ fn removeFromManifest(allocator: std.mem.Allocator, data_dir: []const u8, path: 
     var file = try compat.createFileAbsolute(manifest, .{ .truncate = true, .mode = 0o600 });
     defer file.close();
     try file.writeAll(out.written());
+}
+
+/// A bounded observation of the inode selected at the start, not a policy
+/// attached to a pathname. Never persist this result in the immutable manifest.
+pub fn detectWrites(a: std.mem.Allocator, path: []const u8) !u64 {
+    const linux = std.os.linux;
+    if (path.len == 0 or path[0] != '/' or std.mem.indexOfScalar(u8, path, 0) != null) return error.InvalidPath;
+    const z = try compat.dupeZ(a, path);
+    defer a.free(z);
+    // O_PATH does not open devices or block on FIFOs. Holding the descriptor
+    // also prevents inode reuse if the file is unlinked during observation.
+    const opened = linux.openat(linux.AT.FDCWD, z.ptr, .{ .PATH = true, .NOFOLLOW = true, .CLOEXEC = true }, 0);
+    switch (linux.errno(opened)) {
+        .SUCCESS => {},
+        .NOENT, .NOTDIR => return error.FileNotFound,
+        .ACCES, .PERM => return error.AccessDenied,
+        else => return error.StatFailed,
+    }
+    const fd: i32 = @intCast(opened);
+    defer _ = linux.close(fd);
+    var st: linux.Statx = undefined;
+    if (linux.errno(linux.statx(fd, "", linux.AT.EMPTY_PATH, linux.STATX.BASIC_STATS, &st)) != .SUCCESS) return error.StatFailed;
+    // STATX_TYPE (bit 0) and STATX_INO (bit 8) must both be present.
+    if (@as(u32, @bitCast(st.mask)) & 0x101 != 0x101) return error.StatFailed;
+    if (st.mode & 0o170000 != 0o100000) return error.RegularFileRequired;
+    // Kernel dev_t uses MINORBITS=20 (not the userspace st_dev encoding).
+    const device = (@as(u64, st.dev_major) << 20) | st.dev_minor;
+    return sampleWrites(a, device, st.ino, 5);
+}
+
+var sampling = std.atomic.Value(bool).init(false);
+
+fn sampleWrites(a: std.mem.Allocator, device: u64, inode: u64, seconds: u8) !u64 {
+    if (sampling.swap(true, .acq_rel)) return error.ProbeBusy;
+    defer sampling.store(false, .release);
+    if (!exec.commandExists(a, "bpftrace")) return error.BpftraceMissing;
+    if (!exec.commandExists(a, "timeout")) return error.TimeoutToolMissing;
+    const program = try std.fmt.allocPrint(a,
+        \\BEGIN {{ @writes = sum(0); }}
+        \\kprobe:vfs_write /((struct file *)arg0)->f_inode->i_sb->s_dev == {d} && ((struct file *)arg0)->f_inode->i_ino == {d}/ {{ @writes = sum(1); }}
+        \\interval:s:{d} {{ printf("TAMPER:%llu\n", (uint64)@writes); exit(); }}
+        \\END {{ clear(@writes); }}
+    , .{ device, inode, seconds });
+    defer a.free(program);
+    const result = try exec.run(a, &.{ "timeout", "-k", "1", "15", "bpftrace", "-q", "-e", program }, 64 * 1024);
+    defer a.free(result.stdout);
+    defer a.free(result.stderr);
+    return sampleResult(result.exit_code, result.stdout, result.stderr);
+}
+
+fn sampleResult(code: u8, stdout: []const u8, stderr: []const u8) !u64 {
+    if (code == 124 or code == 137) return error.ProbeTimedOut;
+    // Partial attachment or lost events must not masquerade as a clean zero.
+    if (code != 0 or std.mem.trim(u8, stderr, " \r\n\t").len != 0) return error.ProbeFailed;
+    return parseSample(stdout);
+}
+
+fn parseSample(raw: []const u8) !u64 {
+    const line = std.mem.trim(u8, raw, " \r\n\t");
+    const prefix = "TAMPER:";
+    if (!std.mem.startsWith(u8, line, prefix)) return error.IncompleteSample;
+    const digits = line[prefix.len..];
+    for (digits) |c| if (!std.ascii.isDigit(c)) return error.IncompleteSample;
+    return std.fmt.parseInt(u64, digits, 10) catch error.IncompleteSample;
+}
+
+test "tamper observation requires a complete count" {
+    try std.testing.expectEqual(@as(u64, 0), try parseSample("TAMPER:0\n"));
+    try std.testing.expectEqual(@as(u64, 12), try parseSample("TAMPER:12\n"));
+    for ([_][]const u8{ "", "TAMPER:", "TAMPER:1\nerror", "TAMPER:-1", "TAMPER:0\nTAMPER:0", "TAMPER:18446744073709551616" }) |raw| try std.testing.expectError(error.IncompleteSample, parseSample(raw));
+}
+
+test "tamper observation never reports a failed probe as a zero" {
+    for ([_]u8{ 124, 137 }) |code| try std.testing.expectError(error.ProbeTimedOut, sampleResult(code, "TAMPER:0", ""));
+    try std.testing.expectError(error.ProbeFailed, sampleResult(1, "TAMPER:0", ""));
+    try std.testing.expectError(error.ProbeFailed, sampleResult(0, "TAMPER:0", "lost events"));
+}
+
+test "tamper refuses overlapping probe without releasing its owner" {
+    sampling.store(true, .release);
+    defer sampling.store(false, .release);
+    try std.testing.expectError(error.ProbeBusy, sampleWrites(std.testing.allocator, 1, 2, 1));
+    try std.testing.expect(sampling.load(.acquire));
+}
+
+test "tamper rejects invalid and nonregular targets before tracing" {
+    const a = std.testing.allocator;
+    for ([_][]const u8{ "relative", "", "/a\x00b" }) |path| try std.testing.expectError(error.InvalidPath, detectWrites(a, path));
+    try std.testing.expectError(error.RegularFileRequired, detectWrites(a, "/"));
+    try std.testing.expectError(error.RegularFileRequired, detectWrites(a, "/proc/self/exe"));
+    try std.testing.expectError(error.FileNotFound, detectWrites(a, "/proc/self/no-such-tamper-target"));
+}
+
+var lsm_busy = std.atomic.Value(bool).init(false);
+
+/// The one-shot helper exits after pinning; no process or request owns a guard.
+pub fn lsm(a: std.mem.Allocator, operation: []const u8, path: []const u8) ![]const u8 {
+    if (path.len > 4095 or std.mem.indexOfScalar(u8, path, 0) != null) return error.InvalidPath;
+    if (lsm_busy.swap(true, .acq_rel)) return error.PolicyConflict;
+    defer lsm_busy.store(false, .release);
+    const helper = "/usr/libexec/hampanel/tamper_lsm.py";
+    for ([_][]const u8{ helper, "/usr/bin/timeout", "/usr/bin/python3" }) |tool| if (!exec.commandExists(a, tool)) return error.Unsupported;
+    const result = try exec.run(a, &.{ "/usr/bin/timeout", "-k", "1", "10", "/usr/bin/python3", "-I", helper, operation, path }, 2 * 1024 * 1024);
+    defer a.free(result.stderr);
+    errdefer a.free(result.stdout);
+    switch (result.exit_code) {
+        0 => return result.stdout,
+        10 => return error.Unsupported,
+        11 => return error.InvalidPath,
+        12 => return error.FileNotFound,
+        13 => return error.PolicyConflict,
+        124, 137 => return error.LoaderTimedOut,
+        else => return error.LoaderFailed,
+    }
 }
 
 fn textOf(result: exec.Result) []const u8 {

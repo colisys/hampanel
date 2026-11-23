@@ -31,15 +31,18 @@ class CronPanelJob {
   const CronPanelJob({
     required this.id,
     required this.label,
+    this.group,
     required this.command,
   });
 
   final String id;
   final String label;
+  final String? group;
   final String command;
 
   factory CronPanelJob.fromJson(Map<String, dynamic> json) => CronPanelJob(
     id: json['id'] as String? ?? '',
+    group: json['group'] as String?,
     label: json['label'] as String? ?? '',
     command: json['command'] as String? ?? '',
   );

@@ -139,7 +139,13 @@ void main() {
       await tester.tap(send);
       await tester.pumpAndSettle();
       expect(api.tested, {'provider': 'bark'});
-      expect(find.text('发送失败，请检查推送服务配置。'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(SnackBar),
+          matching: find.text('发送失败，请检查推送服务配置。'),
+        ),
+        findsOneWidget,
+      );
     },
   );
 }

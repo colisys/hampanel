@@ -57,7 +57,14 @@ class _NotificationSettingsState extends State<NotificationSettings> {
   bool _busy = false;
   bool _dirty(String section) =>
       _sections[section]!.keys.any((key) => _draft![key] != _saved[key]);
-  String _message = '';
+  String _loadError = '';
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
 
   @override
   void initState() {
@@ -73,11 +80,11 @@ class _NotificationSettingsState extends State<NotificationSettings> {
         setState(() {
           _saved = Map.of(config);
           _draft = Map.of(config);
-          _message = '';
+          _loadError = '';
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _message = '无法读取通知设置，请检查服务端连接。');
+      if (mounted) setState(() => _loadError = '无法读取通知设置，请检查服务端连接。');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -85,10 +92,7 @@ class _NotificationSettingsState extends State<NotificationSettings> {
 
   Future<void> _submit(String section, {bool test = false}) async {
     if (!test && !_forms[section]!.currentState!.validate()) return;
-    setState(() {
-      _busy = true;
-      _message = '';
-    });
+    setState(() => _busy = true);
     try {
       if (!test) {
         // The server replaces the full config. Overlay only this card's draft.
@@ -99,17 +103,17 @@ class _NotificationSettingsState extends State<NotificationSettings> {
         };
         await widget.api.putJson(_path, config);
         if (!mounted) return;
-        _saved = config;
-        _message = '$section 已保存';
+        setState(() => _saved = config);
+        _toast('$section 已保存');
       } else {
         final result = await widget.api.postJson('$_path/test', {
           'provider': section.toLowerCase(),
         });
         if (!mounted) return;
-        _message = result['ok'] == true ? '测试通知已发送' : '发送失败，请检查推送服务配置。';
+        _toast(result['ok'] == true ? '测试通知已发送' : '发送失败，请检查推送服务配置。');
       }
     } catch (_) {
-      if (mounted) _message = test ? '测试请求失败。' : '保存失败，请检查配置和连接。';
+      _toast(test ? '测试请求失败。' : '保存失败，请检查配置和连接。');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -117,8 +121,6 @@ class _NotificationSettingsState extends State<NotificationSettings> {
 
   void _change(String key, dynamic value) => setState(() {
     _draft![key] = value;
-
-    _message = '';
   });
 
   Widget _field(String key, String label) {
@@ -178,7 +180,7 @@ class _NotificationSettingsState extends State<NotificationSettings> {
           ? const CircularProgressIndicator()
           : Column(
               children: [
-                Text(_message),
+                Text(_loadError),
                 TextButton(onPressed: _load, child: const Text('重试')),
               ],
             );
@@ -244,10 +246,6 @@ class _NotificationSettingsState extends State<NotificationSettings> {
           if (_busy) ...[
             const SizedBox(height: 10),
             const LinearProgressIndicator(),
-          ],
-          if (_message.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Text(_message),
           ],
         ],
       ),

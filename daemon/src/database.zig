@@ -12,6 +12,7 @@ pub const Engine = enum {
     postgres,
     mongo,
     redis,
+    sqlite,
 
     pub fn label(self: Engine) []const u8 {
         return switch (self) {
@@ -20,11 +21,12 @@ pub const Engine = enum {
             .postgres => "PostgreSQL",
             .mongo => "MongoDB",
             .redis => "Redis",
+            .sqlite => "SQLite",
         };
     }
 
     pub fn isManaged(self: Engine) bool {
-        return self != .redis;
+        return self != .redis and self != .sqlite;
     }
 
     pub fn fromString(value: []const u8) ?Engine {
@@ -58,6 +60,7 @@ pub const Instance = struct {
     password: []const u8 = "",
     container: []const u8 = "",
     socket: []const u8 = "",
+    path: []const u8 = "",
 };
 
 pub const Catalog = struct {
@@ -116,6 +119,10 @@ pub fn remove(allocator: std.mem.Allocator, catalog: *Catalog, id: []const u8) !
 pub fn validate(instance: Instance) ?[]const u8 {
     if (!isInstanceId(instance.id)) return "id must be 1..64 chars of letters, digits, - or _";
     if (instance.name.len == 0 or instance.name.len > 64) return "name must be 1..64 chars";
+    if (instance.engine == .sqlite) {
+        if (instance.mode != .host or !compat.path.isAbsolute(instance.path) or instance.path.len > 4096 or std.mem.indexOfScalar(u8, instance.path, 0) != null) return "SQLite requires an absolute host file path";
+        return null;
+    }
     if (instance.host.len == 0 or instance.host.len > 253) return "host must be 1..253 chars";
     for (instance.host) |c| if (!std.ascii.isAlphanumeric(c) and std.mem.indexOfScalar(u8, ".-:_", c) == null) return "invalid host";
     if (std.mem.indexOfScalar(u8, instance.password, 0) != null) return "invalid password";
@@ -183,6 +190,7 @@ pub fn defaultPort(engine: Engine) u16 {
         .postgres => 5432,
         .mongo => 27017,
         .redis => 6379,
+        .sqlite => 0,
     };
 }
 
@@ -191,12 +199,28 @@ pub fn defaultUser(engine: Engine) []const u8 {
         .mysql, .mariadb => "root",
         .postgres => "postgres",
         .mongo => "admin",
-        .redis => "",
+        .redis, .sqlite => "",
     };
 }
 
 pub const Backup = struct { name: []const u8, database: []const u8, created_at: i64, size: u64 };
 pub const Action = enum { query, backup, restore };
+
+pub fn sqliteTables(a: std.mem.Allocator, path: []const u8) ![]const []const u8 {
+    const c = @import("sqlite_c");
+    var handle: ?*c.sqlite3 = null;
+    const rc = c.sqlite3_open_v2((try compat.dupeZ(a, path)).ptr, &handle, c.SQLITE_OPEN_READONLY, null);
+    defer if (handle) |h| {
+        _ = c.sqlite3_close(h);
+    };
+    if (rc != c.SQLITE_OK) return error.InvalidSqliteFile;
+    var external = db.Db{ .handle = handle.? };
+    var stmt = external.prepareUnlocked("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT GLOB 'sqlite_*' ORDER BY name") catch return error.InvalidSqliteFile;
+    defer stmt.deinit();
+    var names = std.array_list.Managed([]const u8).init(a);
+    while (stmt.step() catch return error.InvalidSqliteFile) try names.append(try stmt.dupeColumnText(a, 0));
+    return names.items;
+}
 
 pub fn protected(name: []const u8) bool {
     inline for (.{ "postgres", "template0", "template1", "mysql", "performance_schema", "information_schema", "sys" }) |reserved| if (std.ascii.eqlIgnoreCase(name, reserved)) return true;
@@ -226,7 +250,7 @@ pub fn run(a: std.mem.Allocator, database: *db.Db, i: Instance, schema: ?[]const
         if (socket.len != 0) try env.put(engine_mod.hostVariable(runtime, argv.items), socket);
     }
     const exe: []const u8 = switch (i.engine) {
-        .redis => unreachable,
+        .redis, .sqlite => unreachable,
         .postgres => switch (action) {
             .query => "psql",
             .backup => "pg_dump",
